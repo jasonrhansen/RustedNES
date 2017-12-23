@@ -1,0 +1,14 @@
+[package]
+name = "sadnes"
+version = "0.1.0"
+authors = ["Jason Rodney Hansen <jasonrodneyhansen@gmail.com>"]
+
+[dependencies]
+bitflags = "1.0"
+byteorder = "1"
+
+[lib]
+name = "sadnes"
+
+[[bin]]
+name = "debug_new_rom"
