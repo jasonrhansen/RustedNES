@@ -181,6 +181,17 @@ impl<M: Memory> Cpu<M> {
             0xD8 => self.cld(),
             0xB8 => self.clv(),
 
+            0x4C => self.jmp(),
+            0x6C => self.jmpi(),
+            0x30 => self.bmi(),
+            0x10 => self.bpl(),
+            0x90 => self.bcc(),
+            0xB0 => self.bcs(),
+            0xF0 => self.beq(),
+            0xD0 => self.bne(),
+            0x70 => self.bvs(),
+            0x50 => self.bvc(),
+
             _ => self.nop(),
         }
     }
@@ -314,6 +325,14 @@ impl<M: Memory> Cpu<M> {
         self.store(am, val);
     }
 
+    fn branch(&mut self, cond: bool) {
+        let offset = self.next_pc_byte();
+        if cond {
+            let addr = (self.regs.pc as i16 + offset as i16) as u16;
+            self.regs.pc = addr;
+        }
+    }
+
     ///////////////
     // Instructions
     ///////////////
@@ -422,6 +441,69 @@ impl<M: Memory> Cpu<M> {
 
     fn clv(&mut self) {
         self.set_flags(StatusFlags::OVERFLOW, false);
+    }
+
+    fn jmp(&mut self) {
+        self.regs.pc = self.next_pc_word();
+    }
+
+    fn jmpi(&mut self) {
+        let addr = self.next_pc_word();
+
+        let lsb = self.load_byte(addr);
+
+        // There is a hardware bug in this instruction. If the 16-bit argument of an indirect JMP is
+        // located between 2 pages (0x01FF and 0x0200 for example), then the LSB will be read from
+        // 0x01FF and the MSB will be read from 0x0100.
+        let msb = self.load_byte(
+            if (addr & 0xFF) == 0xFF {
+                addr & 0xff00
+            } else {
+                addr + 1
+            }
+        );
+
+        self.regs.pc = ((msb as u16) << 8) | (lsb as u16);
+    }
+
+    fn bmi(&mut self) {
+        let cond = self.get_flag(StatusFlags::NEGATIVE_RESULT);
+        self.branch(cond);
+    }
+
+    fn bpl(&mut self) {
+        let cond = !self.get_flag(StatusFlags::NEGATIVE_RESULT);
+        self.branch(cond);
+    }
+
+    fn bcc(&mut self) {
+        let cond = !self.get_flag(StatusFlags::CARRY);
+        self.branch(cond);
+    }
+
+    fn bcs(&mut self) {
+        let cond = self.get_flag(StatusFlags::CARRY);
+        self.branch(cond);
+    }
+
+    fn beq(&mut self) {
+        let cond = self.get_flag(StatusFlags::ZERO_RESULT);
+        self.branch(cond);
+    }
+
+    fn bne(&mut self) {
+        let cond = !self.get_flag(StatusFlags::ZERO_RESULT);
+        self.branch(cond);
+    }
+
+    fn bvs(&mut self) {
+        let cond = self.get_flag(StatusFlags::OVERFLOW);
+        self.branch(cond);
+    }
+
+    fn bvc(&mut self) {
+        let cond = !self.get_flag(StatusFlags::OVERFLOW);
+        self.branch(cond);
     }
 
     fn nop(&mut self) {
