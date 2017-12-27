@@ -239,6 +239,30 @@ impl<M: Memory> Cpu<M> {
             0x08 => self.php(),
             0x28 => self.plp(),
 
+            0x4A => self.lsr(AddressMode::Register(Register8::A)),
+            0x46 => self.lsr(AddressMode::AbsoluteZeroPage),
+            0x56 => self.lsr(AddressMode::IndexedZeroPage(Register8::X)),
+            0x4E => self.lsr(AddressMode::Absolute),
+            0x5E => self.lsr(AddressMode::Indexed(Register8::X)),
+
+            0x0A => self.asl(AddressMode::Register(Register8::A)),
+            0x06 => self.asl(AddressMode::AbsoluteZeroPage),
+            0x16 => self.asl(AddressMode::IndexedZeroPage(Register8::X)),
+            0x0E => self.asl(AddressMode::Absolute),
+            0x1E => self.asl(AddressMode::Indexed(Register8::X)),
+
+            0x2A => self.ror(AddressMode::Register(Register8::A)),
+            0x26 => self.ror(AddressMode::AbsoluteZeroPage),
+            0x36 => self.ror(AddressMode::IndexedZeroPage(Register8::X)),
+            0x2E => self.ror(AddressMode::Absolute),
+            0x3E => self.ror(AddressMode::Indexed(Register8::X)),
+
+            0x2A => self.rol(AddressMode::Register(Register8::A)),
+            0x26 => self.rol(AddressMode::AbsoluteZeroPage),
+            0x36 => self.rol(AddressMode::IndexedZeroPage(Register8::X)),
+            0x2E => self.rol(AddressMode::Absolute),
+            0x3E => self.rol(AddressMode::Indexed(Register8::X)),
+
             0xEA => self.nop(),
 
             _ => self.nop(),
@@ -714,6 +738,40 @@ impl<M: Memory> Cpu<M> {
     fn plp(&mut self) {
         let val = self.stack_pull();
         self.regs.status = StatusFlags::from_bits(val).unwrap();
+    }
+
+    fn lsr(&mut self, am: AddressMode) {
+        let val = self.load(am);
+        let result = (val >> 1) & 0x7F;
+        self.set_zero_negative(result);
+        self.set_flags(StatusFlags::CARRY, (val & 0x01) != 0);
+        self.store(am, result);
+    }
+
+    fn asl(&mut self, am: AddressMode) {
+        let val = self.load(am);
+        let result = (val << 1) & 0xFE;
+        self.set_zero_negative(result);
+        self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
+        self.store(am, result);
+    }
+
+    fn ror(&mut self, am: AddressMode) {
+        let val = self.load(am);
+        let carry: u8 = if self.get_flag(StatusFlags::CARRY) { 1 << 7 } else { 0 };
+        let result = ((val >> 1) & 0x7F) | carry;
+        self.set_zero_negative(result);
+        self.set_flags(StatusFlags::CARRY, (val & 0x01) != 0);
+        self.store(am, result);
+    }
+
+    fn rol(&mut self, am: AddressMode) {
+        let val = self.load(am);
+        let carry: u8 = if self.get_flag(StatusFlags::CARRY) { 1 } else { 0 };
+        let result = ((val << 1) & 0xFE) | carry;
+        self.set_zero_negative(result);
+        self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
+        self.store(am, result);
     }
 
     fn nop(&mut self) {}
