@@ -91,7 +91,7 @@ impl NesRom {
 
         // Skip the rest of the header
         // TODO: Implement NEW 2.0
-        r.seek(SeekFrom::Current(17));
+        r.seek(SeekFrom::Current(17))?;
 
         let has_trainer = (flags6 & 0x04) != 0;
         if has_trainer {
