@@ -227,6 +227,13 @@ impl<M: Memory> Cpu<M> {
             0xCA => self.dex(),
             0x88 => self.dey(),
 
+            0xAA => self.tax(),
+            0x8A => self.txa(),
+            0xA8 => self.tay(),
+            0x98 => self.tya(),
+            0xBA => self.tsx(),
+            0x9A => self.txs(),
+
             0xEA => self.nop(),
 
             _ => self.nop(),
@@ -635,6 +642,39 @@ impl<M: Memory> Cpu<M> {
         self.regs.y = val;
     }
 
+    fn tax(&mut self) {
+        let a = self.regs.a;
+        self.set_zero_negative(a);
+        self.regs.x = a;
+    }
+
+    fn txa(&mut self) {
+        let x = self.regs.x;
+        self.set_zero_negative(x);
+        self.regs.a = x;
+    }
+
+    fn tay(&mut self) {
+        let a = self.regs.a;
+        self.set_zero_negative(a);
+        self.regs.y = a;
+    }
+
+    fn tya(&mut self) {
+        let y = self.regs.y;
+        self.set_zero_negative(y);
+        self.regs.a = y;
+    }
+
+    fn tsx(&mut self) {
+        let s = self.regs.sp;
+        self.set_zero_negative(s);
+        self.regs.x = s;
+    }
+
+    fn txs(&mut self) {
+        self.regs.sp = self.regs.x;
+    }
 
     fn nop(&mut self) {}
 }
