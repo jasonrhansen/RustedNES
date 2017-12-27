@@ -209,6 +209,9 @@ impl<M: Memory> Cpu<M> {
             0xC4 => self.cpy(AddressMode::AbsoluteZeroPage),
             0xCC => self.cpy(AddressMode::Absolute),
 
+            0x24 => self.bit(AddressMode::AbsoluteZeroPage),
+            0x2C => self.bit(AddressMode::Absolute),
+
             _ => self.nop(),
         }
     }
@@ -324,7 +327,7 @@ impl<M: Memory> Cpu<M> {
 
     fn set_zero_negative(&mut self, result: u8) {
         self.set_flags(StatusFlags::ZERO_RESULT, result == 0);
-        self.set_flags(StatusFlags::NEGATIVE_RESULT, result | 0x80 != 0);
+        self.set_flags(StatusFlags::NEGATIVE_RESULT, result & 0x80 != 0);
     }
 
     //////////////////////
@@ -332,9 +335,9 @@ impl<M: Memory> Cpu<M> {
     //////////////////////
 
     fn ld_reg(&mut self, am: AddressMode, r: Register8) {
-        let val = self.load(am);
-        self.set_zero_negative(val);
-        self.set_register(r, val);
+        let m = self.load(am);
+        self.set_zero_negative(m);
+        self.set_register(r, m);
     }
 
     fn st_reg(&mut self, am: AddressMode, r: Register8) {
@@ -388,55 +391,55 @@ impl<M: Memory> Cpu<M> {
     }
 
     fn adc(&mut self, am: AddressMode) {
-        let val = self.load(am);
+        let m = self.load(am);
         let a = self.regs.a;
-        let result = a as u32 + val as u32 +
+        let result = a as u32 + m as u32 +
             if self.get_flag(StatusFlags::CARRY) { 1 } else { 0 };
 
         self.set_flags(StatusFlags::CARRY, result & 0x100 != 0);
         let result = result as u8;
         self.set_flags(StatusFlags::OVERFLOW,
-                       ((a & 0x80) == (val & 0x80)) && (a & 0x80 != result & 0x80));
+                       ((a & 0x80) == (m & 0x80)) && (a & 0x80 != result & 0x80));
         self.set_zero_negative(result);
 
         self.regs.a = result;
     }
 
     fn sbc(&mut self, am: AddressMode) {
-        let val = self.load(am);
+        let m = self.load(am);
         let a = self.regs.a;
-        let result = a as u32 - val as u32 -
+        let result = a as u32 - m as u32 -
             if self.get_flag(StatusFlags::CARRY) { 0 } else { 1 };
 
         self.set_flags(StatusFlags::CARRY, result & 0x100 == 0);
         let result = result as u8;
         self.set_flags(StatusFlags::OVERFLOW,
-                       !(((a & 0x80) != (val & 0x80)) && (a & 0x80 != result & 0x80)));
+                       !(((a & 0x80) != (m & 0x80)) && (a & 0x80 != result & 0x80)));
         self.set_zero_negative(result);
 
         self.regs.a = result;
     }
 
     fn and(&mut self, am: AddressMode) {
-        let val = self.load(am);
+        let m = self.load(am);
         let a = self.regs.a;
-        let result = val & a;
+        let result = m & a;
         self.set_zero_negative(result);
         self.regs.a = result;
     }
 
     fn ora(&mut self, am: AddressMode) {
-        let val = self.load(am);
+        let m = self.load(am);
         let a = self.regs.a;
-        let result = val | a;
+        let result = m | a;
         self.set_zero_negative(result);
         self.regs.a = result;
     }
 
     fn eor(&mut self, am: AddressMode) {
-        let val = self.load(am);
+        let m = self.load(am);
         let a = self.regs.a;
-        let result = val ^ a;
+        let result = m ^ a;
         self.set_zero_negative(result);
         self.regs.a = result;
     }
@@ -542,6 +545,15 @@ impl<M: Memory> Cpu<M> {
 
     fn cpy(&mut self, am: AddressMode) {
         self.compare(am, Register8::Y)
+    }
+
+    fn bit(&mut self, am: AddressMode) {
+        let m = self.load(am);
+        let a = self.regs.a;
+
+        self.set_flags(StatusFlags::NEGATIVE_RESULT, m & 0x80 != 0);
+        self.set_flags(StatusFlags::OVERFLOW, m & 0x40 != 0);
+        self.set_flags(StatusFlags::ZERO_RESULT, (m & a) == 0);
     }
 
     fn nop(&mut self) {
