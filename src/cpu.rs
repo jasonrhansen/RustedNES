@@ -234,6 +234,11 @@ impl<M: Memory> Cpu<M> {
             0xBA => self.tsx(),
             0x9A => self.txs(),
 
+            0x48 => self.pha(),
+            0x68 => self.pla(),
+            0x08 => self.php(),
+            0x28 => self.plp(),
+
             0xEA => self.nop(),
 
             _ => self.nop(),
@@ -411,6 +416,20 @@ impl<M: Memory> Cpu<M> {
         self.set_zero_negative(result);
         self.set_flags(StatusFlags::CARRY, m <= r);
     }
+
+    fn stack_push(&mut self, val: u8) {
+        let s = self.regs.sp;
+        self.store_byte(0x0100 | (s as u16), val);
+        self.regs.sp = s - 1;
+    }
+
+    fn stack_pull(&mut self) -> u8 {
+        let s = self.regs.sp + 1;
+        self.regs.sp = s;
+
+        self.load_byte(0x0100 | (s as u16))
+    }
+
 
     ///////////////////
     // Instructions
@@ -674,6 +693,27 @@ impl<M: Memory> Cpu<M> {
 
     fn txs(&mut self) {
         self.regs.sp = self.regs.x;
+    }
+
+    fn pha(&mut self) {
+        let a = self.regs.a;
+        self.stack_push(a);
+    }
+
+    fn pla(&mut self) {
+        let val = self.stack_pull();
+        self.set_zero_negative(val);
+        self.regs.a = val;
+    }
+
+    fn php(&mut self) {
+        let p = self.regs.status.bits();
+        self.stack_push(p);
+    }
+
+    fn plp(&mut self) {
+        let val = self.stack_pull();
+        self.regs.status = StatusFlags::from_bits(val).unwrap();
     }
 
     fn nop(&mut self) {}
