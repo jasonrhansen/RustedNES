@@ -212,6 +212,23 @@ impl<M: Memory> Cpu<M> {
             0x24 => self.bit(AddressMode::AbsoluteZeroPage),
             0x2C => self.bit(AddressMode::Absolute),
 
+            0xE6 => self.inc(AddressMode::AbsoluteZeroPage),
+            0xF6 => self.inc(AddressMode::IndexedZeroPage(Register8::X)),
+            0xEE => self.inc(AddressMode::Absolute),
+            0xFE => self.inc(AddressMode::Indexed(Register8::X)),
+
+            0xC6 => self.dec(AddressMode::AbsoluteZeroPage),
+            0xD6 => self.dec(AddressMode::IndexedZeroPage(Register8::X)),
+            0xCE => self.dec(AddressMode::Absolute),
+            0xDE => self.dec(AddressMode::Indexed(Register8::X)),
+
+            0xE8 => self.inx(),
+            0xC8 => self.iny(),
+            0xCA => self.dex(),
+            0x88 => self.dey(),
+
+            0xEA => self.nop(),
+
             _ => self.nop(),
         }
     }
@@ -330,6 +347,32 @@ impl<M: Memory> Cpu<M> {
         self.set_flags(StatusFlags::NEGATIVE_RESULT, result & 0x80 != 0);
     }
 
+    ///////////////////////
+    // Register helpers
+    ///////////////////////
+
+    fn get_register(&self, r: Register8) -> u8 {
+        use self::Register8::*;
+        match r {
+            A      => self.regs.a,
+            X      => self.regs.x,
+            Y      => self.regs.y,
+            Sp     => self.regs.sp,
+            Status => self.regs.status.bits(),
+        }
+    }
+
+    fn set_register(&mut self, r: Register8, val: u8) {
+        use self::Register8::*;
+        match r {
+            A      => self.regs.a = val,
+            X      => self.regs.x = val,
+            Y      => self.regs.y = val,
+            Sp     => self.regs.sp = val,
+            Status => self.regs.status = StatusFlags::from_bits(val).unwrap(),
+        }
+    }
+
     //////////////////////
     // Instruction helpers
     //////////////////////
@@ -362,9 +405,9 @@ impl<M: Memory> Cpu<M> {
         self.set_flags(StatusFlags::CARRY, m <= r);
     }
 
-    ///////////////
+    ///////////////////
     // Instructions
-    ///////////////
+    ///////////////////
 
     fn lda(&mut self, am: AddressMode) {
         self.ld_reg(am, Register8::A);
@@ -556,29 +599,42 @@ impl<M: Memory> Cpu<M> {
         self.set_flags(StatusFlags::ZERO_RESULT, (m & a) == 0);
     }
 
-    fn nop(&mut self) {
-
+    fn inc(&mut self, am: AddressMode) {
+        let val = self.load(am) + 1;
+        self.set_zero_negative(val);
+        self.store(am, val);
     }
 
-    fn get_register(&self, r: Register8) -> u8 {
-        use self::Register8::*;
-        match r {
-            A      => self.regs.a,
-            X      => self.regs.x,
-            Y      => self.regs.y,
-            Sp     => self.regs.sp,
-            Status => self.regs.status.bits(),
-        }
+    fn dec(&mut self, am: AddressMode) {
+        let val = self.load(am) - 1;
+        self.set_zero_negative(val);
+        self.store(am, val);
     }
 
-    fn set_register(&mut self, r: Register8, val: u8) {
-        use self::Register8::*;
-        match r {
-            A      => self.regs.a = val,
-            X      => self.regs.x = val,
-            Y      => self.regs.y = val,
-            Sp     => self.regs.sp = val,
-            Status => self.regs.status = StatusFlags::from_bits(val).unwrap(),
-        }
+    fn inx(&mut self) {
+        let val = self.regs.x + 1;
+        self.set_zero_negative(val);
+        self.regs.x = val;
     }
+
+    fn iny(&mut self) {
+        let val = self.regs.y + 1;
+        self.set_zero_negative(val);
+        self.regs.y = val;
+    }
+
+    fn dex(&mut self) {
+        let val = self.regs.x - 1;
+        self.set_zero_negative(val);
+        self.regs.x = val;
+    }
+
+    fn dey(&mut self) {
+        let val = self.regs.y - 1;
+        self.set_zero_negative(val);
+        self.regs.y = val;
+    }
+
+
+    fn nop(&mut self) {}
 }
