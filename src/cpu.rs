@@ -13,6 +13,10 @@ bitflags! {
     }
 }
 
+const NMI_VECTOR: u16 = 0xFFFA;
+const RESET_VECTOR: u16 = 0xFFFC;
+const BRK_VECTOR: u16 = 0xFFFE;
+
 impl Default for StatusFlags {
     // TODO: figure out what the initial values of the flags should be
     fn default() -> StatusFlags {
@@ -266,9 +270,12 @@ impl<M: Memory> Cpu<M> {
             0x2E => self.rol(AddressMode::Absolute),
             0x3E => self.rol(AddressMode::Indexed(Register8::X)),
 
+            0x00 => self.brk(),
+            0x40 => self.rti(),
+
             0xEA => self.nop(),
 
-            _ => self.nop(),
+            _ => panic!("Unimplemented op code {:X}", op),
         }
     }
 
@@ -789,6 +796,24 @@ impl<M: Memory> Cpu<M> {
         self.set_zero_negative(result);
         self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
         self.store(am, result);
+    }
+
+    fn brk(&mut self) {
+        let pc = self.regs.pc;
+        let status = self.regs.status.bits();
+        self.stack_push(((pc + 1) >> 8) as u8);
+        self.stack_push(pc as u8);
+        self.stack_push(status);
+        self.regs.pc = self.load_word(BRK_VECTOR);
+    }
+
+    fn rti(&mut self) {
+        let status = self.stack_pull();
+        let pcl = self.stack_pull();
+        let pch = self.stack_pull();
+
+        self.regs.status = StatusFlags::from_bits(status).unwrap();
+        self.regs.pc = ((pch as u16) << 8) | (pcl as u16);
     }
 
     fn nop(&mut self) {}
