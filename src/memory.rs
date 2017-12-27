@@ -2,13 +2,15 @@ pub trait Memory {
     fn load_byte(&self, address: u16) -> u8;
     fn store_byte(&mut self, address: u16, value: u8);
 
-//    fn load_word(&self, address: u16) -> u16 {
-//
-//    }
-//
-//    fn store_word(&mut self, address: u16, value: u16) {
-//
-//    }
+    fn load_word(&self, address: u16) -> u16 {
+        self.load_byte(address) as u16 |
+            ((self.load_byte(address + 1) as u16) << 8)
+    }
+
+    fn store_word(&mut self, address: u16, value: u16) {
+        self.store_byte(address, (value >> 8) as u8);
+        self.store_byte(address + 1, (value & 0xff) as u8);
+    }
 }
 
 pub struct Ram { buf: [u8; 2048] }

@@ -96,7 +96,7 @@ impl NesRom {
         let has_trainer = (flags6 & 0x04) != 0;
         if has_trainer {
             // Skip over trainer. We won't support it.
-            r.seek(SeekFrom::Current(512));
+            r.seek(SeekFrom::Current(512))?;
         }
 
         let mapper = ((flags7 & 0xf0) | (flags6 >> 4)) as u16;
