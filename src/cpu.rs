@@ -234,6 +234,9 @@ impl<M: Memory> Cpu<M> {
             0xBA => self.tsx(),
             0x9A => self.txs(),
 
+            0x20 => self.jsr(),
+            0x60 => self.rts(),
+
             0x48 => self.pha(),
             0x68 => self.pla(),
             0x08 => self.php(),
@@ -717,6 +720,20 @@ impl<M: Memory> Cpu<M> {
 
     fn txs(&mut self) {
         self.regs.sp = self.regs.x;
+    }
+
+    fn jsr(&mut self) {
+        let pc = self.regs.pc;
+        self.stack_push((pc >> 8) as u8);
+        self.stack_push(pc as u8);
+        let addr = self.next_pc_word();
+        self.regs.pc = addr;
+    }
+
+    fn rts(&mut self) {
+        let pcl = self.stack_pull();
+        let pch = self.stack_pull();
+        self.regs.pc = (((pch as u16) << 8) | (pcl as u16)) + 1;
     }
 
     fn pha(&mut self) {
