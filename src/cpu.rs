@@ -145,6 +145,34 @@ impl<M: Memory> Cpu<M> {
             0xF9 => self.sbc(AddressMode::Indexed(Register8::Y)),
             0xE1 => self.sbc(AddressMode::IndexedIndirect(Register8::X)),
             0xF1 => self.sbc(AddressMode::IndirectIndexed(Register8::Y)),
+
+            0x29 => self.and(AddressMode::Immediate),
+            0x25 => self.and(AddressMode::AbsoluteZeroPage),
+            0x35 => self.and(AddressMode::IndexedZeroPage(Register8::X)),
+            0x2D => self.and(AddressMode::Absolute),
+            0x3D => self.and(AddressMode::Indexed(Register8::X)),
+            0x39 => self.and(AddressMode::Indexed(Register8::Y)),
+            0x21 => self.and(AddressMode::IndexedIndirect(Register8::X)),
+            0x31 => self.and(AddressMode::IndirectIndexed(Register8::Y)),
+
+            0x09 => self.ora(AddressMode::Immediate),
+            0x05 => self.ora(AddressMode::AbsoluteZeroPage),
+            0x15 => self.ora(AddressMode::IndexedZeroPage(Register8::X)),
+            0x0D => self.ora(AddressMode::Absolute),
+            0x1D => self.ora(AddressMode::Indexed(Register8::X)),
+            0x19 => self.ora(AddressMode::Indexed(Register8::Y)),
+            0x01 => self.ora(AddressMode::IndexedIndirect(Register8::X)),
+            0x11 => self.ora(AddressMode::IndirectIndexed(Register8::Y)),
+
+            0x49 => self.eor(AddressMode::Immediate),
+            0x45 => self.eor(AddressMode::AbsoluteZeroPage),
+            0x55 => self.eor(AddressMode::IndexedZeroPage(Register8::X)),
+            0x4D => self.eor(AddressMode::Absolute),
+            0x5D => self.eor(AddressMode::Indexed(Register8::X)),
+            0x59 => self.eor(AddressMode::Indexed(Register8::Y)),
+            0x41 => self.eor(AddressMode::IndexedIndirect(Register8::X)),
+            0x51 => self.eor(AddressMode::IndirectIndexed(Register8::Y)),
+
             _ => self.nop(),
         }
     }
@@ -246,6 +274,10 @@ impl<M: Memory> Cpu<M> {
         }
     }
 
+    ///////////////////////
+    // Flag helpers
+    ///////////////////////
+
     fn get_flag(&self, sf: StatusFlags) -> bool {
         self.regs.status.contains(sf)
     }
@@ -259,7 +291,10 @@ impl<M: Memory> Cpu<M> {
         self.set_flags(StatusFlags::NEGATIVE_RESULT, result | 0x80 != 0);
     }
 
-    // Instructions helpers
+    //////////////////////
+    // Instruction helpers
+    //////////////////////
+
     fn ld_reg(&mut self, am: AddressMode, r: Register8) {
         let val = self.load(am);
         self.set_zero_negative(val);
@@ -271,7 +306,10 @@ impl<M: Memory> Cpu<M> {
         self.store(am, val);
     }
 
+    ///////////////
     // Instructions
+    ///////////////
+
     fn lda(&mut self, am: AddressMode) {
         self.ld_reg(am, Register8::A);
     }
@@ -325,6 +363,31 @@ impl<M: Memory> Cpu<M> {
 
         self.regs.a = result;
     }
+
+    fn and(&mut self, am: AddressMode) {
+        let val = self.load(am);
+        let a = self.regs.a;
+        let result = val & a;
+        self.set_zero_negative(result);
+        self.regs.a = result;
+    }
+
+    fn ora(&mut self, am: AddressMode) {
+        let val = self.load(am);
+        let a = self.regs.a;
+        let result = val | a;
+        self.set_zero_negative(result);
+        self.regs.a = result;
+    }
+
+    fn eor(&mut self, am: AddressMode) {
+        let val = self.load(am);
+        let a = self.regs.a;
+        let result = val ^ a;
+        self.set_zero_negative(result);
+        self.regs.a = result;
+    }
+
 
     fn nop(&mut self) {
 
