@@ -192,6 +192,23 @@ impl<M: Memory> Cpu<M> {
             0x70 => self.bvs(),
             0x50 => self.bvc(),
 
+            0xC9 => self.cmp(AddressMode::Immediate),
+            0xC5 => self.cmp(AddressMode::AbsoluteZeroPage),
+            0xD5 => self.cmp(AddressMode::IndexedZeroPage(Register8::X)),
+            0xCD => self.cmp(AddressMode::Absolute),
+            0xDD => self.cmp(AddressMode::Indexed(Register8::X)),
+            0xD9 => self.cmp(AddressMode::Indexed(Register8::Y)),
+            0xC1 => self.cmp(AddressMode::IndexedIndirect(Register8::X)),
+            0xD1 => self.cmp(AddressMode::IndirectIndexed(Register8::Y)),
+
+            0xE0 => self.cpx(AddressMode::Immediate),
+            0xE4 => self.cpx(AddressMode::AbsoluteZeroPage),
+            0xEC => self.cpx(AddressMode::Absolute),
+
+            0xC0 => self.cpy(AddressMode::Immediate),
+            0xC4 => self.cpy(AddressMode::AbsoluteZeroPage),
+            0xCC => self.cpy(AddressMode::Absolute),
+
             _ => self.nop(),
         }
     }
@@ -331,6 +348,15 @@ impl<M: Memory> Cpu<M> {
             let addr = (self.regs.pc as i16 + offset as i16) as u16;
             self.regs.pc = addr;
         }
+    }
+
+    fn compare(&mut self, am: AddressMode, reg: Register8) {
+        let m = self.load(am);
+        let r = self.get_register(reg);
+        let result = r - m;
+
+        self.set_zero_negative(result);
+        self.set_flags(StatusFlags::CARRY, m <= r);
     }
 
     ///////////////
@@ -504,6 +530,18 @@ impl<M: Memory> Cpu<M> {
     fn bvc(&mut self) {
         let cond = !self.get_flag(StatusFlags::OVERFLOW);
         self.branch(cond);
+    }
+
+    fn cmp(&mut self, am: AddressMode) {
+        self.compare(am, Register8::A)
+    }
+
+    fn cpx(&mut self, am: AddressMode) {
+        self.compare(am, Register8::X)
+    }
+
+    fn cpy(&mut self, am: AddressMode) {
+        self.compare(am, Register8::Y)
     }
 
     fn nop(&mut self) {
