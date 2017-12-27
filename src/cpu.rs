@@ -2,14 +2,14 @@ use memory::Memory;
 
 bitflags! {
     struct StatusFlags: u8 {
-        const CARRY            = 1 << 0;
-        const ZERO_RESULT      = 1 << 1;
-        const INTERUPT_DISABLE = 1 << 2;
-        const DECIMAL_MODE     = 1 << 3;
-        const BREAK_COMMAND    = 1 << 4;
-        const EXPANSION        = 1 << 5;
-        const OVERFLOW         = 1 << 6;
-        const NEGATIVE_RESULT  = 1 << 7;
+        const CARRY             = 1 << 0;
+        const ZERO_RESULT       = 1 << 1;
+        const INTERRUPT_DISABLE = 1 << 2;
+        const DECIMAL_MODE      = 1 << 3;
+        const BREAK_COMMAND     = 1 << 4;
+        const EXPANSION         = 1 << 5;
+        const OVERFLOW          = 1 << 6;
+        const NEGATIVE_RESULT   = 1 << 7;
     }
 }
 
@@ -172,6 +172,14 @@ impl<M: Memory> Cpu<M> {
             0x59 => self.eor(AddressMode::Indexed(Register8::Y)),
             0x41 => self.eor(AddressMode::IndexedIndirect(Register8::X)),
             0x51 => self.eor(AddressMode::IndirectIndexed(Register8::Y)),
+
+            0x38 => self.sec(),
+            0x18 => self.clc(),
+            0x78 => self.sei(),
+            0x58 => self.cli(),
+            0xF8 => self.sed(),
+            0xD8 => self.cld(),
+            0xB8 => self.clv(),
 
             _ => self.nop(),
         }
@@ -388,6 +396,33 @@ impl<M: Memory> Cpu<M> {
         self.regs.a = result;
     }
 
+    fn sec(&mut self) {
+        self.set_flags(StatusFlags::CARRY, true);
+    }
+
+    fn clc(&mut self) {
+        self.set_flags(StatusFlags::CARRY, false);
+    }
+
+    fn sei(&mut self) {
+        self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
+    }
+
+    fn cli(&mut self) {
+        self.set_flags(StatusFlags::INTERRUPT_DISABLE, false);
+    }
+
+    fn sed(&mut self) {
+        self.set_flags(StatusFlags::DECIMAL_MODE, true);
+    }
+
+    fn cld(&mut self) {
+        self.set_flags(StatusFlags::DECIMAL_MODE, false);
+    }
+
+    fn clv(&mut self) {
+        self.set_flags(StatusFlags::OVERFLOW, false);
+    }
 
     fn nop(&mut self) {
 
