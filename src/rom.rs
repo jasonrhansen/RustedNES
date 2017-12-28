@@ -9,10 +9,10 @@ use byteorder::{ReadBytesExt, BigEndian};
 // ROM must begin with this constant ("NES" followed by MS-DOS end-of-file)
 const MAGIC_CONSTANT: u32 = 0x4e45531a;
 
-const PRG_ROM_BANK_SIZE: usize = 16 * 1024;
-const CHR_ROM_BANK_SIZE: usize = 8 * 1024;
+pub const PRG_ROM_BANK_SIZE: u16 = 16 * 1024;
+const CHR_ROM_BANK_SIZE: u16 = 8 * 1024;
 
-const PRG_RAM_BANK_SIZE: usize = 8 * 1024;
+const PRG_RAM_BANK_SIZE: u16 = 8 * 1024;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Mirroring {
@@ -63,7 +63,7 @@ pub struct NesRom {
     pub mirroring: Mirroring,
     pub prg_rom: Vec<u8>,
     pub chr_rom: Vec<u8>,
-    pub prg_ram_size: usize,
+    pub prg_ram_size: u16,
 }
 
 impl Debug for NesRom {
@@ -81,13 +81,13 @@ impl NesRom {
             return Err(LoadError::new("magic constant in header is incorrect"));
         }
 
-        let prg_rom_size = r.read_u8()? as usize * PRG_RAM_BANK_SIZE;
-        let chr_rom_size = r.read_u8()? as usize * CHR_ROM_BANK_SIZE;
+        let prg_rom_size = r.read_u8()? as u16 * PRG_RAM_BANK_SIZE;
+        let chr_rom_size = r.read_u8()? as u16 * CHR_ROM_BANK_SIZE;
 
         let flags6 = r.read_u8()?;
         let flags7 = r.read_u8()?;
 
-        let prg_ram_banks = max(1, r.read_u8()? as usize);
+        let prg_ram_banks = max(1, r.read_u8()? as u16);
 
         // Skip the rest of the header
         // TODO: Implement NEW 2.0
@@ -110,10 +110,10 @@ impl NesRom {
             Mirroring::Horizontal
         };
 
-        let mut prg_rom = vec![0u8; prg_rom_size];
+        let mut prg_rom = vec![0u8; prg_rom_size as usize];
         r.read_exact(&mut prg_rom[..])?;
 
-        let mut chr_rom = vec![0u8; chr_rom_size];
+        let mut chr_rom = vec![0u8; chr_rom_size as usize];
         r.read_exact(&mut chr_rom[..])?;
 
         let prg_ram_size = prg_ram_banks * PRG_RAM_BANK_SIZE;
