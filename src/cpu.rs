@@ -14,7 +14,15 @@ bitflags! {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum Interrupt {
+    None,
+    Nmi,
+    Irq,
+}
+
 const NMI_VECTOR: u16 = 0xFFFA;
+const IRQ_VECTOR: u16 = 0xFFFE;
 const RESET_VECTOR: u16 = 0xFFFC;
 const BRK_VECTOR: u16 = 0xFFFE;
 
@@ -90,6 +98,7 @@ pub struct Cpu<M: Memory> {
     cycles: u64,
     regs: Regs,
     mem: M,
+    interrupt: Interrupt
 }
 
 impl<M: Memory> Memory for Cpu<M> {
@@ -108,6 +117,7 @@ impl<M: Memory> Cpu<M> {
             cycles: 0,
             regs: Regs::new(),
             mem: memory,
+            interrupt: Interrupt::None,
         };
 
         cpu.reset();
@@ -124,7 +134,17 @@ impl<M: Memory> Cpu<M> {
     pub fn step(&mut self) -> u8 {
         let cycles = self.cycles;
 
+        self.handle_interrupts();
+
         let op = self.next_pc_byte();
+        self.run_opcode(op);
+
+        self.cycles += OPCODE_CYCLES[op as usize] as u64;
+
+        (self.cycles - cycles) as u8
+    }
+
+    fn run_opcode(&mut self, op: u8) {
         match op {
             0xA9 => self.lda(AddressMode::Immediate),
             0xA5 => self.lda(AddressMode::ZeroPage),
@@ -326,10 +346,6 @@ impl<M: Memory> Cpu<M> {
 
             _ => panic!("Unimplemented op code {:X}", op),
         }
-
-        self.cycles += OPCODE_CYCLES[op as usize] as u64;
-
-        (self.cycles - cycles) as u8
     }
 
     fn next_pc_byte(&mut self) -> u8 {
@@ -345,14 +361,13 @@ impl<M: Memory> Cpu<M> {
     }
 
     fn load_word_zero_page(&self, offset: u8) -> u16 {
-        if offset == 255 {
-            self.load_byte(255) as u16 +
-                ((self.load_byte(0) as u16) << 8)
+        if offset == 0xFF {
+            self.load_byte(0xFF) as u16 +
+                ((self.load_byte(0x00) as u16) << 8)
         } else {
             self.load_word(offset as u16)
         }
     }
-
 
     fn load(&mut self, am: AddressMode) -> u8 {
         use self::AddressMode::*;
@@ -528,19 +543,34 @@ impl<M: Memory> Cpu<M> {
         self.set_flags(StatusFlags::CARRY, m <= r);
     }
 
-    fn stack_push(&mut self, val: u8) {
+    // Push byte onto the stack
+    fn push_byte(&mut self, val: u8) {
         let s = self.regs.sp;
         self.store_byte(0x0100 | (s as u16), val);
         self.regs.sp = s - 1;
     }
 
-    fn stack_pull(&mut self) -> u8 {
+    // Pull byte from the stack
+    fn pull_byte(&mut self) -> u8 {
         let s = self.regs.sp + 1;
         self.regs.sp = s;
 
         self.load_byte(0x0100 | (s as u16))
     }
 
+    // Push word onto the stack
+    fn push_word(&mut self, val: u16) {
+        self.push_byte((val >> 8) as u8);
+        self.push_byte(val as u8);
+    }
+
+    // Pull word from the stack
+    fn pull_word(&mut self) -> u16 {
+        let lsb= self.pull_byte();
+        let msb= self.pull_byte();
+
+        ((msb as u16) << 8) | (lsb as u16)
+    }
 
     ///////////////////
     // Instructions
@@ -808,36 +838,33 @@ impl<M: Memory> Cpu<M> {
 
     fn jsr(&mut self) {
         let pc = self.regs.pc;
-        self.stack_push((pc >> 8) as u8);
-        self.stack_push(pc as u8);
+        self.push_word(pc);
         let addr = self.next_pc_word();
         self.regs.pc = addr;
     }
 
     fn rts(&mut self) {
-        let pcl = self.stack_pull();
-        let pch = self.stack_pull();
-        self.regs.pc = (((pch as u16) << 8) | (pcl as u16)) + 1;
+        self.regs.pc = self.pull_word();
     }
 
     fn pha(&mut self) {
         let a = self.regs.a;
-        self.stack_push(a);
+        self.push_byte(a);
     }
 
     fn pla(&mut self) {
-        let val = self.stack_pull();
+        let val = self.pull_byte();
         self.set_zero_negative(val);
         self.regs.a = val;
     }
 
     fn php(&mut self) {
         let p = self.regs.status.bits();
-        self.stack_push(p);
+        self.push_byte(p);
     }
 
     fn plp(&mut self) {
-        let val = self.stack_pull();
+        let val = self.pull_byte();
         self.regs.status = StatusFlags::from_bits(val).unwrap();
     }
 
@@ -878,19 +905,18 @@ impl<M: Memory> Cpu<M> {
     fn brk(&mut self) {
         let pc = self.regs.pc;
         let status = self.regs.status.bits();
-        self.stack_push(((pc + 1) >> 8) as u8);
-        self.stack_push(pc as u8);
-        self.stack_push(status);
+        self.push_word(pc);
+        self.push_byte(status);
+        self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
         self.regs.pc = self.load_word(BRK_VECTOR);
     }
 
     fn rti(&mut self) {
-        let status = self.stack_pull();
-        let pcl = self.stack_pull();
-        let pch = self.stack_pull();
+        let status = self.pull_byte();
+        let pc = self.pull_word();
 
         self.regs.status = StatusFlags::from_bits(status).unwrap();
-        self.regs.pc = ((pch as u16) << 8) | (pcl as u16);
+        self.regs.pc = pc;
     }
 
     fn nop(&mut self) {}
@@ -924,5 +950,40 @@ impl<M: Memory> Cpu<M> {
     fn slo(&mut self, am: AddressMode) {
         self.asl(am);
         self.ora(am);
+    }
+
+    ///////////////
+    // Interrupts
+    ///////////////
+
+    // Cause NMI (Non-Maskable Interrupt) to be run on next step
+    pub fn trigger_nmi(&mut self) {
+        self.interrupt = Interrupt::Nmi;
+    }
+
+    // Cause IRQ to be run on next step
+    pub fn trigger_irq(&mut self) {
+        if !self.get_flag(StatusFlags::INTERRUPT_DISABLE) {
+            self.interrupt = Interrupt::Irq;
+        }
+    }
+
+    fn handle_interrupts(&mut self) {
+        match self.interrupt {
+            Interrupt::Nmi => self.handle_interrupt(NMI_VECTOR),
+            Interrupt::Irq => self.handle_interrupt(IRQ_VECTOR),
+            Interrupt::None => (),
+        }
+    }
+
+    fn handle_interrupt(&mut self, vector: u16) {
+        let pc = self.regs.pc;
+        let status = self.regs.status.bits();
+        self.push_word(pc);
+        self.push_byte(status);
+        self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
+        self.regs.pc = self.load_word(vector);
+        self.interrupt = Interrupt::None;
+        self.cycles += 7;
     }
 }
