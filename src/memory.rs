@@ -1,3 +1,9 @@
+use std::ops::{Deref, DerefMut};
+
+use ppu::Ppu;
+use apu::Apu;
+use input::Input;
+
 pub trait Memory {
     fn load_byte(&self, address: u16) -> u8;
     fn store_byte(&mut self, address: u16, value: u8);
@@ -13,15 +19,73 @@ pub trait Memory {
     }
 }
 
-pub struct Ram { buf: [u8; 2048] }
+// 2KB internal RAM
+const RAM_SIZE: usize = 0x0800;
 
+pub struct Ram { buf: [u8; RAM_SIZE] }
+
+// For the RAM we only use the bottom 11 bits of the address.
+// This will prevent index out of bounds, and will support mirroring.
 impl Memory for Ram {
     fn load_byte(&self, address: u16) -> u8 {
-        self.buf[address as usize]
+        self.buf[address as usize & (RAM_SIZE - 1)]
     }
 
     fn store_byte(&mut self, address: u16, value: u8) {
-        self.buf[address as usize] = value
+        self.buf[address as usize & (RAM_SIZE - 1)] = value
     }
 }
 
+impl Deref for Ram {
+    type Target = [u8; RAM_SIZE];
+
+    fn deref(&self) -> &Self::Target {
+        &self.buf
+    }
+}
+
+impl DerefMut for Ram {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.buf
+    }
+}
+
+
+struct CpuMemMap {
+    pub ram: Ram,
+    pub ppu: Ppu,
+    pub apu: Apu,
+    pub input: Input,
+}
+
+impl Memory for CpuMemMap {
+    fn load_byte(&self, address: u16) -> u8 {
+        if address < 0x2000 {
+            self.ram.load_byte(address)
+        } else if address < 0x4000 {
+            self.ppu.load_byte(address)
+        } else if address < 0x4015 {
+            self.apu.load_byte(address)
+        } else if address < 0x4018 {
+            self.input.load_byte(address)
+        } else {
+            // TODO: add mapper
+            0
+        }
+    }
+
+    fn store_byte(&mut self, address: u16, value: u8) {
+        if address < 0x2000 {
+            self.ram.store_byte(address, value);
+        } else if address < 0x4000 {
+            self.ppu.store_byte(address, value);
+        } else if address < 0x4015 {
+            self.apu.store_byte(address, value);
+        } else if address < 0x4018 {
+            self.input.store_byte(address, value);
+        } else {
+            // TODO: add mapper
+        }
+
+    }
+}
