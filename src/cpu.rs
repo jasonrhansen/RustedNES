@@ -2,6 +2,7 @@ use memory::Memory;
 
 bitflags! {
     struct StatusFlags: u8 {
+        const NONE              = 0;
         const CARRY             = 1 << 0;
         const ZERO_RESULT       = 1 << 1;
         const INTERRUPT_DISABLE = 1 << 2;
@@ -38,13 +39,6 @@ static OPCODE_CYCLES: &'static [u8] = &[
     2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
 ];
 
-impl Default for StatusFlags {
-    // TODO: figure out what the initial values of the flags should be
-    fn default() -> StatusFlags {
-        StatusFlags::EXPANSION
-    }
-}
-
 struct Regs {
     pc: u16,
     a: u8,
@@ -61,8 +55,8 @@ impl Regs {
             a: 0,
             x: 0,
             y: 0,
-            sp: 0xFD,
-            status: StatusFlags::default(),
+            sp: 0,
+            status: StatusFlags::NONE,
         }
     }
 }
@@ -110,11 +104,21 @@ impl<M: Memory> Memory for Cpu<M> {
 
 impl<M: Memory> Cpu<M> {
     pub fn new(memory: M) -> Cpu<M> {
-        Cpu {
+        let mut cpu = Cpu {
             cycles: 0,
             regs: Regs::new(),
             mem: memory,
-        }
+        };
+
+        cpu.reset();
+
+        cpu
+    }
+
+    pub fn reset(&mut self) {
+        self.regs.pc = self.load_word(RESET_VECTOR);
+        self.regs.sp = 0xFD;
+        self.regs.status = StatusFlags::INTERRUPT_DISABLE | StatusFlags::EXPANSION;
     }
 
     pub fn step(&mut self) -> u8 {
