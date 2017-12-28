@@ -17,6 +17,27 @@ const NMI_VECTOR: u16 = 0xFFFA;
 const RESET_VECTOR: u16 = 0xFFFC;
 const BRK_VECTOR: u16 = 0xFFFE;
 
+// The number of cycles that each opcode takes.
+// This doesn't include additional cycles for page crossing.
+static OPCODE_CYCLES: &'static [u8] = &[
+    7, 6, 2, 8, 3, 3, 5, 5, 3, 2, 2, 2, 4, 4, 6, 6,
+    2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
+    6, 6, 2, 8, 3, 3, 5, 5, 4, 2, 2, 2, 4, 4, 6, 6,
+    2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
+    6, 6, 2, 8, 3, 3, 5, 5, 3, 2, 2, 2, 3, 4, 6, 6,
+    2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
+    6, 6, 2, 8, 3, 3, 5, 5, 4, 2, 2, 2, 5, 4, 6, 6,
+    2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
+    2, 6, 2, 6, 3, 3, 3, 3, 2, 2, 2, 2, 4, 4, 4, 4,
+    2, 6, 2, 6, 4, 4, 4, 4, 2, 5, 2, 5, 5, 5, 5, 5,
+    2, 6, 2, 6, 3, 3, 3, 3, 2, 2, 2, 2, 4, 4, 4, 4,
+    2, 5, 2, 5, 4, 4, 4, 4, 2, 4, 2, 4, 4, 4, 4, 4,
+    2, 6, 2, 8, 3, 3, 5, 5, 2, 2, 2, 2, 4, 4, 6, 6,
+    2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
+    2, 6, 2, 8, 3, 3, 5, 5, 2, 2, 2, 2, 4, 4, 6, 6,
+    2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
+];
+
 impl Default for StatusFlags {
     // TODO: figure out what the initial values of the flags should be
     fn default() -> StatusFlags {
@@ -67,6 +88,10 @@ enum AddressMode {
     Register(Register8),
 }
 
+fn mem_pages_same(m1: u16, m2: u16) -> bool {
+    (m1 & 0xFF00) == (m2 & 0xFF00)
+}
+
 pub struct Cpu<M: Memory> {
     cycles: u64,
     regs: Regs,
@@ -92,7 +117,9 @@ impl<M: Memory> Cpu<M> {
         }
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> u8 {
+        let cycles = self.cycles;
+
         let op = self.next_pc_byte();
         match op {
             0xA9 => self.lda(AddressMode::Immediate),
@@ -295,6 +322,10 @@ impl<M: Memory> Cpu<M> {
 
             _ => panic!("Unimplemented op code {:X}", op),
         }
+
+        self.cycles += OPCODE_CYCLES[op as usize] as u64;
+
+        (self.cycles - cycles) as u8
     }
 
     fn next_pc_byte(&mut self) -> u8 {
@@ -318,6 +349,7 @@ impl<M: Memory> Cpu<M> {
         }
     }
 
+
     fn load(&mut self, am: AddressMode) -> u8 {
         use self::AddressMode::*;
         match am {
@@ -333,7 +365,14 @@ impl<M: Memory> Cpu<M> {
             AbsoluteIndexed(reg) => {
                 let base = self.next_pc_word();
                 let index = self.get_register(reg) as u16;
-                self.load_byte(base + index)
+                let addr = base + index;
+
+                // Crossing page boundaries adds an extra cycle
+                if !mem_pages_same(base, addr) {
+                    self.cycles += 1;
+                }
+
+                self.load_byte(addr)
             },
             ZeroPageIndexed(reg) => {
                 let base = self.next_pc_byte() as u16;
@@ -350,7 +389,14 @@ impl<M: Memory> Cpu<M> {
                 let zp_offset = self.next_pc_byte();
                 let base = self.load_word_zero_page(zp_offset);
                 let index = self.get_register(reg) as u16;
-                self.load_byte(base + index)
+                let addr = base + index;
+
+                // Crossing page boundaries adds an extra cycle
+                if !mem_pages_same(base, addr) {
+                    self.cycles += 1;
+                }
+
+                self.load_byte(addr)
             },
             Register(reg) => self.get_register(reg),
         }
@@ -456,6 +502,15 @@ impl<M: Memory> Cpu<M> {
         let offset = self.next_pc_byte();
         if cond {
             let addr = (self.regs.pc as i16 + offset as i16) as u16;
+
+            // Add cycle for taking branch
+            self.cycles += 1;
+
+            // Add another cycle if the branching to a new page
+            if !mem_pages_same(self.regs.pc, addr) {
+                self.cycles += 1;
+            }
+
             self.regs.pc = addr;
         }
     }
