@@ -275,6 +275,15 @@ impl<M: Memory> Cpu<M> {
 
             0xEA => self.nop(),
 
+            // Unofficial opcodes
+            0x89 => self.op_89(),
+            0x80 => self.op_80(),
+            0xDA => self.op_da(),
+            0xFA => self.op_fa(),
+            0x8B => self.xaa(),
+            0xB3 => self.lax(),
+            0x07 => self.slo(),
+
             _ => panic!("Unimplemented op code {:X}", op),
         }
     }
@@ -817,4 +826,44 @@ impl<M: Memory> Cpu<M> {
     }
 
     fn nop(&mut self) {}
+
+    ///////////////////////////
+    // Unofficial Instructions
+    ///////////////////////////
+
+    // 2-byte nop used by "Puzznic" and "F-117A Stealth Figher and Infiltrator"
+    fn op_89(&mut self) {
+        let pc = self.regs.pc;
+        self.regs.pc = pc + 1;
+    }
+
+    // 2-byte nop used by "Beauty and the Beast (E)"
+    fn op_80(&mut self) {
+        self.op_89();
+    }
+
+    // Used by "Dynowarz"
+    fn op_da(&mut self) {
+        self.nop();
+    }
+
+    // Used by "Dynowarz"
+    fn op_fa(&mut self) {
+        self.nop();
+    }
+
+    // Used by "Gaau Hok Gwong Cheung (Ch)"
+    fn xaa(&mut self) {
+        //TODO: Implement
+    }
+
+    // Used by "Super Cars (U)"
+    fn lax(&mut self) {
+        //TODO: Implement
+    }
+
+    // Used by "Disney's Aladdin (E)"
+    fn slo(&mut self) {
+        //TODO: Implement
+    }
 }
