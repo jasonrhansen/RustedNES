@@ -276,13 +276,22 @@ impl<M: Memory> Cpu<M> {
             0xEA => self.nop(),
 
             // Unofficial opcodes
-            0x89 => self.op_89(),
-            0x80 => self.op_80(),
-            0xDA => self.op_da(),
-            0xFA => self.op_fa(),
+            0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xEA | 0xFA => self.nop(),
+            0x80 | 0x82 | 0x89 | 0xC2 | 0xE2 => self.nop_2_bytes(),
             0x8B => self.xaa(),
-            0xB3 => self.lax(),
-            0x07 => self.slo(),
+            0xA7 => self.lax(AddressMode::AbsoluteZeroPage),
+            0xB7 => self.lax(AddressMode::IndexedZeroPage(Register8::Y)),
+            0xAF => self.lax(AddressMode::Absolute),
+            0xBF => self.lax(AddressMode::Indexed(Register8::Y)),
+            0xA3 => self.lax(AddressMode::IndexedIndirect(Register8::X)),
+            0xB3 => self.lax(AddressMode::IndirectIndexed(Register8::Y)),
+            0x07 => self.slo(AddressMode::AbsoluteZeroPage),
+            0x17 => self.slo(AddressMode::IndexedZeroPage(Register8::X)),
+            0x0F => self.slo(AddressMode::Absolute),
+            0x1B => self.slo(AddressMode::Indexed(Register8::Y)),
+            0x1F => self.slo(AddressMode::Indexed(Register8::X)),
+            0x03 => self.slo(AddressMode::IndexedIndirect(Register8::X)),
+            0x13 => self.slo(AddressMode::IndirectIndexed(Register8::Y)),
 
             _ => panic!("Unimplemented op code {:X}", op),
         }
@@ -831,39 +840,30 @@ impl<M: Memory> Cpu<M> {
     // Unofficial Instructions
     ///////////////////////////
 
-    // 2-byte nop used by "Puzznic" and "F-117A Stealth Figher and Infiltrator"
-    fn op_89(&mut self) {
+    fn nop_2_bytes(&mut self) {
         let pc = self.regs.pc;
         self.regs.pc = pc + 1;
     }
 
-    // 2-byte nop used by "Beauty and the Beast (E)"
-    fn op_80(&mut self) {
-        self.op_89();
-    }
-
-    // Used by "Dynowarz"
-    fn op_da(&mut self) {
-        self.nop();
-    }
-
-    // Used by "Dynowarz"
-    fn op_fa(&mut self) {
-        self.nop();
-    }
-
     // Used by "Gaau Hok Gwong Cheung (Ch)"
+    // This instruction can be unpredictable.
+    // See http://visual6502.org/wiki/index.php?title=6502_Opcode_8B_%28XAA,_ANE%29
     fn xaa(&mut self) {
-        //TODO: Implement
+        let imm = self.next_pc_byte();
+        let a = self.regs.a;
+        let x = self.regs.x;
+        self.regs.a = a & x & imm;
     }
 
     // Used by "Super Cars (U)"
-    fn lax(&mut self) {
-        //TODO: Implement
+    fn lax(&mut self, am: AddressMode) {
+        self.lda(am);
+        self.tax();
     }
 
     // Used by "Disney's Aladdin (E)"
-    fn slo(&mut self) {
-        //TODO: Implement
+    fn slo(&mut self, am: AddressMode) {
+        self.asl(am);
+        self.ora(am);
     }
 }
