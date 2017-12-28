@@ -59,9 +59,9 @@ enum Register8 {
 enum AddressMode {
     Immediate,
     Absolute,
-    AbsoluteZeroPage,
-    Indexed(Register8),
-    IndexedZeroPage(Register8),
+    ZeroPage,
+    AbsoluteIndexed(Register8),
+    ZeroPageIndexed(Register8),
     IndexedIndirect(Register8),
     IndirectIndexed(Register8),
     Register(Register8),
@@ -96,84 +96,84 @@ impl<M: Memory> Cpu<M> {
         let op = self.next_pc_byte();
         match op {
             0xA9 => self.lda(AddressMode::Immediate),
-            0xA5 => self.lda(AddressMode::AbsoluteZeroPage),
-            0xB5 => self.lda(AddressMode::IndexedZeroPage(Register8::X)),
+            0xA5 => self.lda(AddressMode::ZeroPage),
+            0xB5 => self.lda(AddressMode::ZeroPageIndexed(Register8::X)),
             0xAD => self.lda(AddressMode::Absolute),
-            0xBD => self.lda(AddressMode::Indexed(Register8::X)),
-            0xB9 => self.lda(AddressMode::Indexed(Register8::Y)),
+            0xBD => self.lda(AddressMode::AbsoluteIndexed(Register8::X)),
+            0xB9 => self.lda(AddressMode::AbsoluteIndexed(Register8::Y)),
             0xA1 => self.lda(AddressMode::IndexedIndirect(Register8::X)),
             0xB1 => self.lda(AddressMode::IndirectIndexed(Register8::Y)),
 
             0xA2 => self.ldx(AddressMode::Immediate),
-            0xA6 => self.ldx(AddressMode::AbsoluteZeroPage),
-            0xB6 => self.ldx(AddressMode::IndexedZeroPage(Register8::Y)),
+            0xA6 => self.ldx(AddressMode::ZeroPage),
+            0xB6 => self.ldx(AddressMode::ZeroPageIndexed(Register8::Y)),
             0xAE => self.ldx(AddressMode::Absolute),
-            0xBE => self.ldx(AddressMode::Indexed(Register8::Y)),
+            0xBE => self.ldx(AddressMode::AbsoluteIndexed(Register8::Y)),
 
             0xA0 => self.ldy(AddressMode::Immediate),
-            0xA4 => self.ldy(AddressMode::AbsoluteZeroPage),
-            0xB4 => self.ldy(AddressMode::IndexedZeroPage(Register8::X)),
+            0xA4 => self.ldy(AddressMode::ZeroPage),
+            0xB4 => self.ldy(AddressMode::ZeroPageIndexed(Register8::X)),
             0xAC => self.ldy(AddressMode::Absolute),
-            0xBC => self.ldy(AddressMode::Indexed(Register8::X)),
+            0xBC => self.ldy(AddressMode::AbsoluteIndexed(Register8::X)),
 
-            0x85 => self.sta(AddressMode::AbsoluteZeroPage),
-            0x95 => self.sta(AddressMode::IndexedZeroPage(Register8::X)),
+            0x85 => self.sta(AddressMode::ZeroPage),
+            0x95 => self.sta(AddressMode::ZeroPageIndexed(Register8::X)),
             0x8D => self.sta(AddressMode::Absolute),
-            0x9D => self.sta(AddressMode::Indexed(Register8::X)),
-            0x99 => self.sta(AddressMode::Indexed(Register8::Y)),
+            0x9D => self.sta(AddressMode::AbsoluteIndexed(Register8::X)),
+            0x99 => self.sta(AddressMode::AbsoluteIndexed(Register8::Y)),
             0x81 => self.sta(AddressMode::IndexedIndirect(Register8::X)),
             0x91 => self.sta(AddressMode::IndirectIndexed(Register8::Y)),
 
-            0x86 => self.stx(AddressMode::AbsoluteZeroPage),
-            0x96 => self.stx(AddressMode::IndexedZeroPage(Register8::Y)),
+            0x86 => self.stx(AddressMode::ZeroPage),
+            0x96 => self.stx(AddressMode::ZeroPageIndexed(Register8::Y)),
             0x8E => self.stx(AddressMode::Absolute),
 
-            0x84 => self.sty(AddressMode::AbsoluteZeroPage),
-            0x94 => self.sty(AddressMode::IndexedZeroPage(Register8::X)),
+            0x84 => self.sty(AddressMode::ZeroPage),
+            0x94 => self.sty(AddressMode::ZeroPageIndexed(Register8::X)),
             0x8C => self.sty(AddressMode::Absolute),
 
             0x69 => self.adc(AddressMode::Immediate),
-            0x65 => self.adc(AddressMode::AbsoluteZeroPage),
-            0x75 => self.adc(AddressMode::IndexedZeroPage(Register8::X)),
+            0x65 => self.adc(AddressMode::ZeroPage),
+            0x75 => self.adc(AddressMode::ZeroPageIndexed(Register8::X)),
             0x6D => self.adc(AddressMode::Absolute),
-            0x7D => self.adc(AddressMode::Indexed(Register8::X)),
-            0x79 => self.adc(AddressMode::Indexed(Register8::Y)),
+            0x7D => self.adc(AddressMode::AbsoluteIndexed(Register8::X)),
+            0x79 => self.adc(AddressMode::AbsoluteIndexed(Register8::Y)),
             0x61 => self.adc(AddressMode::IndexedIndirect(Register8::X)),
             0x71 => self.adc(AddressMode::IndirectIndexed(Register8::Y)),
 
             0xE9 => self.sbc(AddressMode::Immediate),
-            0xE5 => self.sbc(AddressMode::AbsoluteZeroPage),
-            0xF5 => self.sbc(AddressMode::IndexedZeroPage(Register8::X)),
+            0xE5 => self.sbc(AddressMode::ZeroPage),
+            0xF5 => self.sbc(AddressMode::ZeroPageIndexed(Register8::X)),
             0xED => self.sbc(AddressMode::Absolute),
-            0xFD => self.sbc(AddressMode::Indexed(Register8::X)),
-            0xF9 => self.sbc(AddressMode::Indexed(Register8::Y)),
+            0xFD => self.sbc(AddressMode::AbsoluteIndexed(Register8::X)),
+            0xF9 => self.sbc(AddressMode::AbsoluteIndexed(Register8::Y)),
             0xE1 => self.sbc(AddressMode::IndexedIndirect(Register8::X)),
             0xF1 => self.sbc(AddressMode::IndirectIndexed(Register8::Y)),
 
             0x29 => self.and(AddressMode::Immediate),
-            0x25 => self.and(AddressMode::AbsoluteZeroPage),
-            0x35 => self.and(AddressMode::IndexedZeroPage(Register8::X)),
+            0x25 => self.and(AddressMode::ZeroPage),
+            0x35 => self.and(AddressMode::ZeroPageIndexed(Register8::X)),
             0x2D => self.and(AddressMode::Absolute),
-            0x3D => self.and(AddressMode::Indexed(Register8::X)),
-            0x39 => self.and(AddressMode::Indexed(Register8::Y)),
+            0x3D => self.and(AddressMode::AbsoluteIndexed(Register8::X)),
+            0x39 => self.and(AddressMode::AbsoluteIndexed(Register8::Y)),
             0x21 => self.and(AddressMode::IndexedIndirect(Register8::X)),
             0x31 => self.and(AddressMode::IndirectIndexed(Register8::Y)),
 
             0x09 => self.ora(AddressMode::Immediate),
-            0x05 => self.ora(AddressMode::AbsoluteZeroPage),
-            0x15 => self.ora(AddressMode::IndexedZeroPage(Register8::X)),
+            0x05 => self.ora(AddressMode::ZeroPage),
+            0x15 => self.ora(AddressMode::ZeroPageIndexed(Register8::X)),
             0x0D => self.ora(AddressMode::Absolute),
-            0x1D => self.ora(AddressMode::Indexed(Register8::X)),
-            0x19 => self.ora(AddressMode::Indexed(Register8::Y)),
+            0x1D => self.ora(AddressMode::AbsoluteIndexed(Register8::X)),
+            0x19 => self.ora(AddressMode::AbsoluteIndexed(Register8::Y)),
             0x01 => self.ora(AddressMode::IndexedIndirect(Register8::X)),
             0x11 => self.ora(AddressMode::IndirectIndexed(Register8::Y)),
 
             0x49 => self.eor(AddressMode::Immediate),
-            0x45 => self.eor(AddressMode::AbsoluteZeroPage),
-            0x55 => self.eor(AddressMode::IndexedZeroPage(Register8::X)),
+            0x45 => self.eor(AddressMode::ZeroPage),
+            0x55 => self.eor(AddressMode::ZeroPageIndexed(Register8::X)),
             0x4D => self.eor(AddressMode::Absolute),
-            0x5D => self.eor(AddressMode::Indexed(Register8::X)),
-            0x59 => self.eor(AddressMode::Indexed(Register8::Y)),
+            0x5D => self.eor(AddressMode::AbsoluteIndexed(Register8::X)),
+            0x59 => self.eor(AddressMode::AbsoluteIndexed(Register8::Y)),
             0x41 => self.eor(AddressMode::IndexedIndirect(Register8::X)),
             0x51 => self.eor(AddressMode::IndirectIndexed(Register8::Y)),
 
@@ -197,34 +197,34 @@ impl<M: Memory> Cpu<M> {
             0x50 => self.bvc(),
 
             0xC9 => self.cmp(AddressMode::Immediate),
-            0xC5 => self.cmp(AddressMode::AbsoluteZeroPage),
-            0xD5 => self.cmp(AddressMode::IndexedZeroPage(Register8::X)),
+            0xC5 => self.cmp(AddressMode::ZeroPage),
+            0xD5 => self.cmp(AddressMode::ZeroPageIndexed(Register8::X)),
             0xCD => self.cmp(AddressMode::Absolute),
-            0xDD => self.cmp(AddressMode::Indexed(Register8::X)),
-            0xD9 => self.cmp(AddressMode::Indexed(Register8::Y)),
+            0xDD => self.cmp(AddressMode::AbsoluteIndexed(Register8::X)),
+            0xD9 => self.cmp(AddressMode::AbsoluteIndexed(Register8::Y)),
             0xC1 => self.cmp(AddressMode::IndexedIndirect(Register8::X)),
             0xD1 => self.cmp(AddressMode::IndirectIndexed(Register8::Y)),
 
             0xE0 => self.cpx(AddressMode::Immediate),
-            0xE4 => self.cpx(AddressMode::AbsoluteZeroPage),
+            0xE4 => self.cpx(AddressMode::ZeroPage),
             0xEC => self.cpx(AddressMode::Absolute),
 
             0xC0 => self.cpy(AddressMode::Immediate),
-            0xC4 => self.cpy(AddressMode::AbsoluteZeroPage),
+            0xC4 => self.cpy(AddressMode::ZeroPage),
             0xCC => self.cpy(AddressMode::Absolute),
 
-            0x24 => self.bit(AddressMode::AbsoluteZeroPage),
+            0x24 => self.bit(AddressMode::ZeroPage),
             0x2C => self.bit(AddressMode::Absolute),
 
-            0xE6 => self.inc(AddressMode::AbsoluteZeroPage),
-            0xF6 => self.inc(AddressMode::IndexedZeroPage(Register8::X)),
+            0xE6 => self.inc(AddressMode::ZeroPage),
+            0xF6 => self.inc(AddressMode::ZeroPageIndexed(Register8::X)),
             0xEE => self.inc(AddressMode::Absolute),
-            0xFE => self.inc(AddressMode::Indexed(Register8::X)),
+            0xFE => self.inc(AddressMode::AbsoluteIndexed(Register8::X)),
 
-            0xC6 => self.dec(AddressMode::AbsoluteZeroPage),
-            0xD6 => self.dec(AddressMode::IndexedZeroPage(Register8::X)),
+            0xC6 => self.dec(AddressMode::ZeroPage),
+            0xD6 => self.dec(AddressMode::ZeroPageIndexed(Register8::X)),
             0xCE => self.dec(AddressMode::Absolute),
-            0xDE => self.dec(AddressMode::Indexed(Register8::X)),
+            0xDE => self.dec(AddressMode::AbsoluteIndexed(Register8::X)),
 
             0xE8 => self.inx(),
             0xC8 => self.iny(),
@@ -247,28 +247,28 @@ impl<M: Memory> Cpu<M> {
             0x28 => self.plp(),
 
             0x4A => self.lsr(AddressMode::Register(Register8::A)),
-            0x46 => self.lsr(AddressMode::AbsoluteZeroPage),
-            0x56 => self.lsr(AddressMode::IndexedZeroPage(Register8::X)),
+            0x46 => self.lsr(AddressMode::ZeroPage),
+            0x56 => self.lsr(AddressMode::ZeroPageIndexed(Register8::X)),
             0x4E => self.lsr(AddressMode::Absolute),
-            0x5E => self.lsr(AddressMode::Indexed(Register8::X)),
+            0x5E => self.lsr(AddressMode::AbsoluteIndexed(Register8::X)),
 
             0x0A => self.asl(AddressMode::Register(Register8::A)),
-            0x06 => self.asl(AddressMode::AbsoluteZeroPage),
-            0x16 => self.asl(AddressMode::IndexedZeroPage(Register8::X)),
+            0x06 => self.asl(AddressMode::ZeroPage),
+            0x16 => self.asl(AddressMode::ZeroPageIndexed(Register8::X)),
             0x0E => self.asl(AddressMode::Absolute),
-            0x1E => self.asl(AddressMode::Indexed(Register8::X)),
+            0x1E => self.asl(AddressMode::AbsoluteIndexed(Register8::X)),
 
             0x2A => self.ror(AddressMode::Register(Register8::A)),
-            0x26 => self.ror(AddressMode::AbsoluteZeroPage),
-            0x36 => self.ror(AddressMode::IndexedZeroPage(Register8::X)),
+            0x26 => self.ror(AddressMode::ZeroPage),
+            0x36 => self.ror(AddressMode::ZeroPageIndexed(Register8::X)),
             0x2E => self.ror(AddressMode::Absolute),
-            0x3E => self.ror(AddressMode::Indexed(Register8::X)),
+            0x3E => self.ror(AddressMode::AbsoluteIndexed(Register8::X)),
 
             0x2A => self.rol(AddressMode::Register(Register8::A)),
-            0x26 => self.rol(AddressMode::AbsoluteZeroPage),
-            0x36 => self.rol(AddressMode::IndexedZeroPage(Register8::X)),
+            0x26 => self.rol(AddressMode::ZeroPage),
+            0x36 => self.rol(AddressMode::ZeroPageIndexed(Register8::X)),
             0x2E => self.rol(AddressMode::Absolute),
-            0x3E => self.rol(AddressMode::Indexed(Register8::X)),
+            0x3E => self.rol(AddressMode::AbsoluteIndexed(Register8::X)),
 
             0x00 => self.brk(),
             0x40 => self.rti(),
@@ -279,17 +279,17 @@ impl<M: Memory> Cpu<M> {
             0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xEA | 0xFA => self.nop(),
             0x80 | 0x82 | 0x89 | 0xC2 | 0xE2 => self.nop_2_bytes(),
             0x8B => self.xaa(),
-            0xA7 => self.lax(AddressMode::AbsoluteZeroPage),
-            0xB7 => self.lax(AddressMode::IndexedZeroPage(Register8::Y)),
+            0xA7 => self.lax(AddressMode::ZeroPage),
+            0xB7 => self.lax(AddressMode::ZeroPageIndexed(Register8::Y)),
             0xAF => self.lax(AddressMode::Absolute),
-            0xBF => self.lax(AddressMode::Indexed(Register8::Y)),
+            0xBF => self.lax(AddressMode::AbsoluteIndexed(Register8::Y)),
             0xA3 => self.lax(AddressMode::IndexedIndirect(Register8::X)),
             0xB3 => self.lax(AddressMode::IndirectIndexed(Register8::Y)),
-            0x07 => self.slo(AddressMode::AbsoluteZeroPage),
-            0x17 => self.slo(AddressMode::IndexedZeroPage(Register8::X)),
+            0x07 => self.slo(AddressMode::ZeroPage),
+            0x17 => self.slo(AddressMode::ZeroPageIndexed(Register8::X)),
             0x0F => self.slo(AddressMode::Absolute),
-            0x1B => self.slo(AddressMode::Indexed(Register8::Y)),
-            0x1F => self.slo(AddressMode::Indexed(Register8::X)),
+            0x1B => self.slo(AddressMode::AbsoluteIndexed(Register8::Y)),
+            0x1F => self.slo(AddressMode::AbsoluteIndexed(Register8::X)),
             0x03 => self.slo(AddressMode::IndexedIndirect(Register8::X)),
             0x13 => self.slo(AddressMode::IndirectIndexed(Register8::Y)),
 
@@ -326,16 +326,16 @@ impl<M: Memory> Cpu<M> {
                 let addr = self.next_pc_word();
                 self.load_byte(addr)
             },
-            AbsoluteZeroPage => {
+            ZeroPage => {
                 let addr = self.next_pc_byte() as u16;
                 self.load_byte(addr)
             },
-            Indexed(reg) => {
+            AbsoluteIndexed(reg) => {
                 let base = self.next_pc_word();
                 let index = self.get_register(reg) as u16;
                 self.load_byte(base + index)
             },
-            IndexedZeroPage(reg) => {
+            ZeroPageIndexed(reg) => {
                 let base = self.next_pc_byte() as u16;
                 let index = self.get_register(reg) as u16;
                 self.load_byte(base + index)
@@ -363,16 +363,16 @@ impl<M: Memory> Cpu<M> {
                 let addr = self.next_pc_word();
                 self.store_byte(addr, val);
             },
-            AbsoluteZeroPage => {
+            ZeroPage => {
                 let addr = self.next_pc_byte() as u16;
                 self.store_byte(addr, val);
             },
-            Indexed(reg) => {
+            AbsoluteIndexed(reg) => {
                 let base = self.next_pc_word();
                 let index = self.get_register(reg) as u16;
                 self.store_byte(base + index, val);
             },
-            IndexedZeroPage(reg) => {
+            ZeroPageIndexed(reg) => {
                 let base = self.next_pc_byte() as u16;
                 let index = self.get_register(reg) as u16;
                 self.store_byte(base + index, val);
