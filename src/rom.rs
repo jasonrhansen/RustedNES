@@ -58,12 +58,12 @@ impl From<io::Error> for LoadError {
 }
 
 pub struct NesRom {
-    mapper: u16,
-    sub_mapper: u8,
-    mirroring: Mirroring,
-    prg_rom: Vec<u8>,
-    chr_rom: Vec<u8>,
-    prg_ram_size: usize,
+    pub mapper: u16,
+    pub sub_mapper: u8,
+    pub mirroring: Mirroring,
+    pub prg_rom: Vec<u8>,
+    pub chr_rom: Vec<u8>,
+    pub prg_ram_size: usize,
 }
 
 impl Debug for NesRom {
@@ -119,12 +119,12 @@ impl NesRom {
         let prg_ram_size = prg_ram_banks * PRG_RAM_BANK_SIZE;
 
         Ok(NesRom {
-            mapper: mapper,
-            sub_mapper: sub_mapper,
-            mirroring: mirroring,
-            prg_rom: prg_rom,
-            chr_rom: chr_rom,
-            prg_ram_size: prg_ram_size,
+            mapper,
+            sub_mapper,
+            mirroring,
+            prg_rom,
+            chr_rom,
+            prg_ram_size,
         })
     }
 }

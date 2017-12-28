@@ -3,6 +3,7 @@ use std::ops::{Deref, DerefMut};
 use ppu::Ppu;
 use apu::Apu;
 use input::Input;
+use mapper::Mapper;
 
 pub trait Memory {
     fn load_byte(&self, address: u16) -> u8;
@@ -23,6 +24,14 @@ pub trait Memory {
 const RAM_SIZE: usize = 0x0800;
 
 pub struct Ram { buf: [u8; RAM_SIZE] }
+
+impl Ram {
+    fn new() -> Self {
+        Ram {
+           buf: [0; RAM_SIZE],
+        }
+    }
+}
 
 // For the RAM we only use the bottom 11 bits of the address.
 // This will prevent index out of bounds, and will support mirroring.
@@ -51,11 +60,24 @@ impl DerefMut for Ram {
 }
 
 
-struct CpuMemMap {
+pub struct CpuMemMap {
     pub ram: Ram,
     pub ppu: Ppu,
     pub apu: Apu,
     pub input: Input,
+    pub mapper: Box<Mapper>
+}
+
+impl CpuMemMap {
+    pub fn new(ppu: Ppu, apu: Apu, input: Input, mapper: Box<Mapper>) -> Self {
+        CpuMemMap {
+            ram: Ram::new(),
+            ppu,
+            apu,
+            input,
+            mapper,
+        }
+    }
 }
 
 impl Memory for CpuMemMap {
@@ -69,8 +91,7 @@ impl Memory for CpuMemMap {
         } else if address < 0x4018 {
             self.input.load_byte(address)
         } else {
-            // TODO: add mapper
-            0
+            self.mapper.prg_load_byte(address)
         }
     }
 
@@ -84,8 +105,7 @@ impl Memory for CpuMemMap {
         } else if address < 0x4018 {
             self.input.store_byte(address, value);
         } else {
-            // TODO: add mapper
+            self.mapper.prg_store_byte(address, value);
         }
-
     }
 }

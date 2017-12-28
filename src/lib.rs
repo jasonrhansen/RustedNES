@@ -9,3 +9,4 @@ mod cpu;
 mod ppu;
 mod apu;
 mod input;
+mod mapper;
