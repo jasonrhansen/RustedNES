@@ -129,6 +129,7 @@ impl<M: Memory> Cpu<M> {
         self.regs.pc = self.load_word(RESET_VECTOR);
         self.regs.sp = 0xFD;
         self.regs.status = StatusFlags::INTERRUPT_DISABLE | StatusFlags::EXPANSION;
+        self.interrupt = Interrupt::None;
     }
 
     pub fn step(&mut self) -> u8 {
@@ -956,13 +957,13 @@ impl<M: Memory> Cpu<M> {
     // Interrupts
     ///////////////
 
-    // Cause NMI (Non-Maskable Interrupt) to be run on next step
-    pub fn trigger_nmi(&mut self) {
+    // Request NMI (Non-Maskable Interrupt) to be run on next step
+    pub fn request_nmi(&mut self) {
         self.interrupt = Interrupt::Nmi;
     }
 
-    // Cause IRQ to be run on next step
-    pub fn trigger_irq(&mut self) {
+    // Request IRQ to be run on next step
+    pub fn request_irq(&mut self) {
         if !self.get_flag(StatusFlags::INTERRUPT_DISABLE) {
             self.interrupt = Interrupt::Irq;
         }
