@@ -1,3 +1,4 @@
+use disassembler::Disassembler;
 use memory::Memory;
 
 bitflags! {
@@ -132,7 +133,14 @@ impl<M: Memory> Cpu<M> {
         self.interrupt = Interrupt::None;
     }
 
+    pub fn display_debug_info(&mut self) {
+        let mut d = Disassembler::new(self.regs.pc, &mut self.mem);
+        println!("{}", d.disassemble_next());
+    }
+
     pub fn step(&mut self) -> u8 {
+        self.display_debug_info();
+
         let cycles = self.cycles;
 
         self.handle_interrupts();

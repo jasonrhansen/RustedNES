@@ -1,7 +1,7 @@
 use memory::Memory;
 use cpu::{AddressMode, Register8};
 
-struct Disassembler<'a, M: Memory + 'a> {
+pub struct Disassembler<'a, M: Memory + 'a> {
     pc: u16,
     mem: &'a mut M,
 }
@@ -19,7 +19,7 @@ impl<'a, M> Memory for Disassembler<'a, M>
 
 impl<'a, M> Disassembler<'a, M>
     where M: Memory + 'a {
-    fn new(pc: u16, mem: &mut M) -> Disassembler<M> {
+    pub fn new(pc: u16, mem: &mut M) -> Disassembler<M> {
         Disassembler {
             pc,
             mem

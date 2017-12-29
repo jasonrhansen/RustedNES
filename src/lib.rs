@@ -7,11 +7,11 @@ extern crate byteorder;
 mod opcode;
 
 pub mod cartridge;
-mod memory;
-mod cpu;
-mod ppu;
-mod apu;
-mod input;
-mod mapper;
+pub mod mapper;
+pub mod memory;
+pub mod cpu;
+pub mod ppu;
+pub mod apu;
+pub mod input;
 mod disassembler;
 
