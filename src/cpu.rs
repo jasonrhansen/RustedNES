@@ -70,7 +70,7 @@ impl Regs {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-enum Register8 {
+pub enum Register8 {
     A,
     X,
     Y,
@@ -79,7 +79,7 @@ enum Register8 {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-enum AddressMode {
+pub enum AddressMode {
     Immediate,
     Absolute,
     ZeroPage,
@@ -137,10 +137,10 @@ impl<M: Memory> Cpu<M> {
 
         self.handle_interrupts();
 
-        let op = self.next_pc_byte();
-        self.run_opcode(op);
+        let opcode = self.next_pc_byte();
+        handle_opcode!(opcode, self);
 
-        self.cycles += OPCODE_CYCLES[op as usize] as u64;
+        self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
 
         (self.cycles - cycles) as u8
     }

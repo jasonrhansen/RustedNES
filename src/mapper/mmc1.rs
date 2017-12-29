@@ -127,7 +127,7 @@ impl Mapper for Mmc1 {
             self.cartridge.prg_ram[(address & 0x1FFF) as usize] = value;
         } else {
             if (value & 0x80) == 0 {
-                // If a 1 has been shifted into bit zero, it's time to write to a register
+                // If a 1 has been shifted into bit 0, it's time to write to a register
                 let is_last_shift = (self.shift & 0x01) != 0;
 
                 // Bit 0 of the value gets shifted into the shift
