@@ -12,7 +12,6 @@ struct Regs {
 pub struct Mmc1 {
     cartridge: Box<Cartridge>,
     shift: u8,
-    write_count: u8,
     regs: Regs,
 }
 
@@ -34,12 +33,14 @@ enum ChrRomMode {
     Switch4Kb,     // Switch two separate 4 KB banks
 }
 
+// Put a 1 in bit 4 so we can detect when we've shifted enough to write to a register
+const SHIFT_REGISTER_DEFAULT: u8 = 0x10;
+
 impl Mmc1 {
     pub fn new(cartridge: Box<Cartridge>) -> Self {
         Mmc1 {
             cartridge,
-            shift: 0x10,
-            write_count: 0,
+            shift: SHIFT_REGISTER_DEFAULT,
             regs: Regs::default(),
         }
     }
@@ -100,8 +101,9 @@ impl Mmc1 {
         }
     }
 
-    fn prg_rom_address(bank: u8, address: u16) -> u16 {
-        ((bank as u16) * PRG_ROM_BANK_SIZE) | (address & (PRG_ROM_BANK_SIZE - 1))
+    fn prg_rom_address(bank: u8, address: u16) -> usize {
+        (bank as usize * PRG_ROM_BANK_SIZE as usize) |
+            (address as usize & (PRG_ROM_BANK_SIZE as usize - 1))
     }
 }
 
@@ -125,18 +127,21 @@ impl Mapper for Mmc1 {
             self.cartridge.prg_ram[(address & 0x1FFF) as usize] = value;
         } else {
             if (value & 0x80) == 0 {
-                let shift = self.shift;
-                self.shift |= (value & 0x01) << (self.write_count as usize);
-                if self.write_count < 4 {
-                    self.write_count += 1;
-                } else {
+                // If a 1 has been shifted into bit zero, it's time to write to a register
+                let is_last_shift = (self.shift & 0x01) != 0;
+
+                // Bit 0 of the value gets shifted into the shift
+                // register from the left, starting at bit 4.
+                self.shift = (self.shift >> 1) | ((value & 0x01) << 4);
+
+                if is_last_shift {
+                    let shift = self.shift;
                     self.write_register(address, shift);
-                    self.shift = 0;
-                    self.write_count = 0;
+                    self.shift = SHIFT_REGISTER_DEFAULT;
                 }
             } else {
-                self.shift = 0;
-                self.write_count = 0;
+                // Writing a value with bit 7 set clears the shift register to its initial state
+                self.shift = SHIFT_REGISTER_DEFAULT;
                 self.regs.control |= 0x0C;
             }
         }
