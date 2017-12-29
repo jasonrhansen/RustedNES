@@ -6,10 +6,10 @@ use self::mmc1::Mmc1;
 use super::cartridge::Cartridge;
 
 pub trait Mapper {
-    fn prg_load_byte(&self, address: u16) -> u8;
-    fn prg_store_byte(&mut self, address: u16, value: u8);
-    fn chr_load_byte(&self, address: u16) -> u8;
-    fn chr_store_byte(&mut self, address: u16, value: u8);
+    fn prg_read_byte(&self, address: u16) -> u8;
+    fn prg_write_byte(&mut self, address: u16, value: u8);
+    fn chr_read_byte(&self, address: u16) -> u8;
+    fn chr_write_byte(&mut self, address: u16, value: u8);
 }
 
 pub fn create_mapper(cartridge: Box<Cartridge>) -> Box<Mapper> {

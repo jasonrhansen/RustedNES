@@ -108,7 +108,7 @@ impl Mmc1 {
 }
 
 impl Mapper for Mmc1 {
-    fn prg_load_byte(&self, address: u16) -> u8 {
+    fn prg_read_byte(&self, address: u16) -> u8 {
         if address < 0x6000 {
             0
         } else if address < 0x8000 {
@@ -122,7 +122,7 @@ impl Mapper for Mmc1 {
         }
     }
 
-    fn prg_store_byte(&mut self, address: u16, value: u8) {
+    fn prg_write_byte(&mut self, address: u16, value: u8) {
         if address < 0x8000 {
             self.cartridge.prg_ram[(address & 0x1FFF) as usize] = value;
         } else {
@@ -147,11 +147,11 @@ impl Mapper for Mmc1 {
         }
     }
 
-    fn chr_load_byte(&self, address: u16) -> u8 {
+    fn chr_read_byte(&self, address: u16) -> u8 {
         self.cartridge.chr_rom[address as usize]
     }
 
-    fn chr_store_byte(&mut self, address: u16, value: u8) {
+    fn chr_write_byte(&mut self, address: u16, value: u8) {
         self.cartridge.chr_rom[address as usize] = value
     }
 }

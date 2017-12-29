@@ -102,12 +102,12 @@ pub struct Cpu<M: Memory> {
 }
 
 impl<M: Memory> Memory for Cpu<M> {
-    fn load_byte(&self, address: u16) -> u8 {
-        self.mem.load_byte(address)
+    fn read_byte(&self, address: u16) -> u8 {
+        self.mem.read_byte(address)
     }
 
-    fn store_byte(&mut self, address: u16, value: u8) {
-        self.mem.store_byte(address, value)
+    fn write_byte(&mut self, address: u16, value: u8) {
+        self.mem.write_byte(address, value)
     }
 }
 
@@ -126,7 +126,7 @@ impl<M: Memory> Cpu<M> {
     }
 
     pub fn reset(&mut self) {
-        self.regs.pc = self.load_word(RESET_VECTOR);
+        self.regs.pc = self.read_word(RESET_VECTOR);
         self.regs.sp = 0xFD;
         self.regs.status = StatusFlags::INTERRUPT_DISABLE | StatusFlags::EXPANSION;
         self.interrupt = Interrupt::None;
@@ -350,23 +350,23 @@ impl<M: Memory> Cpu<M> {
     }
 
     fn next_pc_byte(&mut self) -> u8 {
-        let b = self.load_byte(self.regs.pc);
+        let b = self.read_byte(self.regs.pc);
         self.regs.pc += 1;
         b
     }
 
     fn next_pc_word(&mut self) -> u16 {
-        let w = self.load_word(self.regs.pc);
+        let w = self.read_word(self.regs.pc);
         self.regs.pc += 2;
         w
     }
 
     fn load_word_zero_page(&self, offset: u8) -> u16 {
         if offset == 0xFF {
-            self.load_byte(0xFF) as u16 +
-                ((self.load_byte(0x00) as u16) << 8)
+            self.read_byte(0xFF) as u16 +
+                ((self.read_byte(0x00) as u16) << 8)
         } else {
-            self.load_word(offset as u16)
+            self.read_word(offset as u16)
         }
     }
 
@@ -376,11 +376,11 @@ impl<M: Memory> Cpu<M> {
             Immediate => self.next_pc_byte(),
             Absolute => {
                 let addr = self.next_pc_word();
-                self.load_byte(addr)
+                self.read_byte(addr)
             },
             ZeroPage => {
                 let addr = self.next_pc_byte() as u16;
-                self.load_byte(addr)
+                self.read_byte(addr)
             },
             AbsoluteIndexed(reg) => {
                 let base = self.next_pc_word();
@@ -392,18 +392,18 @@ impl<M: Memory> Cpu<M> {
                     self.cycles += 1;
                 }
 
-                self.load_byte(addr)
+                self.read_byte(addr)
             },
             ZeroPageIndexed(reg) => {
                 let base = self.next_pc_byte() as u16;
                 let index = self.get_register(reg) as u16;
-                self.load_byte(base + index)
+                self.read_byte(base + index)
             },
             IndexedIndirect(reg) => {
                 let base = self.next_pc_byte();
                 let index = self.get_register(reg);
                 let addr = self.load_word_zero_page(base + index);
-                self.load_byte(addr)
+                self.read_byte(addr)
             },
             IndirectIndexed(reg) => {
                 let zp_offset = self.next_pc_byte();
@@ -416,7 +416,7 @@ impl<M: Memory> Cpu<M> {
                     self.cycles += 1;
                 }
 
-                self.load_byte(addr)
+                self.read_byte(addr)
             },
             Register(reg) => self.get_register(reg),
         }
@@ -427,33 +427,33 @@ impl<M: Memory> Cpu<M> {
         match am {
             Absolute => {
                 let addr = self.next_pc_word();
-                self.store_byte(addr, val);
+                self.write_byte(addr, val);
             },
             ZeroPage => {
                 let addr = self.next_pc_byte() as u16;
-                self.store_byte(addr, val);
+                self.write_byte(addr, val);
             },
             AbsoluteIndexed(reg) => {
                 let base = self.next_pc_word();
                 let index = self.get_register(reg) as u16;
-                self.store_byte(base + index, val);
+                self.write_byte(base + index, val);
             },
             ZeroPageIndexed(reg) => {
                 let base = self.next_pc_byte() as u16;
                 let index = self.get_register(reg) as u16;
-                self.store_byte(base + index, val);
+                self.write_byte(base + index, val);
             },
             IndexedIndirect(reg) => {
                 let base = self.next_pc_byte();
                 let index = self.get_register(reg);
                 let addr = self.load_word_zero_page(base + index);
-                self.store_byte(addr, val);
+                self.write_byte(addr, val);
             },
             IndirectIndexed(reg) => {
                 let zp_offset = self.next_pc_byte();
                 let base = self.load_word_zero_page(zp_offset);
                 let index = self.get_register(reg) as u16;
-                self.store_byte(base + index, val);
+                self.write_byte(base + index, val);
             },
             Register(reg) => self.set_register(reg, val),
             _ => panic!("Invalid address mode for store: {:?}", am),
@@ -547,7 +547,7 @@ impl<M: Memory> Cpu<M> {
     // Push byte onto the stack
     fn push_byte(&mut self, val: u8) {
         let s = self.regs.sp;
-        self.store_byte(0x0100 | (s as u16), val);
+        self.write_byte(0x0100 | (s as u16), val);
         self.regs.sp = s - 1;
     }
 
@@ -556,7 +556,7 @@ impl<M: Memory> Cpu<M> {
         let s = self.regs.sp + 1;
         self.regs.sp = s;
 
-        self.load_byte(0x0100 | (s as u16))
+        self.read_byte(0x0100 | (s as u16))
     }
 
     // Push word onto the stack
@@ -690,12 +690,12 @@ impl<M: Memory> Cpu<M> {
     fn jmpi(&mut self) {
         let addr = self.next_pc_word();
 
-        let lsb = self.load_byte(addr);
+        let lsb = self.read_byte(addr);
 
         // There is a hardware bug in this instruction. If the 16-bit argument of an indirect JMP is
         // located between 2 pages (0x01FF and 0x0200 for example), then the LSB will be read from
         // 0x01FF and the MSB will be read from 0x0100.
-        let msb = self.load_byte(
+        let msb = self.read_byte(
             if (addr & 0xFF) == 0xFF {
                 addr & 0xff00
             } else {
@@ -909,7 +909,7 @@ impl<M: Memory> Cpu<M> {
         self.push_word(pc);
         self.push_byte(status);
         self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
-        self.regs.pc = self.load_word(BRK_VECTOR);
+        self.regs.pc = self.read_word(BRK_VECTOR);
     }
 
     fn rti(&mut self) {
@@ -983,7 +983,7 @@ impl<M: Memory> Cpu<M> {
         self.push_word(pc);
         self.push_byte(status);
         self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
-        self.regs.pc = self.load_word(vector);
+        self.regs.pc = self.read_word(vector);
         self.interrupt = Interrupt::None;
         self.cycles += 7;
     }

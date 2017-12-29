@@ -6,17 +6,17 @@ use input::Input;
 use mapper::Mapper;
 
 pub trait Memory {
-    fn load_byte(&self, address: u16) -> u8;
-    fn store_byte(&mut self, address: u16, value: u8);
+    fn read_byte(&self, address: u16) -> u8;
+    fn write_byte(&mut self, address: u16, value: u8);
 
-    fn load_word(&self, address: u16) -> u16 {
-        self.load_byte(address) as u16 |
-            ((self.load_byte(address + 1) as u16) << 8)
+    fn read_word(&self, address: u16) -> u16 {
+        self.read_byte(address) as u16 |
+            ((self.read_byte(address + 1) as u16) << 8)
     }
 
-    fn store_word(&mut self, address: u16, value: u16) {
-        self.store_byte(address, (value >> 8) as u8);
-        self.store_byte(address + 1, (value & 0xff) as u8);
+    fn write_word(&mut self, address: u16, value: u16) {
+        self.write_byte(address, (value >> 8) as u8);
+        self.write_byte(address + 1, (value & 0xff) as u8);
     }
 }
 
@@ -36,11 +36,11 @@ impl Ram {
 // For the RAM we only use the bottom 11 bits of the address.
 // This will prevent index out of bounds, and will support mirroring.
 impl Memory for Ram {
-    fn load_byte(&self, address: u16) -> u8 {
+    fn read_byte(&self, address: u16) -> u8 {
         self.buf[address as usize & (RAM_SIZE - 1)]
     }
 
-    fn store_byte(&mut self, address: u16, value: u8) {
+    fn write_byte(&mut self, address: u16, value: u8) {
         self.buf[address as usize & (RAM_SIZE - 1)] = value
     }
 }
@@ -81,31 +81,31 @@ impl CpuMemMap {
 }
 
 impl Memory for CpuMemMap {
-    fn load_byte(&self, address: u16) -> u8 {
+    fn read_byte(&self, address: u16) -> u8 {
         if address < 0x2000 {
-            self.ram.load_byte(address)
+            self.ram.read_byte(address)
         } else if address < 0x4000 {
-            self.ppu.load_byte(address)
+            self.ppu.read_byte(address)
         } else if address < 0x4015 {
-            self.apu.load_byte(address)
+            self.apu.read_byte(address)
         } else if address < 0x4018 {
-            self.input.load_byte(address)
+            self.input.read_byte(address)
         } else {
-            self.mapper.prg_load_byte(address)
+            self.mapper.prg_read_byte(address)
         }
     }
 
-    fn store_byte(&mut self, address: u16, value: u8) {
+    fn write_byte(&mut self, address: u16, value: u8) {
         if address < 0x2000 {
-            self.ram.store_byte(address, value);
+            self.ram.write_byte(address, value);
         } else if address < 0x4000 {
-            self.ppu.store_byte(address, value);
+            self.ppu.write_byte(address, value);
         } else if address < 0x4015 {
-            self.apu.store_byte(address, value);
+            self.apu.write_byte(address, value);
         } else if address < 0x4018 {
-            self.input.store_byte(address, value);
+            self.input.write_byte(address, value);
         } else {
-            self.mapper.prg_store_byte(address, value);
+            self.mapper.prg_write_byte(address, value);
         }
     }
 }
