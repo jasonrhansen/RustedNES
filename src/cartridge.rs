@@ -10,9 +10,8 @@ use byteorder::{ReadBytesExt, BigEndian};
 const MAGIC_CONSTANT: u32 = 0x4e45531a;
 
 pub const PRG_ROM_BANK_SIZE: u16 = 16 * 1024;
-const CHR_ROM_BANK_SIZE: u16 = 8 * 1024;
-
-const PRG_RAM_BANK_SIZE: u16 = 8 * 1024;
+pub const CHR_ROM_BANK_SIZE: u16 = 8 * 1024;
+pub const PRG_RAM_BANK_SIZE: u16 = 8 * 1024;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Mirroring {
@@ -57,24 +56,30 @@ impl From<io::Error> for LoadError {
     }
 }
 
-pub struct NesRom {
+pub struct Cartridge {
     pub mapper: u16,
     pub sub_mapper: u8,
     pub mirroring: Mirroring,
     pub prg_rom: Vec<u8>,
     pub chr_rom: Vec<u8>,
-    pub prg_ram_size: u16,
+    pub prg_ram: Vec<u8>,
+    pub is_battery_backed: bool,
 }
 
-impl Debug for NesRom {
+impl Debug for Cartridge {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "mapper: {}, sub_mapper: {}, mirroring: {:?}, PRG ROM size: {}, CHR ROM size: {}",
-               self.mapper, self.sub_mapper, self.mirroring, self.prg_rom.len(), self.chr_rom.len())
+        writeln!(f, "mapper: {}", self.mapper);
+        writeln!(f, "sub mapper: {}", self.sub_mapper);
+        writeln!(f, "mirroring: {:?}", self.mirroring);
+        writeln!(f, "PRG ROM size: {}", self.prg_rom.len());
+        writeln!(f, "CHR ROM size: {}", self.chr_rom.len());
+        writeln!(f, "PRG RAM size: {}", self.prg_ram.len());
+        writeln!(f, "batter backed: {}", self.is_battery_backed)
     }
 }
 
-impl NesRom {
-    pub fn load<R: Read + Seek>(r: &mut R) -> Result<NesRom, LoadError> {
+impl Cartridge {
+    pub fn load<R: Read + Seek>(r: &mut R) -> Result<Cartridge, LoadError> {
         let magic = r.read_u32::<BigEndian>()?;
 
         if magic != MAGIC_CONSTANT {
@@ -92,6 +97,8 @@ impl NesRom {
         // Skip the rest of the header
         // TODO: Implement NEW 2.0
         r.seek(SeekFrom::Current(17))?;
+
+        let is_battery_backed = (flags6 & 0x02) != 0;
 
         let has_trainer = (flags6 & 0x04) != 0;
         if has_trainer {
@@ -116,15 +123,16 @@ impl NesRom {
         let mut chr_rom = vec![0u8; chr_rom_size as usize];
         r.read_exact(&mut chr_rom[..])?;
 
-        let prg_ram_size = prg_ram_banks * PRG_RAM_BANK_SIZE;
+        let prg_ram = vec![0u8; (prg_ram_banks * PRG_RAM_BANK_SIZE) as usize];
 
-        Ok(NesRom {
+        Ok(Cartridge {
             mapper,
             sub_mapper,
             mirroring,
             prg_rom,
             chr_rom,
-            prg_ram_size,
+            prg_ram,
+            is_battery_backed,
         })
     }
 }

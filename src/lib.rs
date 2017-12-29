@@ -3,7 +3,7 @@ extern crate bitflags;
 
 extern crate byteorder;
 
-pub mod rom;
+pub mod cartridge;
 mod memory;
 mod cpu;
 mod ppu;
