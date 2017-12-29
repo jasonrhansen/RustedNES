@@ -74,7 +74,7 @@ impl Debug for Cartridge {
         writeln!(f, "PRG ROM size: {}", self.prg_rom.len());
         writeln!(f, "CHR ROM size: {}", self.chr_rom.len());
         writeln!(f, "PRG RAM size: {}", self.prg_ram.len());
-        writeln!(f, "batter backed: {}", self.is_battery_backed)
+        writeln!(f, "battery backed: {}", self.is_battery_backed)
     }
 }
 
@@ -86,17 +86,18 @@ impl Cartridge {
             return Err(LoadError::new("magic constant in header is incorrect"));
         }
 
-        let prg_rom_size = r.read_u8()? as u16 * PRG_RAM_BANK_SIZE;
-        let chr_rom_size = r.read_u8()? as u16 * CHR_ROM_BANK_SIZE;
+        let prg_rom_size = r.read_u8()? as usize * PRG_ROM_BANK_SIZE as usize;
+        let chr_rom_size = r.read_u8()? as usize * CHR_ROM_BANK_SIZE as usize;
 
         let flags6 = r.read_u8()?;
         let flags7 = r.read_u8()?;
 
-        let prg_ram_banks = max(1, r.read_u8()? as u16);
+        let prg_ram_size =
+            max(1, r.read_u8()?) as usize * PRG_RAM_BANK_SIZE as usize;
 
         // Skip the rest of the header
         // TODO: Implement NEW 2.0
-        r.seek(SeekFrom::Current(17))?;
+        r.seek(SeekFrom::Current(7))?;
 
         let is_battery_backed = (flags6 & 0x02) != 0;
 
@@ -117,13 +118,13 @@ impl Cartridge {
             Mirroring::Horizontal
         };
 
-        let mut prg_rom = vec![0u8; prg_rom_size as usize];
+        let mut prg_rom = vec![0u8; prg_rom_size];
         r.read_exact(&mut prg_rom[..])?;
 
-        let mut chr_rom = vec![0u8; chr_rom_size as usize];
+        let mut chr_rom = vec![0u8; chr_rom_size];
         r.read_exact(&mut chr_rom[..])?;
 
-        let prg_ram = vec![0u8; (prg_ram_banks * PRG_RAM_BANK_SIZE) as usize];
+        let prg_ram = vec![0u8; prg_ram_size];
 
         Ok(Cartridge {
             mapper,
