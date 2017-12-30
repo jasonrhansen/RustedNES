@@ -19,11 +19,11 @@ impl Mapper for Nrom {
             0
         } else if address < 0x8000 {
             self.cartridge.prg_ram[(address & 0x1FFF) as usize]
-        } else if address >= PRG_ROM_BANK_SIZE {
+        } else if self.cartridge.prg_rom.len() > PRG_ROM_BANK_SIZE as usize {
             // Mirror second bank to first
-            self.cartridge.prg_rom[(address & 0x3FFF) as usize]
-        } else {
             self.cartridge.prg_rom[(address & 0x7FFF) as usize]
+        } else {
+            self.cartridge.prg_rom[(address & 0x3FFF) as usize]
         }
     }
 
