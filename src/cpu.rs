@@ -1,3 +1,6 @@
+use std::fmt;
+use std::fmt::{Debug, Display, Formatter};
+
 use disassembler::Disassembler;
 use memory::Memory;
 
@@ -12,6 +15,23 @@ bitflags! {
         const EXPANSION         = 1 << 5;
         const OVERFLOW          = 1 << 6;
         const NEGATIVE_RESULT   = 1 << 7;
+    }
+}
+
+
+
+impl fmt::Display for StatusFlags {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "Flags {{C: {}, Z: {}, I: {}, D: {}, B: {}, E: {}, O: {}, N: {}}}",
+               self.contains(StatusFlags::CARRY) as u8,
+               self.contains(StatusFlags::ZERO_RESULT) as u8,
+               self.contains(StatusFlags::INTERRUPT_DISABLE) as u8,
+               self.contains(StatusFlags::DECIMAL_MODE) as u8,
+               self.contains(StatusFlags::BREAK_COMMAND) as u8,
+               self.contains(StatusFlags::EXPANSION) as u8,
+               self.contains(StatusFlags::OVERFLOW) as u8,
+               self.contains(StatusFlags::NEGATIVE_RESULT) as u8,
+        )
     }
 }
 
@@ -67,6 +87,13 @@ impl Regs {
             sp: 0,
             status: StatusFlags::NONE,
         }
+    }
+}
+
+impl Debug for Regs {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "pc: {:04X}, a: {:02X}, x: {:02X}, y: {:02X}, sp: {:02X}, status: {}",
+               self.pc, self.a, self.x, self.y, self.sp, self.status)
     }
 }
 
@@ -133,14 +160,18 @@ impl<M: Memory> Cpu<M> {
         self.interrupt = Interrupt::None;
     }
 
-    pub fn display_debug_info(&mut self) {
-        let mut d = Disassembler::new(self.regs.pc, &mut self.mem);
-        println!("{}", d.disassemble_next());
+    pub fn step_debug(&mut self) {
+        {
+            let pc = self.regs.pc;
+            let mut d = Disassembler::new(pc, &mut self.mem);
+            println!("{:?}", self.regs);
+            println!("{}", d.disassemble_next());
+        }
+
+        self.step();
     }
 
     pub fn step(&mut self) -> u8 {
-        self.display_debug_info();
-
         let cycles = self.cycles;
 
         self.handle_interrupts();
@@ -323,7 +354,7 @@ impl<M: Memory> Cpu<M> {
     }
 
     fn branch(&mut self, cond: bool) {
-        let offset = self.next_pc_byte();
+        let offset = self.next_pc_byte() as i8;
         if cond {
             let addr = (self.regs.pc as i16 + offset as i16) as u16;
 

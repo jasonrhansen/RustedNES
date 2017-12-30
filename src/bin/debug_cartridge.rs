@@ -46,6 +46,6 @@ fn run_rom(rom: Cartridge) {
     println!("Stepping through instructions");
 
     for _ in 0..20 {
-        cpu.step();
+        cpu.step_debug();
     }
 }
