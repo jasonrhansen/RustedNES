@@ -5,6 +5,7 @@ use memory::Memory;
 
 pub struct Ppu {
     regs: Regs,
+    oam: Oam,
 
     // The PPU has an internal data bus that it uses for communication with the CPU.
     // This bus, called _io_db in Visual 2C02 and PPUGenLatch in FCEUX,[1] behaves as an
@@ -20,17 +21,21 @@ impl Ppu {
     pub fn new() -> Ppu {
         Ppu {
             regs: Regs::new(),
+            oam: Oam::new(),
             ppu_gen_latch: 0,
         }
     }
 
     fn read_oam_byte(&self) -> u8 {
-        // TODO: Implement
-        0
+        self.oam[self.regs.oam_addr as usize]
     }
 
     fn write_oam_byte(&mut self, val: u8) {
-        // TODO: Implement
+        // TODO: Ignore writes during rendering
+        // http://wiki.nesdev.com/w/index.php/PPU_registers#OAM_data_.28.242004.29_.3C.3E_read.2Fwrite
+
+        self.oam[self.regs.oam_addr as usize] = val;
+        self.regs.oam_addr += 1;
     }
 
     fn read_ppu_data_byte(&self) -> u8 {
@@ -319,5 +324,44 @@ impl Regs {
             ppu_scroll: PpuScroll::default(),
             ppu_addr: PpuAddr::default(),
         }
+    }
+}
+
+// 64 sprites, each sprite uses 4 bytes
+const OAM_SIZE: usize = 64 * 4;
+
+struct Oam {
+    buf: [u8; OAM_SIZE],
+}
+
+impl Oam {
+    fn new() -> Oam {
+        Oam {
+           buf: [0u8; OAM_SIZE],
+        }
+    }
+}
+
+impl Memory for Oam {
+    fn read_byte(&mut self, address: u16) -> u8 {
+        self[address as usize]
+    }
+
+    fn write_byte(&mut self, address: u16, value: u8) {
+        self[address as usize] = value;
+    }
+}
+
+impl Deref for Oam {
+    type Target = [u8; 64 * 4];
+
+    fn deref(&self) -> &Self::Target {
+        &self.buf
+    }
+}
+
+impl DerefMut for Oam {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.buf
     }
 }
