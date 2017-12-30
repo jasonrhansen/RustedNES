@@ -130,7 +130,7 @@ pub struct Cpu<M: Memory> {
 }
 
 impl<M: Memory> Memory for Cpu<M> {
-    fn read_byte(&self, address: u16) -> u8 {
+    fn read_byte(&mut self, address: u16) -> u8 {
         self.mem.read_byte(address)
     }
 
@@ -187,18 +187,20 @@ impl<M: Memory> Cpu<M> {
     }
 
     fn next_pc_byte(&mut self) -> u8 {
-        let b = self.read_byte(self.regs.pc);
+        let pc = self.regs.pc;
+        let b = self.read_byte(pc);
         self.regs.pc += 1;
         b
     }
 
     fn next_pc_word(&mut self) -> u16 {
-        let w = self.read_word(self.regs.pc);
+        let pc = self.regs.pc;
+        let w = self.read_word(pc);
         self.regs.pc += 2;
         w
     }
 
-    fn load_word_zero_page(&self, offset: u8) -> u16 {
+    fn load_word_zero_page(&mut self, offset: u8) -> u16 {
         if offset == 0xFF {
             self.read_byte(0xFF) as u16 +
                 ((self.read_byte(0x00) as u16) << 8)

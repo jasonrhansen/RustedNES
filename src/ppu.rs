@@ -1,27 +1,87 @@
 use std::ops::{Deref, DerefMut};
+use std::default::Default;
 
 use memory::Memory;
 
 pub struct Ppu {
     regs: Regs,
+
+    // The PPU has an internal data bus that it uses for communication with the CPU.
+    // This bus, called _io_db in Visual 2C02 and PPUGenLatch in FCEUX,[1] behaves as an
+    // 8-bit dynamic latch due to capacitance of very long traces that run to various parts
+    // of the PPU. Writing any value to any PPU port, even to the nominally read-only
+    // PPUSTATUS, will fill this latch. Reading any readable port (PPUSTATUS, OAMDATA, or PPUDATA)
+    // also fills the latch with the bits read. Reading a nominally "write-only" register returns
+    // the latch's current value, as do the unused bits of PPUSTATUS.
+    ppu_gen_latch: u8,
 }
 
 impl Ppu {
     pub fn new() -> Ppu {
         Ppu {
             regs: Regs::new(),
+            ppu_gen_latch: 0,
         }
+    }
+
+    fn read_oam_byte(&self) -> u8 {
+        // TODO: Implement
+        0
+    }
+
+    fn write_oam_byte(&mut self, val: u8) {
+        // TODO: Implement
+    }
+
+    fn read_ppu_data_byte(&self) -> u8 {
+        // TODO: Implement
+        0
+    }
+
+    fn write_ppu_data_byte(&mut self, val: u8) {
+        // TODO: Implement
     }
 }
 
 impl Memory for Ppu {
-    fn read_byte(&self, address: u16) -> u8 {
-        //TODO: Implement
-        0
+    fn read_byte(&mut self, address: u16) -> u8 {
+        if !(0x2000 <= address && address < 0x4000) {
+            panic!("Invalid read from PPU, address: {:X}", address)
+        }
+
+        let address = address & 0x2007;
+
+        let val = match address & 0x2007 {
+            0x2002 => *self.regs.ppu_status | (self.ppu_gen_latch & 0x1F),
+            0x2004 => self.read_oam_byte(),
+            0x2007 => self.read_ppu_data_byte(),
+            _ => self.ppu_gen_latch,
+        };
+
+        self.ppu_gen_latch = val;
+
+        val
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        //TODO: Implement
+        if !(0x2000 <= address && address < 0x4000) {
+            panic!("Invalid write in PPU, address: {:X}, value: {}", address, value)
+        }
+
+        let address = address & 0x2007;
+
+        self.ppu_gen_latch = value;
+
+        match address & 0x2007 {
+            0x2000 => *self.regs.ppu_ctrl = value,
+            0x2001 => *self.regs.ppu_mask = value,
+            0x2003 => self.regs.oam_addr = value,
+            0x2004 => self.write_oam_byte(value),
+            0x2005 => self.regs.ppu_scroll.write_byte(value),
+            0x2006 => self.regs.ppu_addr.write_byte(value),
+            0x2007 => self.write_ppu_data_byte(value),
+            _ => ()
+        }
     }
 }
 
@@ -168,16 +228,85 @@ impl DerefMut for PpuStatus {
     }
 }
 
+enum PpuScrollAxis {
+    X,
+    Y,
+}
+
+struct PpuScroll {
+    position_x: u8,
+    position_y: u8,
+    next_axis: PpuScrollAxis
+}
+
+impl PpuScroll {
+    fn write_byte(&mut self, val: u8) {
+        use self::PpuScrollAxis::*;
+        match self.next_axis {
+            X => {
+                self.position_x = val;
+                self.next_axis = Y;
+            }
+            Y => {
+                self.position_y = val;
+                self.next_axis = X;
+            }
+        }
+    }
+}
+
+impl Default for PpuScroll {
+    fn default() -> PpuScroll {
+        PpuScroll {
+            position_x: 0,
+            position_y: 0,
+            next_axis: PpuScrollAxis::X,
+        }
+    }
+}
+
+enum WordByte {
+    HI,
+    LO,
+}
+
+struct PpuAddr {
+    address: u16,
+    next_byte: WordByte,
+}
+
+impl PpuAddr {
+    fn write_byte(&mut self, val: u8) {
+        use self::WordByte::*;
+        match self.next_byte {
+            HI => {
+                self.address = (self.address & 0x0F) | ((val as u16) << 8);
+                self.next_byte = LO;
+            }
+            LO => {
+                self.address = (self.address & 0xF0) | (val as u16);
+                self.next_byte = HI;
+            }
+        }
+    }
+}
+
+impl Default for PpuAddr {
+    fn default() -> PpuAddr {
+        PpuAddr {
+            address: 0,
+            next_byte: WordByte::HI,
+        }
+    }
+}
+
 struct Regs {
     ppu_ctrl: PpuCtrl,
     ppu_mask: PpuMask,
     ppu_status: PpuStatus,
     oam_addr: u8,
-    oam_data: u8,
-    ppu_scroll: u8,
-    ppu_addr: u8,
-    ppu_data: u8,
-    oam_dma: u8,
+    ppu_scroll: PpuScroll,
+    ppu_addr: PpuAddr,
 }
 
 impl Regs {
@@ -187,11 +316,8 @@ impl Regs {
             ppu_mask: PpuMask::NONE,
             ppu_status: PpuStatus::NONE,
             oam_addr: 0,
-            oam_data: 0,
-            ppu_scroll: 0,
-            ppu_addr: 0,
-            ppu_data: 0,
-            oam_dma: 0,
+            ppu_scroll: PpuScroll::default(),
+            ppu_addr: PpuAddr::default(),
         }
     }
 }

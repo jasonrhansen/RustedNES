@@ -5,7 +5,7 @@ pub struct Input {
 }
 
 impl Memory for Input {
-    fn read_byte(&self, address: u16) -> u8 {
+    fn read_byte(&mut self, address: u16) -> u8 {
         //TODO: Implement
         0
     }

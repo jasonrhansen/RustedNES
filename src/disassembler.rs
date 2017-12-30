@@ -8,7 +8,7 @@ pub struct Disassembler<'a, M: Memory + 'a> {
 
 impl<'a, M> Memory for Disassembler<'a, M>
     where M: Memory + 'a {
-    fn read_byte(&self, address: u16) -> u8 {
+    fn read_byte(&mut self, address: u16) -> u8 {
         self.mem.read_byte(address)
     }
 
@@ -32,13 +32,15 @@ impl<'a, M> Disassembler<'a, M>
     }
 
     fn next_pc_byte(&mut self) -> u8 {
-        let b = self.read_byte(self.pc);
+        let pc = self.pc;
+        let b = self.read_byte(pc);
         self.pc += 1;
         b
     }
 
     fn next_pc_word(&mut self) -> u16 {
-        let w = self.read_word(self.pc);
+        let pc = self.pc;
+        let w = self.read_word(pc);
         self.pc += 2;
         w
     }

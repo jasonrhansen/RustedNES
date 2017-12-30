@@ -6,10 +6,10 @@ use input::Input;
 use mapper::Mapper;
 
 pub trait Memory {
-    fn read_byte(&self, address: u16) -> u8;
+    fn read_byte(&mut self, address: u16) -> u8;
     fn write_byte(&mut self, address: u16, value: u8);
 
-    fn read_word(&self, address: u16) -> u16 {
+    fn read_word(&mut self, address: u16) -> u16 {
         self.read_byte(address) as u16 |
             ((self.read_byte(address + 1) as u16) << 8)
     }
@@ -36,7 +36,7 @@ impl Ram {
 // For the RAM we only use the bottom 11 bits of the address.
 // This will prevent index out of bounds, and will support mirroring.
 impl Memory for Ram {
-    fn read_byte(&self, address: u16) -> u8 {
+    fn read_byte(&mut self, address: u16) -> u8 {
         self.buf[address as usize & (RAM_SIZE - 1)]
     }
 
@@ -81,7 +81,7 @@ impl CpuMemMap {
 }
 
 impl Memory for CpuMemMap {
-    fn read_byte(&self, address: u16) -> u8 {
+    fn read_byte(&mut self, address: u16) -> u8 {
         if address < 0x2000 {
             self.ram.read_byte(address)
         } else if address < 0x4000 {
