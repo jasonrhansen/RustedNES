@@ -169,6 +169,8 @@ impl<M: Memory> Cpu<M> {
         }
 
         self.step();
+        let cycles = self.step();
+        println!("cycles: {}", cycles);
     }
 
     pub fn step(&mut self) -> u8 {

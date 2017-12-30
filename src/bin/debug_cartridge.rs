@@ -39,13 +39,13 @@ fn load_rom(filename: &str) -> Result<Cartridge, LoadError> {
 
 fn run_rom(rom: Cartridge) {
     let mapper = mapper::create_mapper(Box::new(rom));
-    let cpu_mem = CpuMemMap::new(Ppu{}, Apu{}, Input{}, mapper);
+    let cpu_mem = CpuMemMap::new(Ppu::new(), Apu{}, Input{}, mapper);
 
     let mut cpu = Cpu::new(cpu_mem);
 
     println!("Stepping through instructions");
 
-    for _ in 0..20 {
+    for _ in 0..100 {
         cpu.step_debug();
     }
 }
