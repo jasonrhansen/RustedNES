@@ -5,7 +5,12 @@ use memory::Memory;
 
 pub struct Ppu {
     regs: Regs,
+
+    // Object Attribute Memory
     oam: Oam,
+
+    // Internal dedicated video RAM
+    vram: Vram,
 
     // The PPU has an internal data bus that it uses for communication with the CPU.
     // This bus, called _io_db in Visual 2C02 and PPUGenLatch in FCEUX,[1] behaves as an
@@ -22,6 +27,7 @@ impl Ppu {
         Ppu {
             regs: Regs::new(),
             oam: Oam::new(),
+            vram: Vram::new(),
             ppu_gen_latch: 0,
         }
     }
@@ -330,6 +336,8 @@ impl Regs {
 // 64 sprites, each sprite uses 4 bytes
 const OAM_SIZE: usize = 64 * 4;
 
+// OAM (Object Attribute Memory) is internal memory inside the PPU that contains
+// a display list of up to 64 sprites, where each sprite's information occupies 4 bytes
 struct Oam {
     buf: [u8; OAM_SIZE],
 }
@@ -361,6 +369,43 @@ impl Deref for Oam {
 }
 
 impl DerefMut for Oam {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.buf
+    }
+}
+
+// 2KB internal VRAM
+const VRAM_SIZE: usize = 0x0800;
+
+pub struct Vram { buf: [u8; VRAM_SIZE] }
+
+impl Vram {
+    fn new() -> Vram {
+        Vram {
+            buf: [0u8; VRAM_SIZE],
+        }
+    }
+}
+
+impl Memory for Vram {
+    fn read_byte(&mut self, address: u16) -> u8 {
+        self[address as usize]
+    }
+
+    fn write_byte(&mut self, address: u16, value: u8) {
+        self[address as usize] = value
+    }
+}
+
+impl Deref for Vram {
+    type Target = [u8; VRAM_SIZE];
+
+    fn deref(&self) -> &Self::Target {
+        &self.buf
+    }
+}
+
+impl DerefMut for Vram {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.buf
     }
