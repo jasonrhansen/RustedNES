@@ -25,12 +25,12 @@ pub trait Memory {
 // 2KB internal RAM
 const RAM_SIZE: usize = 0x0800;
 
-pub struct Ram { buf: [u8; RAM_SIZE] }
+pub struct Ram { bytes: [u8; RAM_SIZE] }
 
 impl Ram {
     fn new() -> Self {
         Ram {
-           buf: [0; RAM_SIZE],
+           bytes: [0; RAM_SIZE],
         }
     }
 }
@@ -51,13 +51,13 @@ impl Deref for Ram {
     type Target = [u8; RAM_SIZE];
 
     fn deref(&self) -> &Self::Target {
-        &self.buf
+        &self.bytes
     }
 }
 
 impl DerefMut for Ram {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.buf
+        &mut self.bytes
     }
 }
 

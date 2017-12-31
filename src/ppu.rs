@@ -9,6 +9,7 @@ use mapper::Mapper;
 use memory::Memory;
 
 pub struct Ppu {
+    cycles: u64,
     regs: Regs,
 
     // When reading while the VRAM address is in the range 0-$3EFF (i.e., before the palettes),
@@ -29,6 +30,11 @@ pub struct Ppu {
     // Object Attribute Memory
     oam: Oam,
 
+    // Sprites to draw on current scan line
+    sprites: [Option<Sprite>; 8],
+
+    scanline: u16,
+
     // The PPU has an internal data bus that it uses for communication with the CPU.
     // This bus, called _io_db in Visual 2C02 and PPUGenLatch in FCEUX,[1] behaves as an
     // 8-bit dynamic latch due to capacitance of very long traces that run to various parts
@@ -42,10 +48,13 @@ pub struct Ppu {
 impl Ppu {
     pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Ppu {
         Ppu {
+            cycles: 0,
             regs: Regs::new(),
             ppu_data_read_buffer: 0,
             mem: MemMap::new(mapper),
             oam: Oam::new(),
+            sprites: Default::default(),
+            scanline: 0,
             ppu_gen_latch: 0,
         }
     }
@@ -79,6 +88,63 @@ impl Ppu {
     fn write_ppu_data_byte(&mut self, val: u8) {
         let address = *self.regs.ppu_addr;
         self.mem.write_byte(address, val)
+    }
+
+    fn is_sprite_at_y_on_scanline(&mut self, y: u8) -> bool {
+        let y = y as u16;
+        let height = self.regs.ppu_ctrl.sprite_size().height() as u16;
+
+        y < self.scanline && self.scanline <= y + height
+    }
+
+    fn evaluate_sprites_for_scan_line(&mut self) {
+        let mut count = 0;
+
+        let mut n = 0;
+
+        while n < 64 {
+            let index = 4 * n;
+            let y = self.oam[index];
+
+            if self.is_sprite_at_y_on_scanline(y) {
+                self.sprites[count] =
+                    Some(Sprite::from_oam_bytes(&self.regs.ppu_ctrl, &self.oam[index..index+5]));
+                count += 1;
+            }
+
+            n += 1;
+
+            if count >= 8 {
+                break;
+            }
+        }
+
+        let mut m = 0;
+
+        // Implement sprite overflow, including hardware bug
+        // where m gets incremented when it doesn't make sense
+        while n < 64 {
+            let index = 4 * n + m;
+            let y = self.oam[index];
+
+            if self.is_sprite_at_y_on_scanline(y) {
+                self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, true);
+                m += 3;
+                if m > 3 {
+                    m = 0;
+                    n += 1;
+                }
+            } else {
+                n += 1;
+                m += 1;
+            }
+        }
+
+        // Clear any remaining sprites if there were less than 8 on scan line
+        while count < 8 {
+            self.sprites[count] = None;
+            count += 1;
+        }
     }
 }
 
@@ -134,6 +200,15 @@ enum VramAddressIncrement {
 enum SpriteSize {
     Size8x8,
     Size8x16,
+}
+
+impl SpriteSize {
+    fn height(&self) -> u8 {
+        match *self {
+            SpriteSize::Size8x8 => 8,
+            SpriteSize::Size8x16 => 16,
+        }
+    }
 }
 
 // PPU master/slave select
@@ -380,7 +455,7 @@ impl Regs {
 // OAM (Object Attribute Memory) is internal memory inside the PPU that contains
 // a display list of up to 64 sprites, where each sprite's information occupies 4 bytes
 struct Oam {
-    buf: [u8; Oam::SIZE],
+    bytes: [u8; Oam::SIZE],
 }
 
 impl Oam {
@@ -389,7 +464,7 @@ impl Oam {
 
     fn new() -> Oam {
         Oam {
-           buf: [0u8; Oam::SIZE],
+           bytes: [0u8; Oam::SIZE],
         }
     }
 }
@@ -408,25 +483,25 @@ impl Deref for Oam {
     type Target = [u8; Oam::SIZE];
 
     fn deref(&self) -> &Self::Target {
-        &self.buf
+        &self.bytes
     }
 }
 
 impl DerefMut for Oam {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.buf
+        &mut self.bytes
     }
 }
 
 // 2KB internal dedicated Video RAM
-pub struct Vram { buf: [u8; Vram::SIZE] }
+pub struct Vram { bytes: [u8; Vram::SIZE] }
 
 impl Vram {
     const SIZE: usize = 0x0800;
 
     fn new() -> Vram {
         Vram {
-            buf: [0u8; Vram::SIZE],
+            bytes: [0u8; Vram::SIZE],
         }
     }
 }
@@ -445,17 +520,17 @@ impl Deref for Vram {
     type Target = [u8; Vram::SIZE];
 
     fn deref(&self) -> &Self::Target {
-        &self.buf
+        &self.bytes
     }
 }
 
 impl DerefMut for Vram {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.buf
+        &mut self.bytes
     }
 }
 
-pub struct PaletteRam { buf: [u8; PaletteRam::SIZE] }
+pub struct PaletteRam { bytes: [u8; PaletteRam::SIZE] }
 
 impl PaletteRam {
     const SIZE: usize = 32;
@@ -464,7 +539,7 @@ impl PaletteRam {
 
     fn new() -> PaletteRam {
         PaletteRam {
-            buf: [0u8; PaletteRam::SIZE],
+            bytes: [0u8; PaletteRam::SIZE],
         }
     }
 }
@@ -483,13 +558,13 @@ impl Deref for PaletteRam {
     type Target = [u8; PaletteRam::SIZE];
 
     fn deref(&self) -> &Self::Target {
-        &self.buf
+        &self.bytes
     }
 }
 
 impl DerefMut for PaletteRam {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.buf
+        &mut self.bytes
     }
 }
 
@@ -533,6 +608,75 @@ impl Memory for MemMap {
             self.palette_ram.write_byte(address, value);
         } else {
             panic!("Invalid write to PPU-space memory, address: {:X}, value: {}", address, value)
+        }
+    }
+}
+
+enum SpritePriority {
+    FrontOfBackground,
+    BehindBackground,
+}
+
+struct Sprite {
+    x: u8,
+    y: u8,
+    size: SpriteSize,
+    tile_number: u8,
+    bank_address: u16,
+    palette: u8,
+    priority: SpritePriority,
+    flip_horizontally: bool,
+    flip_vertically: bool,
+}
+
+impl Sprite {
+    fn from_oam_bytes(ppu_ctrl: &PpuCtrl, oam_bytes: &[u8]) -> Sprite {
+        let size = ppu_ctrl.sprite_size();
+
+        let tile_number = match size {
+            SpriteSize::Size8x8 => oam_bytes[1],
+            SpriteSize::Size8x16 => oam_bytes[1] & 0xFE,
+        };
+
+        let bank_address = match size {
+            SpriteSize::Size8x8 => if (oam_bytes[1] | 0x01) == 0 {
+                0x0000
+            } else {
+                0x1000
+            },
+            SpriteSize::Size8x16 => ppu_ctrl.sprite_pattern_table_address(),
+        };
+
+        Sprite {
+            x: oam_bytes[3],
+            y: oam_bytes[0],
+            size,
+            tile_number,
+            bank_address,
+            palette: (oam_bytes[2] & 0x03) + 4,
+            priority: if (oam_bytes[2] & 0x20) == 0 {
+                SpritePriority::FrontOfBackground
+            } else {
+                SpritePriority::BehindBackground
+            },
+            flip_horizontally: (oam_bytes[2] & 0x40) != 0,
+            flip_vertically: (oam_bytes[2] & 0x40) != 0,
+        }
+    }
+}
+
+impl Default for Sprite {
+    fn default() -> Sprite {
+        Sprite {
+            x: 0,
+            y: 0,
+            size: SpriteSize::Size8x8,
+            tile_number: 0,
+            bank_address: 0x0000,
+            palette: 4,
+            priority: SpritePriority::FrontOfBackground,
+            flip_horizontally: false,
+            flip_vertically: false,
         }
     }
 }
