@@ -1,16 +1,33 @@
-use std::ops::{Deref, DerefMut};
-use std::default::Default;
+#![feature(associated_consts)]
 
+use std::cell::RefCell;
+use std::default::Default;
+use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
+
+use mapper::Mapper;
 use memory::Memory;
 
 pub struct Ppu {
     regs: Regs,
 
+    // When reading while the VRAM address is in the range 0-$3EFF (i.e., before the palettes),
+    // the read will return the contents of an internal read buffer. This internal buffer is
+    // updated only when reading PPUDATA, and so is preserved across frames. After the CPU reads
+    // and gets the contents of the internal buffer, the PPU will immediately update the internal
+    // buffer with the byte at the current VRAM address. Thus, after setting the VRAM address, one
+    // should first read this register and discard the result.
+    // Reading palette data from $3F00-$3FFF works differently. The palette data is placed
+    // immediately on the data bus, and hence no dummy read is required. Reading the palettes still
+    // updates the internal buffer though, but the data placed in it is the mirrored nametable data
+    // that would appear "underneath" the palette.
+    ppu_data_read_buffer: u8,
+
+    // PPU address space
+    mem: MemMap,
+
     // Object Attribute Memory
     oam: Oam,
-
-    // Internal dedicated video RAM
-    vram: Vram,
 
     // The PPU has an internal data bus that it uses for communication with the CPU.
     // This bus, called _io_db in Visual 2C02 and PPUGenLatch in FCEUX,[1] behaves as an
@@ -23,11 +40,12 @@ pub struct Ppu {
 }
 
 impl Ppu {
-    pub fn new() -> Ppu {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Ppu {
         Ppu {
             regs: Regs::new(),
+            ppu_data_read_buffer: 0,
+            mem: MemMap::new(mapper),
             oam: Oam::new(),
-            vram: Vram::new(),
             ppu_gen_latch: 0,
         }
     }
@@ -44,20 +62,31 @@ impl Ppu {
         self.regs.oam_addr += 1;
     }
 
-    fn read_ppu_data_byte(&self) -> u8 {
-        // TODO: Implement
-        0
+    fn read_ppu_data_byte(&mut self) -> u8 {
+        let address = *self.regs.ppu_addr;
+
+        let read_buffer = self.ppu_data_read_buffer;
+        self.ppu_data_read_buffer = self.mem.read_byte(address);
+        if address < PaletteRam::START_ADDRESS {
+            // Return contents of read buffer before the read.
+            read_buffer
+        } else {
+            // Palette data is returned immediately. No dummy read is required.
+            self.ppu_data_read_buffer
+        }
     }
 
     fn write_ppu_data_byte(&mut self, val: u8) {
-        // TODO: Implement
+        let address = *self.regs.ppu_addr;
+        self.mem.write_byte(address, val)
     }
 }
 
+// Implements mapping of PPU registers into CPU address space
 impl Memory for Ppu {
     fn read_byte(&mut self, address: u16) -> u8 {
         if !(0x2000 <= address && address < 0x4000) {
-            panic!("Invalid read from PPU, address: {:X}", address)
+            panic!("Invalid read from PPU memory-mapped registers: {:X}", address)
         }
 
         let address = address & 0x2007;
@@ -76,7 +105,7 @@ impl Memory for Ppu {
 
     fn write_byte(&mut self, address: u16, value: u8) {
         if !(0x2000 <= address && address < 0x4000) {
-            panic!("Invalid write in PPU, address: {:X}, value: {}", address, value)
+            panic!("Invalid write to PPU memory-mapped registers, address: {:X}, value: {}", address, value)
         }
 
         let address = address & 0x2007;
@@ -98,7 +127,7 @@ impl Memory for Ppu {
 
 //VRAM address increment per CPU read/write of PPUDATA
 enum VramAddressIncrement {
-    Add1Accross,         // Add 1, going across
+    Add1Across,         // Add 1, going across
     Add32Down,           // Add 32, going down
 }
 
@@ -128,7 +157,7 @@ impl PpuCtrl {
 
     fn vram_address_increment(&self) -> VramAddressIncrement {
         if (self.val & 0x04) == 0 {
-            VramAddressIncrement::Add1Accross
+            VramAddressIncrement::Add1Across
         } else {
             VramAddressIncrement::Add32Down
         }
@@ -311,6 +340,20 @@ impl Default for PpuAddr {
     }
 }
 
+impl Deref for PpuAddr {
+    type Target = u16;
+
+    fn deref(&self) -> &Self::Target {
+        &self.address
+    }
+}
+
+impl DerefMut for PpuAddr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.address
+    }
+}
+
 struct Regs {
     ppu_ctrl: PpuCtrl,
     ppu_mask: PpuMask,
@@ -333,19 +376,20 @@ impl Regs {
     }
 }
 
-// 64 sprites, each sprite uses 4 bytes
-const OAM_SIZE: usize = 64 * 4;
 
 // OAM (Object Attribute Memory) is internal memory inside the PPU that contains
 // a display list of up to 64 sprites, where each sprite's information occupies 4 bytes
 struct Oam {
-    buf: [u8; OAM_SIZE],
+    buf: [u8; Oam::SIZE],
 }
 
 impl Oam {
+    // 64 sprites, each sprite uses 4 bytes
+    const SIZE: usize = 64 * 4;
+
     fn new() -> Oam {
         Oam {
-           buf: [0u8; OAM_SIZE],
+           buf: [0u8; Oam::SIZE],
         }
     }
 }
@@ -361,7 +405,7 @@ impl Memory for Oam {
 }
 
 impl Deref for Oam {
-    type Target = [u8; 64 * 4];
+    type Target = [u8; Oam::SIZE];
 
     fn deref(&self) -> &Self::Target {
         &self.buf
@@ -374,15 +418,15 @@ impl DerefMut for Oam {
     }
 }
 
-// 2KB internal VRAM
-const VRAM_SIZE: usize = 0x0800;
-
-pub struct Vram { buf: [u8; VRAM_SIZE] }
+// 2KB internal dedicated Video RAM
+pub struct Vram { buf: [u8; Vram::SIZE] }
 
 impl Vram {
+    const SIZE: usize = 0x0800;
+
     fn new() -> Vram {
         Vram {
-            buf: [0u8; VRAM_SIZE],
+            buf: [0u8; Vram::SIZE],
         }
     }
 }
@@ -398,7 +442,7 @@ impl Memory for Vram {
 }
 
 impl Deref for Vram {
-    type Target = [u8; VRAM_SIZE];
+    type Target = [u8; Vram::SIZE];
 
     fn deref(&self) -> &Self::Target {
         &self.buf
@@ -408,5 +452,87 @@ impl Deref for Vram {
 impl DerefMut for Vram {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.buf
+    }
+}
+
+pub struct PaletteRam { buf: [u8; PaletteRam::SIZE] }
+
+impl PaletteRam {
+    const SIZE: usize = 32;
+    const START_ADDRESS: u16 = 0x3FF0;
+    const MIRROR_MASK: u16 = 0x3F1F;
+
+    fn new() -> PaletteRam {
+        PaletteRam {
+            buf: [0u8; PaletteRam::SIZE],
+        }
+    }
+}
+
+impl Memory for PaletteRam {
+    fn read_byte(&mut self, address: u16) -> u8 {
+        self[(address & PaletteRam::MIRROR_MASK) as usize]
+    }
+
+    fn write_byte(&mut self, address: u16, value: u8) {
+        self[(address & PaletteRam::MIRROR_MASK) as usize] = value
+    }
+}
+
+impl Deref for PaletteRam {
+    type Target = [u8; PaletteRam::SIZE];
+
+    fn deref(&self) -> &Self::Target {
+        &self.buf
+    }
+}
+
+impl DerefMut for PaletteRam {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.buf
+    }
+}
+
+pub struct MemMap {
+    vram: Vram,
+    palette_ram: PaletteRam,
+    mapper: Rc<RefCell<Box<Mapper>>>,
+}
+
+impl MemMap {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Self {
+        MemMap {
+            vram: Vram::new(),
+            palette_ram: PaletteRam::new(),
+            mapper,
+        }
+    }
+}
+
+impl Memory for MemMap {
+    fn read_byte(&mut self, address: u16) -> u8 {
+        if address < PaletteRam::START_ADDRESS {
+            let mut mapper = self.mapper.borrow_mut();
+            mapper.ppu_read_byte(&mut self.vram, address)
+        } else if address < 0x4000 {
+            // Palette RAM is not configurable, always mapped to the
+            // internal palette control in VRAM.
+            self.palette_ram.read_byte(address)
+        } else {
+            panic!("Invalid read from PPU space memory: {:X}", address)
+        }
+    }
+
+    fn write_byte(&mut self, address: u16, value: u8) {
+        if address < PaletteRam::START_ADDRESS {
+            let mut mapper = self.mapper.borrow_mut();
+            mapper.ppu_write_byte(&mut self.vram, address, value);
+        } else if address < 0x4000 {
+            // Palette RAM is not configurable, always mapped to the
+            // internal palette control in VRAM.
+            self.palette_ram.write_byte(address, value);
+        } else {
+            panic!("Invalid write to PPU-space memory, address: {:X}, value: {}", address, value)
+        }
     }
 }

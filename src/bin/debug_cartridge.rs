@@ -1,7 +1,9 @@
 extern crate sadnes;
 
+use std::cell::RefCell;
 use std::env;
 use std::fs::File;
+use std::rc::Rc;
 
 use sadnes::memory::CpuMemMap;
 use sadnes::mapper;
@@ -38,8 +40,17 @@ fn load_rom(filename: &str) -> Result<Cartridge, LoadError> {
 }
 
 fn run_rom(rom: Cartridge) {
-    let mapper = mapper::create_mapper(Box::new(rom));
-    let cpu_mem = CpuMemMap::new(Ppu::new(), Apu{}, Input{}, mapper);
+    let mapper = Rc::new(
+        RefCell::new(
+            mapper::create_mapper(Box::new(rom))
+        )
+    );
+
+    let cpu_mem = CpuMemMap::new(
+        Ppu::new(mapper.clone()),
+        Apu{},
+        Input{}, mapper
+    );
 
     let mut cpu = Cpu::new(cpu_mem);
 

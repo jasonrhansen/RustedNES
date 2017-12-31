@@ -18,8 +18,6 @@ bitflags! {
     }
 }
 
-
-
 impl fmt::Display for StatusFlags {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "Flags {{C: {}, Z: {}, I: {}, D: {}, B: {}, E: {}, O: {}, N: {}}}",

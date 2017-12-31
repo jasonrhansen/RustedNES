@@ -1,5 +1,7 @@
-use mapper::Mapper;
 use cartridge::{Cartridge, PRG_ROM_BANK_SIZE};
+use mapper::Mapper;
+use memory::Memory;
+use ppu::Vram;
 
 pub struct Nrom {
     cartridge: Box<Cartridge>,
@@ -35,11 +37,19 @@ impl Mapper for Nrom {
         // Ignore other address since we can't store to PRG_ROM
     }
 
-    fn chr_read_byte(&self, address: u16) -> u8 {
-        self.cartridge.chr_rom[address as usize]
+    fn ppu_read_byte(&self, vram: &mut Vram, address: u16) -> u8 {
+        if address < 0x2000 {
+            self.cartridge.chr_rom[address as usize]
+        } else {
+            // TODO: Handle mirroring
+            vram.read_byte(address)
+        }
     }
 
-    fn chr_write_byte(&mut self, address: u16, value: u8) {
-        // Do nothing since we can't store to CHR-ROM
+    fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8) {
+        if address >= 0x2000 {
+            // TODO: Handle mirroring
+            vram.write_byte(address, value);
+        }
     }
 }

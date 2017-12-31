@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
+use std::rc::Rc;
 
 use ppu::Ppu;
 use apu::Apu;
@@ -37,11 +39,11 @@ impl Ram {
 // This will prevent index out of bounds, and will support mirroring.
 impl Memory for Ram {
     fn read_byte(&mut self, address: u16) -> u8 {
-        self.buf[address as usize & (RAM_SIZE - 1)]
+        self[address as usize & (RAM_SIZE - 1)]
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        self.buf[address as usize & (RAM_SIZE - 1)] = value
+        self[address as usize & (RAM_SIZE - 1)] = value
     }
 }
 
@@ -65,11 +67,12 @@ pub struct CpuMemMap {
     pub ppu: Ppu,
     pub apu: Apu,
     pub input: Input,
-    pub mapper: Box<Mapper>
+    pub mapper: Rc<RefCell<Box<Mapper>>>,
 }
 
 impl CpuMemMap {
-    pub fn new(ppu: Ppu, apu: Apu, input: Input, mapper: Box<Mapper>) -> Self {
+    pub fn new(ppu: Ppu, apu: Apu, input: Input,
+               mapper: Rc<RefCell<Box<Mapper>>>) -> Self {
         CpuMemMap {
             ram: Ram::new(),
             ppu,
@@ -91,7 +94,8 @@ impl Memory for CpuMemMap {
         } else if address < 0x4018 {
             self.input.read_byte(address)
         } else {
-            self.mapper.prg_read_byte(address)
+            let mut mapper = self.mapper.borrow_mut();
+            mapper.prg_read_byte(address)
         }
     }
 
@@ -105,7 +109,8 @@ impl Memory for CpuMemMap {
         } else if address < 0x4018 {
             self.input.write_byte(address, value);
         } else {
-            self.mapper.prg_write_byte(address, value);
+            let mut mapper = self.mapper.borrow_mut();
+            mapper.prg_write_byte(address, value);
         }
     }
 }
