@@ -32,8 +32,11 @@ impl Nes {
 
         loop {
             let cpu_cycles = cpu.step();
-
-            interconnect.cycles(cpu_cycles);
+            let interrupt = interconnect.cycles(cpu_cycles);
+            match interrupt {
+                Interrupt::Nmi => cpu.request_nmi(),
+                Interrupt::Irq => cpu.request_irq(),
+            }
         }
     }
 }

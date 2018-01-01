@@ -14,7 +14,7 @@ pub mod ppu;
 pub mod apu;
 pub mod input;
 mod disassembler;
-mod interconnect;
+pub mod interconnect;
 
 use std::cell::RefCell;
 use std::env;
@@ -36,22 +36,15 @@ fn start_emulation(cartridge: Cartridge) {
         )
     );
 
-    let mut interconnect = Interconnect::new(
-        Ppu::new(mapper.clone()),
-        Apu{},
-        Input{}, mapper
-    );
+    let mut interconnect = Interconnect::new(mapper);
+    let mut cpu = Cpu::new();
 
-    let mut cpu = Cpu::new(interconnect);
+    cpu.reset(&mut interconnect);
 
     // Main emulation loop
     loop {
-        let cpu_cycles = cpu.step();
+        let cpu_cycles = cpu.step(&mut interconnect);
 
         interconnect.cycles(cpu_cycles);
-
-        for i in 0..cpu_cycles * 3 {
-           interconnect.ppu.step(&mut cpu);
-        }
     }
 }

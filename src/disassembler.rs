@@ -1,75 +1,61 @@
 use memory::Memory;
 use cpu::{AddressMode, Register8};
 
-pub struct Disassembler<'a, M: Memory + 'a> {
+pub struct Disassembler {
     pc: u16,
-    mem: &'a mut M,
 }
 
-impl<'a, M> Memory for Disassembler<'a, M>
-    where M: Memory + 'a {
-    fn read_byte(&mut self, address: u16) -> u8 {
-        self.mem.read_byte(address)
-    }
-
-    fn write_byte(&mut self, address: u16, value: u8) {
-        self.mem.write_byte(address, value)
-    }
-}
-
-impl<'a, M> Disassembler<'a, M>
-    where M: Memory + 'a {
-    pub fn new(pc: u16, mem: &mut M) -> Disassembler<M> {
+impl Disassembler {
+    pub fn new(pc: u16) -> Disassembler {
         Disassembler {
             pc,
-            mem
         }
     }
 
-    pub fn disassemble_next(&mut self) -> String {
-        let op = self.next_pc_byte();
-        handle_opcode!(op, self)
+    pub fn disassemble_next<M: Memory>(&mut self, mem: &mut M) -> String {
+        let op = self.next_pc_byte(mem);
+        handle_opcode!(op, self, mem)
     }
 
-    fn next_pc_byte(&mut self) -> u8 {
+    fn next_pc_byte<M: Memory>(&mut self, mem: &mut M) -> u8 {
         let pc = self.pc;
-        let b = self.read_byte(pc);
+        let b = mem.read_byte(pc);
         self.pc += 1;
         b
     }
 
-    fn next_pc_word(&mut self) -> u16 {
+    fn next_pc_word<M: Memory>(&mut self, mem: &mut M) -> u16 {
         let pc = self.pc;
-        let w = self.read_word(pc);
+        let w = mem.read_word(pc);
         self.pc += 2;
         w
     }
 
-    fn dis_pc_byte(&mut self) -> String {
-        format!("${:02X}", self.next_pc_byte())
+    fn dis_pc_byte<M: Memory>(&mut self, mem: &mut M) -> String {
+        format!("${:02X}", self.next_pc_byte(mem))
     }
 
-    fn dis_pc_word(&mut self) -> String {
-        format!("${:04X}", self.next_pc_word())
+    fn dis_pc_word<M: Memory>(&mut self, mem: &mut M) -> String {
+        format!("${:04X}", self.next_pc_word(mem))
     }
 
-    fn dis_am(&mut self, am: AddressMode) -> String {
+    fn dis_am<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
         use cpu::AddressMode::*;
         match am {
-            Immediate => format!("#{}", self.dis_pc_byte()).into(),
-            Absolute => self.dis_pc_word(),
-            ZeroPage => self.dis_pc_byte(),
+            Immediate => format!("#{}", self.dis_pc_byte(mem)).into(),
+            Absolute => self.dis_pc_word(mem),
+            ZeroPage => self.dis_pc_byte(mem),
             AbsoluteIndexed(reg) => {
-                format!("{},{}", self.dis_pc_word(), self.dis_reg(reg))
+                format!("{},{}", self.dis_pc_word(mem), self.dis_reg(reg))
             },
             ZeroPageIndexed(reg) => {
-                format!("{},{}", self.dis_pc_byte(), self.dis_reg(reg))
+                format!("{},{}", self.dis_pc_byte(mem), self.dis_reg(reg))
             },
             IndexedIndirect(reg) => {
-                format!("({},{})", self.dis_pc_byte(), self.dis_reg(reg))
+                format!("({},{})", self.dis_pc_byte(mem), self.dis_reg(reg))
             },
             IndirectIndexed(reg) => {
-                format!("({}),{}", self.dis_pc_byte(), self.dis_reg(reg))
+                format!("({}),{}", self.dis_pc_byte(mem), self.dis_reg(reg))
             },
             Register(reg) => self.dis_reg(reg),
         }
@@ -86,60 +72,60 @@ impl<'a, M> Disassembler<'a, M>
         }
     }
 
-    fn dis_instruction(&mut self, instruction: &str, am: AddressMode) -> String {
-        format!("{} {}", instruction, self.dis_am(am)).into()
+    fn dis_instruction<M: Memory>(&mut self, instruction: &str, mem: &mut M, am: AddressMode) -> String {
+        format!("{} {}", instruction, self.dis_am(mem, am)).into()
     }
 
-    fn dis_branch(&mut self, instruction: &str) -> String {
-        format!("{} {}", instruction, self.dis_pc_byte()).into()
+    fn dis_branch<M: Memory>(&mut self, instruction: &str, mem: &mut M) -> String {
+        format!("{} {}", instruction, self.dis_pc_byte(mem)).into()
     }
 
     ///////////////////
     // Instructions
     ///////////////////
 
-    fn lda(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("lda", am)
+    fn lda<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("lda", mem, am)
     }
 
-    fn ldx(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("ldx", am)
+    fn ldx<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("ldx", mem, am)
     }
 
-    fn ldy(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("ldy", am)
+    fn ldy<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("ldy", mem, am)
     }
 
-    fn sta(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("sta", am)
+    fn sta<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("sta", mem, am)
     }
 
-    fn stx(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("stx", am)
+    fn stx<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("stx", mem, am)
     }
 
-    fn sty(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("sty", am)
+    fn sty<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("sty", mem, am)
     }
 
-    fn adc(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("adc", am)
+    fn adc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("adc", mem, am)
     }
 
-    fn sbc(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("sbc", am)
+    fn sbc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("sbc", mem, am)
     }
 
-    fn and(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("and", am)
+    fn and<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("and", mem, am)
     }
 
-    fn ora(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("ora", am)
+    fn ora<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("ora", mem, am)
     }
 
-    fn eor(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("eor", am)
+    fn eor<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("eor", mem, am)
     }
 
     fn sec(&mut self) -> String {
@@ -170,68 +156,68 @@ impl<'a, M> Disassembler<'a, M>
         "clv".into()
     }
 
-    fn jmp(&mut self) -> String {
-        format!("jmp {}", self.dis_pc_word()).into()
+    fn jmp<M: Memory>(&mut self, mem: &mut M) -> String {
+        format!("jmp {}", self.dis_pc_word(mem)).into()
     }
 
-    fn jmpi(&mut self) -> String {
-        format!("jmp ({})", self.dis_pc_word()).into()
+    fn jmpi<M: Memory>(&mut self, mem: &mut M) -> String {
+        format!("jmp ({})", self.dis_pc_word(mem)).into()
     }
 
-    fn bmi(&mut self) -> String {
-        self.dis_branch("bmi")
+    fn bmi<M: Memory>(&mut self, mem: &mut M) -> String {
+        self.dis_branch("bmi", mem)
     }
 
-    fn bpl(&mut self) -> String {
-        self.dis_branch("bpl")
+    fn bpl<M: Memory>(&mut self, mem: &mut M) -> String {
+        self.dis_branch("bpl", mem)
     }
 
-    fn bcc(&mut self) -> String {
-        self.dis_branch("bcc")
+    fn bcc<M: Memory>(&mut self, mem: &mut M) -> String {
+        self.dis_branch("bcc", mem)
     }
 
-    fn bcs(&mut self) -> String {
-        self.dis_branch("bcs")
+    fn bcs<M: Memory>(&mut self, mem: &mut M) -> String {
+        self.dis_branch("bcs", mem)
     }
 
-    fn beq(&mut self) -> String {
-        self.dis_branch("beq")
+    fn beq<M: Memory>(&mut self, mem: &mut M) -> String {
+        self.dis_branch("beq", mem)
     }
 
-    fn bne(&mut self) -> String {
-        self.dis_branch("bne")
+    fn bne<M: Memory>(&mut self, mem: &mut M) -> String {
+        self.dis_branch("bne", mem)
     }
 
-    fn bvs(&mut self) -> String {
-        self.dis_branch("bvs")
+    fn bvs<M: Memory>(&mut self, mem: &mut M) -> String {
+        self.dis_branch("bvs", mem)
     }
 
-    fn bvc(&mut self) -> String {
-        self.dis_branch("bvc")
+    fn bvc<M: Memory>(&mut self, mem: &mut M) -> String {
+        self.dis_branch("bvc", mem)
     }
 
-    fn cmp(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("cmp", am)
+    fn cmp<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("cmp", mem, am)
     }
 
-    fn cpx(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("cpx", am)
+    fn cpx<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("cpx", mem, am)
     }
 
-    fn cpy(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("cpy", am)
+    fn cpy<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("cpy", mem, am)
     }
 
-    fn bit(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("bit", am)
+    fn bit<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("bit", mem, am)
     }
 
-    fn inc(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("inc", am)
+    fn inc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("inc", mem, am)
     }
 
-    fn dec(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("dec", am)
+    fn dec<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("dec", mem, am)
     }
 
     fn inx(&mut self) -> String {
@@ -274,51 +260,51 @@ impl<'a, M> Disassembler<'a, M>
         "txs".into()
     }
 
-    fn jsr(&mut self) -> String {
-        format!("jsr {}", self.dis_pc_word()).into()
+    fn jsr<M: Memory>(&mut self, mem: &mut M) -> String {
+        format!("jsr {}", self.dis_pc_word(mem)).into()
     }
 
-    fn rts(&mut self) -> String {
+    fn rts<M: Memory>(&mut self, _: &mut M) -> String {
         "rts".into()
     }
 
-    fn pha(&mut self) -> String {
+    fn pha<M: Memory>(&mut self, _: &mut M) -> String {
         "pha".into()
     }
 
-    fn pla(&mut self) -> String {
+    fn pla<M: Memory>(&mut self, _: &mut M) -> String {
         "pla".into()
     }
 
-    fn php(&mut self) -> String {
+    fn php<M: Memory>(&mut self, _: &mut M) -> String {
         "php".into()
     }
 
-    fn plp(&mut self) -> String {
+    fn plp<M: Memory>(&mut self, _: &mut M) -> String {
         "plp".into()
     }
 
-    fn lsr(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("cpy", am)
+    fn lsr<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("cpy", mem, am)
     }
 
-    fn asl(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("asl", am)
+    fn asl<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("asl", mem, am)
     }
 
-    fn ror(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("ror", am)
+    fn ror<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("ror", mem, am)
     }
 
-    fn rol(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("rol", am)
+    fn rol<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("rol", mem, am)
     }
 
-    fn brk(&mut self) -> String {
+    fn brk<M: Memory>(&mut self, mem: &mut M) -> String {
         "brk".into()
     }
 
-    fn rti(&mut self) -> String {
+    fn rti<M: Memory>(&mut self, mem: &mut M) -> String {
         "rti".into()
     }
 
@@ -330,21 +316,20 @@ impl<'a, M> Disassembler<'a, M>
     // Unofficial Instructions
     ///////////////////////////
 
-    fn nop_2_bytes(&mut self) -> String {
-        format!("nop2 {}", self.dis_pc_byte()).into()
+    fn nop_2_bytes<M: Memory>(&mut self, mem: &mut M) -> String {
+        format!("nop2 {}", self.dis_pc_byte(mem)).into()
     }
 
-    fn xaa(&mut self) -> String {
+    fn xaa<M: Memory>(&mut self, mem: &mut M) -> String {
         "xaa".into()
     }
 
-    // Used by "Super Cars (U)"
-    fn lax(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("lax", am)
+    fn lax<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("lax", mem, am)
     }
 
-    fn slo(&mut self, am: AddressMode) -> String {
-        self.dis_instruction("slo", am)
+    fn slo<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("slo", mem, am)
     }
 }
 

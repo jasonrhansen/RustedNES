@@ -5,7 +5,7 @@ use std::default::Default;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
-use cpu::Cpu;
+use cpu::{Cpu, Interrupt};
 use mapper::Mapper;
 use memory::Memory;
 
@@ -157,8 +157,23 @@ impl Ppu {
         }
     }
 
-    pub fn step(&mut self, cpu: &mut Cpu) {
+    // Run for the given number of cpu cycles
+    pub fn cycles(&mut self, cycles: u32) -> Interrupt {
+        let mut interrupt = Interrupt::None;
+        // 3 PPU cycles per CPU cycle
+        for i in 0..cycles * 3 {
+            let step_interrupt = self.step();
+            if step_interrupt != Interrupt::None {
+                interrupt = step_interrupt;
+            }
+        }
+
+        interrupt
+    }
+
+    fn step(&mut self) -> Interrupt {
         let scanline_cycle = self.cycles - self.scanline_start_cycle;
+        let mut interrupt = Interrupt::None;
 
         // TODO: Handle other important scanlines and cycles
 
@@ -179,7 +194,7 @@ impl Ppu {
                 match scanline_cycle {
                     1 => {
                         self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, true);
-                        cpu.request_nmi();
+                        interrupt = Interrupt::Nmi;
                     },
                     _ => ()
                 }
@@ -196,6 +211,8 @@ impl Ppu {
         }
 
         self.cycles += 1;
+
+        interrupt
     }
 }
 

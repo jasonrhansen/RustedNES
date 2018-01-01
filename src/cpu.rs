@@ -124,104 +124,89 @@ fn mem_pages_same(m1: u16, m2: u16) -> bool {
 pub struct Cpu {
     cycles: u64,
     regs: Regs,
-    interconnect: Interconnect,
     interrupt: Interrupt
 }
 
-impl Memory for Cpu {
-    fn read_byte(&mut self, address: u16) -> u8 {
-        self.interconnect.read_byte(address)
-    }
-
-    fn write_byte(&mut self, address: u16, value: u8) {
-        self.interconnect.write_byte(address, value)
-    }
-}
-
 impl Cpu {
-    pub fn new(interconnect: Interconnect) -> Cpu {
+    pub fn new() -> Cpu {
         let mut cpu = Cpu {
             cycles: 0,
             regs: Regs::new(),
-            interconnect,
             interrupt: Interrupt::None,
         };
-
-        cpu.reset();
 
         cpu
     }
 
-    pub fn reset(&mut self) {
-        self.regs.pc = self.read_word(RESET_VECTOR);
+    pub fn reset<M: Memory>(&mut self, mem: &mut M) {
+        self.regs.pc = mem.read_word(RESET_VECTOR);
         self.regs.sp = 0xFD;
         self.regs.status = StatusFlags::INTERRUPT_DISABLE | StatusFlags::EXPANSION;
         self.interrupt = Interrupt::None;
     }
 
-    pub fn step_debug(&mut self) {
+    pub fn step_debug<M: Memory>(&mut self, mem: &mut M) {
         {
             let pc = self.regs.pc;
-            let mut d = Disassembler::new(pc, &mut self.interconnect);
+            let mut d = Disassembler::new(pc);
             println!("{:?}", self.regs);
-            println!("{}", d.disassemble_next());
+            println!("{}", d.disassemble_next(mem));
         }
 
-        self.step();
-        let cycles = self.step();
+        let cycles = self.step(mem);
         println!("cycles: {}", cycles);
     }
 
-    pub fn step(&mut self) -> u32 {
+    pub fn step<M: Memory>(&mut self, mem: &mut M) -> u32 {
         let cycles = self.cycles;
 
-        self.handle_interrupts();
+        self.handle_interrupts(mem);
 
-        let opcode = self.next_pc_byte();
-        handle_opcode!(opcode, self);
+        let opcode = self.next_pc_byte(mem);
+        handle_opcode!(opcode, self, mem);
 
         self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
 
         (self.cycles - cycles) as u32
     }
 
-    fn next_pc_byte(&mut self) -> u8 {
+    fn next_pc_byte<M: Memory>(&mut self, mem: &mut M) -> u8 {
         let pc = self.regs.pc;
-        let b = self.read_byte(pc);
+        let b = mem.read_byte(pc);
         self.regs.pc += 1;
         b
     }
 
-    fn next_pc_word(&mut self) -> u16 {
+    fn next_pc_word<M: Memory>(&mut self, mem: &mut M) -> u16 {
         let pc = self.regs.pc;
-        let w = self.read_word(pc);
+        let w = mem.read_word(pc);
         self.regs.pc += 2;
         w
     }
 
-    fn load_word_zero_page(&mut self, offset: u8) -> u16 {
+    fn load_word_zero_page<M: Memory>(&mut self, mem: &mut M, offset: u8) -> u16 {
         if offset == 0xFF {
-            self.read_byte(0xFF) as u16 +
-                ((self.read_byte(0x00) as u16) << 8)
+            mem.read_byte(0xFF) as u16 +
+                ((mem.read_byte(0x00) as u16) << 8)
         } else {
-            self.read_word(offset as u16)
+            mem.read_word(offset as u16)
         }
     }
 
-    fn load(&mut self, am: AddressMode) -> u8 {
+    fn load<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> u8 {
         use self::AddressMode::*;
         match am {
-            Immediate => self.next_pc_byte(),
+            Immediate => self.next_pc_byte(mem),
             Absolute => {
-                let addr = self.next_pc_word();
-                self.read_byte(addr)
+                let addr = self.next_pc_word(mem);
+                mem.read_byte(addr)
             },
             ZeroPage => {
-                let addr = self.next_pc_byte() as u16;
-                self.read_byte(addr)
+                let addr = self.next_pc_byte(mem) as u16;
+                mem.read_byte(addr)
             },
             AbsoluteIndexed(reg) => {
-                let base = self.next_pc_word();
+                let base = self.next_pc_word(mem);
                 let index = self.get_register(reg) as u16;
                 let addr = base + index;
 
@@ -230,22 +215,22 @@ impl Cpu {
                     self.cycles += 1;
                 }
 
-                self.read_byte(addr)
+                mem.read_byte(addr)
             },
             ZeroPageIndexed(reg) => {
-                let base = self.next_pc_byte() as u16;
+                let base = self.next_pc_byte(mem) as u16;
                 let index = self.get_register(reg) as u16;
-                self.read_byte(base + index)
+                mem.read_byte(base + index)
             },
             IndexedIndirect(reg) => {
-                let base = self.next_pc_byte();
+                let base = self.next_pc_byte(mem);
                 let index = self.get_register(reg);
-                let addr = self.load_word_zero_page(base + index);
-                self.read_byte(addr)
+                let addr = self.load_word_zero_page(mem,base + index);
+                mem.read_byte(addr)
             },
             IndirectIndexed(reg) => {
-                let zp_offset = self.next_pc_byte();
-                let base = self.load_word_zero_page(zp_offset);
+                let zp_offset = self.next_pc_byte(mem);
+                let base = self.load_word_zero_page(mem,zp_offset);
                 let index = self.get_register(reg) as u16;
                 let addr = base + index;
 
@@ -254,44 +239,44 @@ impl Cpu {
                     self.cycles += 1;
                 }
 
-                self.read_byte(addr)
+                mem.read_byte(addr)
             },
             Register(reg) => self.get_register(reg),
         }
     }
 
-    fn store(&mut self, am: AddressMode, val: u8) {
+    fn store<M: Memory>(&mut self, mem: &mut M, am: AddressMode, val: u8) {
         use self::AddressMode::*;
         match am {
             Absolute => {
-                let addr = self.next_pc_word();
-                self.write_byte(addr, val);
+                let addr = self.next_pc_word(mem);
+                mem.write_byte(addr, val);
             },
             ZeroPage => {
-                let addr = self.next_pc_byte() as u16;
-                self.write_byte(addr, val);
+                let addr = self.next_pc_byte(mem) as u16;
+                mem.write_byte(addr, val);
             },
             AbsoluteIndexed(reg) => {
-                let base = self.next_pc_word();
+                let base = self.next_pc_word(mem);
                 let index = self.get_register(reg) as u16;
-                self.write_byte(base + index, val);
+                mem.write_byte(base + index, val);
             },
             ZeroPageIndexed(reg) => {
-                let base = self.next_pc_byte() as u16;
+                let base = self.next_pc_byte(mem) as u16;
                 let index = self.get_register(reg) as u16;
-                self.write_byte(base + index, val);
+                mem.write_byte(base + index, val);
             },
             IndexedIndirect(reg) => {
-                let base = self.next_pc_byte();
+                let base = self.next_pc_byte(mem);
                 let index = self.get_register(reg);
-                let addr = self.load_word_zero_page(base + index);
-                self.write_byte(addr, val);
+                let addr = self.load_word_zero_page(mem, base + index);
+                mem.write_byte(addr, val);
             },
             IndirectIndexed(reg) => {
-                let zp_offset = self.next_pc_byte();
-                let base = self.load_word_zero_page(zp_offset);
+                let zp_offset = self.next_pc_byte(mem);
+                let base = self.load_word_zero_page(mem, zp_offset);
                 let index = self.get_register(reg) as u16;
-                self.write_byte(base + index, val);
+                mem.write_byte(base + index, val);
             },
             Register(reg) => self.set_register(reg, val),
             _ => panic!("Invalid address mode for store: {:?}", am),
@@ -345,19 +330,19 @@ impl Cpu {
     // Instruction helpers
     //////////////////////
 
-    fn ld_reg(&mut self, am: AddressMode, r: Register8) {
-        let m = self.load(am);
+    fn ld_reg<M: Memory>(&mut self, mem: &mut M, am: AddressMode, r: Register8) {
+        let m = self.load(mem, am);
         self.set_zero_negative(m);
         self.set_register(r, m);
     }
 
-    fn st_reg(&mut self, am: AddressMode, r: Register8) {
+    fn st_reg<M: Memory>(&mut self, mem: &mut M, am: AddressMode, r: Register8) {
         let val = self.get_register(r);
-        self.store(am, val);
+        self.store(mem, am, val);
     }
 
-    fn branch(&mut self, cond: bool) {
-        let offset = self.next_pc_byte() as i8;
+    fn branch<M: Memory>(&mut self, mem: &mut M, cond: bool) {
+        let offset = self.next_pc_byte(mem) as i8;
         if cond {
             let addr = (self.regs.pc as i16 + offset as i16) as u16;
 
@@ -373,8 +358,8 @@ impl Cpu {
         }
     }
 
-    fn compare(&mut self, am: AddressMode, reg: Register8) {
-        let m = self.load(am);
+    fn compare<M: Memory>(&mut self, mem: &mut M, am: AddressMode, reg: Register8) {
+        let m = self.load(mem, am);
         let r = self.get_register(reg);
         let result = r - m;
 
@@ -383,30 +368,30 @@ impl Cpu {
     }
 
     // Push byte onto the stack
-    fn push_byte(&mut self, val: u8) {
+    fn push_byte<M: Memory>(&mut self, mem: &mut M, val: u8) {
         let s = self.regs.sp;
-        self.write_byte(0x0100 | (s as u16), val);
+        mem.write_byte(0x0100 | (s as u16), val);
         self.regs.sp = s - 1;
     }
 
     // Pull byte from the stack
-    fn pull_byte(&mut self) -> u8 {
+    fn pull_byte<M: Memory>(&mut self, mem: &mut M) -> u8 {
         let s = self.regs.sp + 1;
         self.regs.sp = s;
 
-        self.read_byte(0x0100 | (s as u16))
+        mem.read_byte(0x0100 | (s as u16))
     }
 
     // Push word onto the stack
-    fn push_word(&mut self, val: u16) {
-        self.push_byte((val >> 8) as u8);
-        self.push_byte(val as u8);
+    fn push_word<M: Memory>(&mut self, mem: &mut M, val: u16) {
+        self.push_byte(mem,(val >> 8) as u8);
+        self.push_byte(mem,val as u8);
     }
 
     // Pull word from the stack
-    fn pull_word(&mut self) -> u16 {
-        let lsb= self.pull_byte();
-        let msb= self.pull_byte();
+    fn pull_word<M: Memory>(&mut self, mem: &mut M) -> u16 {
+        let lsb= self.pull_byte(mem);
+        let msb= self.pull_byte(mem);
 
         ((msb as u16) << 8) | (lsb as u16)
     }
@@ -415,32 +400,32 @@ impl Cpu {
     // Instructions
     ///////////////////
 
-    fn lda(&mut self, am: AddressMode) {
-        self.ld_reg(am, Register8::A);
+    fn lda<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        self.ld_reg(mem, am, Register8::A);
     }
 
-    fn ldx(&mut self, am: AddressMode) {
-        self.ld_reg(am, Register8::X);
+    fn ldx<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        self.ld_reg(mem, am, Register8::X);
     }
 
-    fn ldy(&mut self, am: AddressMode) {
-        self.ld_reg(am, Register8::Y);
+    fn ldy<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        self.ld_reg(mem, am, Register8::Y);
     }
 
-    fn sta(&mut self, am: AddressMode) {
-        self.st_reg(am, Register8::A);
+    fn sta<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        self.st_reg(mem, am, Register8::A);
     }
 
-    fn stx(&mut self, am: AddressMode) {
-        self.st_reg(am, Register8::X);
+    fn stx<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        self.st_reg(mem, am, Register8::X);
     }
 
-    fn sty(&mut self, am: AddressMode) {
-        self.st_reg(am, Register8::Y);
+    fn sty<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        self.st_reg(mem, am, Register8::Y);
     }
 
-    fn adc(&mut self, am: AddressMode) {
-        let m = self.load(am);
+    fn adc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let m = self.load(mem, am);
         let a = self.regs.a;
         let result = a as u32 + m as u32 +
             if self.get_flag(StatusFlags::CARRY) { 1 } else { 0 };
@@ -454,8 +439,8 @@ impl Cpu {
         self.regs.a = result;
     }
 
-    fn sbc(&mut self, am: AddressMode) {
-        let m = self.load(am);
+    fn sbc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let m = self.load(mem, am);
         let a = self.regs.a;
         let result = a as u32 - m as u32 -
             if self.get_flag(StatusFlags::CARRY) { 0 } else { 1 };
@@ -469,24 +454,24 @@ impl Cpu {
         self.regs.a = result;
     }
 
-    fn and(&mut self, am: AddressMode) {
-        let m = self.load(am);
+    fn and<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let m = self.load(mem, am);
         let a = self.regs.a;
         let result = m & a;
         self.set_zero_negative(result);
         self.regs.a = result;
     }
 
-    fn ora(&mut self, am: AddressMode) {
-        let m = self.load(am);
+    fn ora<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let m = self.load(mem, am);
         let a = self.regs.a;
         let result = m | a;
         self.set_zero_negative(result);
         self.regs.a = result;
     }
 
-    fn eor(&mut self, am: AddressMode) {
-        let m = self.load(am);
+    fn eor<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let m = self.load(mem, am);
         let a = self.regs.a;
         let result = m ^ a;
         self.set_zero_negative(result);
@@ -521,19 +506,19 @@ impl Cpu {
         self.set_flags(StatusFlags::OVERFLOW, false);
     }
 
-    fn jmp(&mut self) {
-        self.regs.pc = self.next_pc_word();
+    fn jmp<M: Memory>(&mut self, mem: &mut M) {
+        self.regs.pc = self.next_pc_word(mem);
     }
 
-    fn jmpi(&mut self) {
-        let addr = self.next_pc_word();
+    fn jmpi<M: Memory>(&mut self, mem: &mut M) {
+        let addr = self.next_pc_word(mem);
 
-        let lsb = self.read_byte(addr);
+        let lsb = mem.read_byte(addr);
 
         // There is a hardware bug in this instruction. If the 16-bit argument of an indirect JMP is
         // located between 2 pages (0x01FF and 0x0200 for example), then the LSB will be read from
         // 0x01FF and the MSB will be read from 0x0100.
-        let msb = self.read_byte(
+        let msb = mem.read_byte(
             if (addr & 0xFF) == 0xFF {
                 addr & 0xff00
             } else {
@@ -544,60 +529,60 @@ impl Cpu {
         self.regs.pc = ((msb as u16) << 8) | (lsb as u16);
     }
 
-    fn bmi(&mut self) {
+    fn bmi<M: Memory>(&mut self, mem: &mut M) {
         let cond = self.get_flag(StatusFlags::NEGATIVE_RESULT);
-        self.branch(cond);
+        self.branch(mem, cond);
     }
 
-    fn bpl(&mut self) {
+    fn bpl<M: Memory>(&mut self, mem: &mut M) {
         let cond = !self.get_flag(StatusFlags::NEGATIVE_RESULT);
-        self.branch(cond);
+        self.branch(mem, cond);
     }
 
-    fn bcc(&mut self) {
+    fn bcc<M: Memory>(&mut self, mem: &mut M) {
         let cond = !self.get_flag(StatusFlags::CARRY);
-        self.branch(cond);
+        self.branch(mem, cond);
     }
 
-    fn bcs(&mut self) {
+    fn bcs<M: Memory>(&mut self, mem: &mut M) {
         let cond = self.get_flag(StatusFlags::CARRY);
-        self.branch(cond);
+        self.branch(mem, cond);
     }
 
-    fn beq(&mut self) {
+    fn beq<M: Memory>(&mut self, mem: &mut M) {
         let cond = self.get_flag(StatusFlags::ZERO_RESULT);
-        self.branch(cond);
+        self.branch(mem, cond);
     }
 
-    fn bne(&mut self) {
+    fn bne<M: Memory>(&mut self, mem: &mut M) {
         let cond = !self.get_flag(StatusFlags::ZERO_RESULT);
-        self.branch(cond);
+        self.branch(mem, cond);
     }
 
-    fn bvs(&mut self) {
+    fn bvs<M: Memory>(&mut self, mem: &mut M) {
         let cond = self.get_flag(StatusFlags::OVERFLOW);
-        self.branch(cond);
+        self.branch(mem, cond);
     }
 
-    fn bvc(&mut self) {
+    fn bvc<M: Memory>(&mut self, mem: &mut M) {
         let cond = !self.get_flag(StatusFlags::OVERFLOW);
-        self.branch(cond);
+        self.branch(mem, cond);
     }
 
-    fn cmp(&mut self, am: AddressMode) {
-        self.compare(am, Register8::A)
+    fn cmp<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        self.compare(mem, am, Register8::A)
     }
 
-    fn cpx(&mut self, am: AddressMode) {
-        self.compare(am, Register8::X)
+    fn cpx<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        self.compare(mem, am, Register8::X)
     }
 
-    fn cpy(&mut self, am: AddressMode) {
-        self.compare(am, Register8::Y)
+    fn cpy<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        self.compare(mem, am, Register8::Y)
     }
 
-    fn bit(&mut self, am: AddressMode) {
-        let m = self.load(am);
+    fn bit<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let m = self.load(mem, am);
         let a = self.regs.a;
 
         self.set_flags(StatusFlags::NEGATIVE_RESULT, m & 0x80 != 0);
@@ -605,16 +590,16 @@ impl Cpu {
         self.set_flags(StatusFlags::ZERO_RESULT, (m & a) == 0);
     }
 
-    fn inc(&mut self, am: AddressMode) {
-        let val = self.load(am) + 1;
+    fn inc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let val = self.load(mem, am) + 1;
         self.set_zero_negative(val);
-        self.store(am, val);
+        self.store(mem, am, val);
     }
 
-    fn dec(&mut self, am: AddressMode) {
-        let val = self.load(am) - 1;
+    fn dec<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let val = self.load(mem, am) - 1;
         self.set_zero_negative(val);
-        self.store(am, val);
+        self.store(mem, am, val);
     }
 
     fn inx(&mut self) {
@@ -675,84 +660,84 @@ impl Cpu {
         self.regs.sp = self.regs.x;
     }
 
-    fn jsr(&mut self) {
+    fn jsr<M: Memory>(&mut self, mem: &mut M) {
         let pc = self.regs.pc;
-        self.push_word(pc);
-        let addr = self.next_pc_word();
+        self.push_word(mem, pc);
+        let addr = self.next_pc_word(mem);
         self.regs.pc = addr;
     }
 
-    fn rts(&mut self) {
-        self.regs.pc = self.pull_word();
+    fn rts<M: Memory>(&mut self, mem: &mut M) {
+        self.regs.pc = self.pull_word(mem);
     }
 
-    fn pha(&mut self) {
+    fn pha<M: Memory>(&mut self, mem: &mut M) {
         let a = self.regs.a;
-        self.push_byte(a);
+        self.push_byte(mem, a);
     }
 
-    fn pla(&mut self) {
-        let val = self.pull_byte();
+    fn pla<M: Memory>(&mut self, mem: &mut M) {
+        let val = self.pull_byte(mem);
         self.set_zero_negative(val);
         self.regs.a = val;
     }
 
-    fn php(&mut self) {
+    fn php<M: Memory>(&mut self, mem: &mut M) {
         let p = self.regs.status.bits();
-        self.push_byte(p);
+        self.push_byte(mem, p);
     }
 
-    fn plp(&mut self) {
-        let val = self.pull_byte();
+    fn plp<M: Memory>(&mut self, mem: &mut M) {
+        let val = self.pull_byte(mem);
         self.regs.status = StatusFlags::from_bits(val).unwrap();
     }
 
-    fn lsr(&mut self, am: AddressMode) {
-        let val = self.load(am);
+    fn lsr<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let val = self.load(mem, am);
         let result = (val >> 1) & 0x7F;
         self.set_zero_negative(result);
         self.set_flags(StatusFlags::CARRY, (val & 0x01) != 0);
-        self.store(am, result);
+        self.store(mem, am, result);
     }
 
-    fn asl(&mut self, am: AddressMode) {
-        let val = self.load(am);
+    fn asl<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let val = self.load(mem, am);
         let result = (val << 1) & 0xFE;
         self.set_zero_negative(result);
         self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
-        self.store(am, result);
+        self.store(mem, am, result);
     }
 
-    fn ror(&mut self, am: AddressMode) {
-        let val = self.load(am);
+    fn ror<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let val = self.load(mem, am);
         let carry: u8 = if self.get_flag(StatusFlags::CARRY) { 1 << 7 } else { 0 };
         let result = ((val >> 1) & 0x7F) | carry;
         self.set_zero_negative(result);
         self.set_flags(StatusFlags::CARRY, (val & 0x01) != 0);
-        self.store(am, result);
+        self.store(mem, am, result);
     }
 
-    fn rol(&mut self, am: AddressMode) {
-        let val = self.load(am);
+    fn rol<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        let val = self.load(mem, am);
         let carry: u8 = if self.get_flag(StatusFlags::CARRY) { 1 } else { 0 };
         let result = ((val << 1) & 0xFE) | carry;
         self.set_zero_negative(result);
         self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
-        self.store(am, result);
+        self.store(mem, am, result);
     }
 
-    fn brk(&mut self) {
+    fn brk<M: Memory>(&mut self, mem: &mut M) {
         let pc = self.regs.pc;
         let status = self.regs.status.bits();
-        self.push_word(pc);
-        self.push_byte(status);
+        self.push_word(mem, pc);
+        self.push_byte(mem, status);
         self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
-        self.regs.pc = self.read_word(BRK_VECTOR);
+        self.regs.pc = mem.read_word(BRK_VECTOR);
     }
 
-    fn rti(&mut self) {
-        let status = self.pull_byte();
-        let pc = self.pull_word();
+    fn rti<M: Memory>(&mut self, mem: &mut M) {
+        let status = self.pull_byte(mem);
+        let pc = self.pull_word(mem);
 
         self.regs.status = StatusFlags::from_bits(status).unwrap();
         self.regs.pc = pc;
@@ -764,31 +749,30 @@ impl Cpu {
     // Unofficial Instructions
     ///////////////////////////
 
-    fn nop_2_bytes(&mut self) {
-        let pc = self.regs.pc;
-        self.regs.pc = pc + 1;
+    fn nop_2_bytes<M: Memory>(&mut self, mem: &mut M) {
+        self.next_pc_byte(mem);
     }
 
     // Used by "Gaau Hok Gwong Cheung (Ch)"
     // This instruction can be unpredictable.
     // See http://visual6502.org/wiki/index.php?title=6502_Opcode_8B_%28XAA,_ANE%29
-    fn xaa(&mut self) {
-        let imm = self.next_pc_byte();
+    fn xaa<M: Memory>(&mut self, mem: &mut M) {
+        let imm = self.next_pc_byte(mem);
         let a = self.regs.a;
         let x = self.regs.x;
         self.regs.a = a & x & imm;
     }
 
     // Used by "Super Cars (U)"
-    fn lax(&mut self, am: AddressMode) {
-        self.lda(am);
+    fn lax<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        self.lda(mem, am);
         self.tax();
     }
 
     // Used by "Disney's Aladdin (E)"
-    fn slo(&mut self, am: AddressMode) {
-        self.asl(am);
-        self.ora(am);
+    fn slo<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
+        self.asl(mem, am);
+        self.ora(mem,am);
     }
 
     ///////////////
@@ -807,21 +791,21 @@ impl Cpu {
         }
     }
 
-    fn handle_interrupts(&mut self) {
+    fn handle_interrupts<M: Memory>(&mut self, mem: &mut M) {
         match self.interrupt {
-            Interrupt::Nmi => self.handle_interrupt(NMI_VECTOR),
-            Interrupt::Irq => self.handle_interrupt(IRQ_VECTOR),
+            Interrupt::Nmi => self.handle_interrupt(mem, NMI_VECTOR),
+            Interrupt::Irq => self.handle_interrupt(mem, IRQ_VECTOR),
             Interrupt::None => (),
         }
     }
 
-    fn handle_interrupt(&mut self, vector: u16) {
+    fn handle_interrupt<M: Memory>(&mut self, mem: &mut M, vector: u16) {
         let pc = self.regs.pc;
         let status = self.regs.status.bits();
-        self.push_word(pc);
-        self.push_byte(status);
+        self.push_word(mem, pc);
+        self.push_byte(mem, status);
         self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
-        self.regs.pc = self.read_word(vector);
+        self.regs.pc = mem.read_word(vector);
         self.interrupt = Interrupt::None;
         self.cycles += 7;
     }

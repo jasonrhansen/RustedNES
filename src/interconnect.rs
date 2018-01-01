@@ -3,11 +3,11 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use apu::Apu;
+use cpu::Interrupt;
 use input::Input;
 use mapper::Mapper;
 use memory::{Memory, Ram};
 use ppu::Ppu;
-use cpu::Interrupt;
 
 pub struct Interconnect {
     pub ram: Ram,
@@ -18,13 +18,12 @@ pub struct Interconnect {
 }
 
 impl Interconnect {
-    pub fn new(ppu: Ppu, apu: Apu, input: Input,
-               mapper: Rc<RefCell<Box<Mapper>>>) -> Self {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Self {
         Interconnect {
             ram: Ram::new(),
-            ppu,
-            apu,
-            input,
+            ppu: Ppu::new(mapper.clone()),
+            apu: Apu{},
+            input: Input{},
             mapper,
         }
     }
@@ -62,12 +61,8 @@ impl Memory for Interconnect {
     }
 }
 
-enum Cycles
-
 impl Interconnect {
     pub fn cycles(&mut self, cycles: u32) -> Interrupt {
-        let interrupt = Interrupt::None;
-
-        interrupt
+        self.ppu.cycles(cycles)
     }
 }

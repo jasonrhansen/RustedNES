@@ -5,7 +5,7 @@ use std::env;
 use std::fs::File;
 use std::rc::Rc;
 
-use sadnes::memory::Interconnect;
+use sadnes::interconnect::Interconnect;
 use sadnes::mapper;
 use sadnes::mapper::Mapper;
 use sadnes::cartridge::{Cartridge, LoadError};
@@ -46,17 +46,15 @@ fn run_rom(rom: Cartridge) {
         )
     );
 
-    let cpu_mem = Interconnect::new(
-        Ppu::new(mapper.clone()),
-        Apu{},
-        Input{}, mapper
-    );
+    let mut interconnect = Interconnect::new(mapper);
 
-    let mut cpu = Cpu::new(cpu_mem);
+    let mut cpu = Cpu::new();
+
+    cpu.reset(&mut interconnect);
 
     println!("Stepping through instructions");
 
     for _ in 0..100 {
-        cpu.step_debug();
+        cpu.step_debug(&mut interconnect);
     }
 }
