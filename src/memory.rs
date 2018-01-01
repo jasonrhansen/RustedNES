@@ -62,7 +62,7 @@ impl DerefMut for Ram {
 }
 
 
-pub struct CpuMemMap {
+pub struct Interconnect {
     pub ram: Ram,
     pub ppu: Ppu,
     pub apu: Apu,
@@ -70,10 +70,10 @@ pub struct CpuMemMap {
     pub mapper: Rc<RefCell<Box<Mapper>>>,
 }
 
-impl CpuMemMap {
+impl Interconnect {
     pub fn new(ppu: Ppu, apu: Apu, input: Input,
                mapper: Rc<RefCell<Box<Mapper>>>) -> Self {
-        CpuMemMap {
+        Interconnect {
             ram: Ram::new(),
             ppu,
             apu,
@@ -83,7 +83,7 @@ impl CpuMemMap {
     }
 }
 
-impl Memory for CpuMemMap {
+impl Memory for Interconnect {
     fn read_byte(&mut self, address: u16) -> u8 {
         if address < 0x2000 {
             self.ram.read_byte(address)

@@ -5,6 +5,7 @@ use std::default::Default;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
+use cpu::Cpu;
 use mapper::Mapper;
 use memory::Memory;
 
@@ -30,10 +31,13 @@ pub struct Ppu {
     // Object Attribute Memory
     oam: Oam,
 
-    // Sprites to draw on current scan line
+    // Sprites to draw on current scanline
     sprites: [Option<Sprite>; 8],
 
-    scanline: u16,
+    scanline: i16,
+
+    // The cycle that the current scanline started at
+    scanline_start_cycle: u64,
 
     // The PPU has an internal data bus that it uses for communication with the CPU.
     // This bus, called _io_db in Visual 2C02 and PPUGenLatch in FCEUX,[1] behaves as an
@@ -55,6 +59,7 @@ impl Ppu {
             oam: Oam::new(),
             sprites: Default::default(),
             scanline: 0,
+            scanline_start_cycle: 0,
             ppu_gen_latch: 0,
         }
     }
@@ -91,13 +96,18 @@ impl Ppu {
     }
 
     fn is_sprite_at_y_on_scanline(&mut self, y: u8) -> bool {
+        if self.scanline < 0 {
+            return false;
+        }
+
+        let scanline = self.scanline as u16;
         let y = y as u16;
         let height = self.regs.ppu_ctrl.sprite_size().height() as u16;
 
-        y < self.scanline && self.scanline <= y + height
+        y < scanline && scanline <= y + height
     }
 
-    fn evaluate_sprites_for_scan_line(&mut self) {
+    fn evaluate_sprites_for_scanline(&mut self) {
         let mut count = 0;
 
         let mut n = 0;
@@ -140,11 +150,52 @@ impl Ppu {
             }
         }
 
-        // Clear any remaining sprites if there were less than 8 on scan line
+        // Clear any remaining sprites if there were less than 8 on scanline
         while count < 8 {
             self.sprites[count] = None;
             count += 1;
         }
+    }
+
+    fn step(&mut self, cpu: &mut Cpu) {
+        let scanline_cycle = self.cycles - self.scanline_start_cycle;
+
+        // TODO: Handle other important scanlines and cycles
+
+        match self.scanline {
+            -1 => {
+                match scanline_cycle {
+                    1 => {
+                        self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
+                        self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
+                    },
+                    _ => (),
+                }
+            },
+            240 => {
+                // TODO: Render scanline
+            },
+            241 => {
+                match scanline_cycle {
+                    1 => {
+                        self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, true);
+                        cpu.request_nmi();
+                    },
+                    _ => ()
+                }
+            },
+            260 => {
+                self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
+            },
+            _ => (),
+        }
+
+        if scanline_cycle == 351 {
+            self.scanline_start_cycle = self.cycles;
+            self.scanline += 1;
+        }
+
+        self.cycles += 1;
     }
 }
 

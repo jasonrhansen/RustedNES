@@ -1,8 +1,8 @@
 use std::fmt;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Formatter};
 
 use disassembler::Disassembler;
-use memory::Memory;
+use memory::{Interconnect, Memory};
 
 bitflags! {
     struct StatusFlags: u8 {
@@ -120,29 +120,29 @@ fn mem_pages_same(m1: u16, m2: u16) -> bool {
     (m1 & 0xFF00) == (m2 & 0xFF00)
 }
 
-pub struct Cpu<M: Memory> {
+pub struct Cpu {
     cycles: u64,
     regs: Regs,
-    mem: M,
+    interconnect: Interconnect,
     interrupt: Interrupt
 }
 
-impl<M: Memory> Memory for Cpu<M> {
+impl Memory for Cpu {
     fn read_byte(&mut self, address: u16) -> u8 {
-        self.mem.read_byte(address)
+        self.interconnect.read_byte(address)
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        self.mem.write_byte(address, value)
+        self.interconnect.write_byte(address, value)
     }
 }
 
-impl<M: Memory> Cpu<M> {
-    pub fn new(memory: M) -> Cpu<M> {
+impl Cpu {
+    pub fn new(interconnect: Interconnect) -> Cpu {
         let mut cpu = Cpu {
             cycles: 0,
             regs: Regs::new(),
-            mem: memory,
+            interconnect,
             interrupt: Interrupt::None,
         };
 
@@ -161,7 +161,7 @@ impl<M: Memory> Cpu<M> {
     pub fn step_debug(&mut self) {
         {
             let pc = self.regs.pc;
-            let mut d = Disassembler::new(pc, &mut self.mem);
+            let mut d = Disassembler::new(pc, &mut self.interconnect);
             println!("{:?}", self.regs);
             println!("{}", d.disassemble_next());
         }

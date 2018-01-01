@@ -5,7 +5,7 @@ use std::env;
 use std::fs::File;
 use std::rc::Rc;
 
-use sadnes::memory::CpuMemMap;
+use sadnes::memory::Interconnect;
 use sadnes::mapper;
 use sadnes::mapper::Mapper;
 use sadnes::cartridge::{Cartridge, LoadError};
@@ -46,7 +46,7 @@ fn run_rom(rom: Cartridge) {
         )
     );
 
-    let cpu_mem = CpuMemMap::new(
+    let cpu_mem = Interconnect::new(
         Ppu::new(mapper.clone()),
         Apu{},
         Input{}, mapper
