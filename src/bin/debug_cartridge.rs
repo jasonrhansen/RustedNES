@@ -5,12 +5,14 @@ use std::env;
 use std::fs::File;
 use std::rc::Rc;
 
+use sadnes::apu::Apu;
+use sadnes::cartridge::{Cartridge, LoadError};
+use sadnes::disassembler::Disassembler;
 use sadnes::interconnect::Interconnect;
 use sadnes::mapper;
 use sadnes::mapper::Mapper;
-use sadnes::cartridge::{Cartridge, LoadError};
+use sadnes::nes::Nes;
 use sadnes::ppu::Ppu;
-use sadnes::apu::Apu;
 use sadnes::input::Input;
 use sadnes::cpu::Cpu;
 
@@ -40,21 +42,17 @@ fn load_rom(filename: &str) -> Result<Cartridge, LoadError> {
 }
 
 fn run_rom(rom: Cartridge) {
-    let mapper = Rc::new(
-        RefCell::new(
-            mapper::create_mapper(Box::new(rom))
-        )
-    );
-
-    let mut interconnect = Interconnect::new(mapper);
-
-    let mut cpu = Cpu::new();
-
-    cpu.reset(&mut interconnect);
-
-    println!("Stepping through instructions");
+    let mut nes = Nes::new(rom);
 
     for _ in 0..100 {
-        cpu.step_debug(&mut interconnect);
+        {
+            let regs = nes.cpu.regs();
+            let mut d = Disassembler::new(regs.pc);
+            println!("{:?}", regs);
+            println!("{}", d.disassemble_next(&mut nes.interconnect));
+        }
+
+        let cycles = nes.cpu.step(&mut nes.interconnect);
+        println!("cycles: {}", cycles);
     }
 }

@@ -6,7 +6,7 @@ use memory::Memory;
 use interconnect::Interconnect;
 
 bitflags! {
-    struct StatusFlags: u8 {
+    pub struct StatusFlags: u8 {
         const NONE              = 0;
         const CARRY             = 1 << 0;
         const ZERO_RESULT       = 1 << 1;
@@ -67,13 +67,14 @@ static OPCODE_CYCLES: &'static [u8] = &[
     2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
 ];
 
-struct Regs {
-    pc: u16,
-    a: u8,
-    x: u8,
-    y: u8,
-    sp: u8,
-    status: StatusFlags,
+#[derive(Copy, Clone)]
+pub struct Regs {
+    pub pc: u16,
+    pub a: u8,
+    pub x: u8,
+    pub y: u8,
+    pub sp: u8,
+    pub status: StatusFlags,
 }
 
 impl Regs {
@@ -138,23 +139,15 @@ impl Cpu {
         cpu
     }
 
+    pub fn regs(&self) -> Regs {
+        self.regs
+    }
+
     pub fn reset<M: Memory>(&mut self, mem: &mut M) {
         self.regs.pc = mem.read_word(RESET_VECTOR);
         self.regs.sp = 0xFD;
         self.regs.status = StatusFlags::INTERRUPT_DISABLE | StatusFlags::EXPANSION;
         self.interrupt = Interrupt::None;
-    }
-
-    pub fn step_debug<M: Memory>(&mut self, mem: &mut M) {
-        {
-            let pc = self.regs.pc;
-            let mut d = Disassembler::new(pc);
-            println!("{:?}", self.regs);
-            println!("{}", d.disassemble_next(mem));
-        }
-
-        let cycles = self.step(mem);
-        println!("cycles: {}", cycles);
     }
 
     pub fn step<M: Memory>(&mut self, mem: &mut M) -> u32 {

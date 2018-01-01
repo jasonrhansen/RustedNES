@@ -1,42 +1,46 @@
-use cartridge::Cartridge;
-use cpu::Cpu;
-use memory::Interconnect;
+use std::cell::RefCell;
+use std::rc::Rc;
 
-struct Nes {
-    interconnect: Interconnect,
-    cpu: Cpu,
+use interconnect::Interconnect;
+use mapper;
+use mapper::Mapper;
+use cartridge::Cartridge;
+use ppu::Ppu;
+use apu::Apu;
+use input::Input;
+use cpu::{Cpu, Interrupt};
+
+pub struct Nes {
+    pub interconnect: Interconnect,
+    pub cpu: Cpu,
 }
 
 impl Nes {
-    fn new(cartridge: Cartridge) -> Nes {
-        Nes {
-            interconnect: Interconnect::new(cartridge),
-            cpu: Cpu::new(),
-        }
-    }
-
-    fn run(&mut self, cartridge: Cartridge) {
+    pub fn new(cartridge: Cartridge) -> Nes {
         let mapper = Rc::new(
             RefCell::new(
-                mapper::create_mapper(Box::new(rom))
+                mapper::create_mapper(Box::new(cartridge))
             )
         );
 
-        let interconnect = Interconnect::new(
-            Ppu::new(mapper.clone()),
-            Apu{},
-            Input{}, mapper
-        );
+        let mut interconnect = Interconnect::new(mapper);
+        let mut cpu = Cpu::new();
 
-        let mut cpu = Cpu::new(interconnect);
+        cpu.reset(&mut interconnect);
 
-        loop {
-            let cpu_cycles = cpu.step();
-            let interrupt = interconnect.cycles(cpu_cycles);
-            match interrupt {
-                Interrupt::Nmi => cpu.request_nmi(),
-                Interrupt::Irq => cpu.request_irq(),
-            }
+        Nes {
+            interconnect,
+            cpu,
+        }
+    }
+
+    fn step(&mut self, cartridge: Cartridge) {
+        let cpu_cycles = self.cpu.step(&mut self.interconnect);
+        let interrupt = self.interconnect.cycles(cpu_cycles);
+        match interrupt {
+            Interrupt::Nmi => self.cpu.request_nmi(),
+            Interrupt::Irq => self.cpu.request_irq(),
+            _ => (),
         }
     }
 }
