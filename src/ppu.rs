@@ -158,22 +158,21 @@ impl Ppu {
     }
 
     // Run for the given number of cpu cycles
-    pub fn cycles(&mut self, cycles: u32) -> Interrupt {
-        let mut interrupt = Interrupt::None;
+    pub fn cycles(&mut self, cycles: u32) -> Option<Interrupt> {
+        let mut interrupt = None;
         // 3 PPU cycles per CPU cycle
-        for i in 0..cycles * 3 {
-            let step_interrupt = self.step();
-            if step_interrupt != Interrupt::None {
-                interrupt = step_interrupt;
+        for _ in 0..cycles * 3 {
+            if let Some(step_interrupt) = self.step() {
+                interrupt = Some(step_interrupt);
             }
         }
 
         interrupt
     }
 
-    fn step(&mut self) -> Interrupt {
+    fn step(&mut self) -> Option<Interrupt> {
         let scanline_cycle = self.cycles - self.scanline_start_cycle;
-        let mut interrupt = Interrupt::None;
+        let mut interrupt = None;
 
         // TODO: Handle other important scanlines and cycles
 
@@ -194,7 +193,7 @@ impl Ppu {
                 match scanline_cycle {
                     1 => {
                         self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, true);
-                        interrupt = Interrupt::Nmi;
+                        interrupt = Some(Interrupt::Nmi);
                     },
                     _ => ()
                 }

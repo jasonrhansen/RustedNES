@@ -34,13 +34,13 @@ impl Nes {
         }
     }
 
-    fn step(&mut self, cartridge: Cartridge) {
+    fn step(&mut self, cartridge: Cartridge) -> u32 {
         let cpu_cycles = self.cpu.step(&mut self.interconnect);
-        let interrupt = self.interconnect.cycles(cpu_cycles);
-        match interrupt {
-            Interrupt::Nmi => self.cpu.request_nmi(),
-            Interrupt::Irq => self.cpu.request_irq(),
-            _ => (),
+
+        if let Some(interrupt) = self.interconnect.cycles(cpu_cycles) {
+            self.cpu.request_interrupt(interrupt);
         }
+
+        cpu_cycles
     }
 }

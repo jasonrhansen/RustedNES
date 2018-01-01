@@ -62,7 +62,7 @@ impl Memory for Interconnect {
 }
 
 impl Interconnect {
-    pub fn cycles(&mut self, cycles: u32) -> Interrupt {
+    pub fn cycles(&mut self, cycles: u32) -> Option<Interrupt> {
         self.ppu.cycles(cycles)
     }
 }

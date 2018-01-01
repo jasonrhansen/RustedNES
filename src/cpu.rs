@@ -36,8 +36,7 @@ impl fmt::Display for StatusFlags {
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Interrupt {
-    None,
-    Nmi,
+    Nmi,        // NMI (Non-Maskable Interrupt)
     Irq,
 }
 
@@ -125,7 +124,7 @@ fn mem_pages_same(m1: u16, m2: u16) -> bool {
 pub struct Cpu {
     cycles: u64,
     regs: Regs,
-    interrupt: Interrupt
+    interrupt: Option<Interrupt>,
 }
 
 impl Cpu {
@@ -133,7 +132,7 @@ impl Cpu {
         let mut cpu = Cpu {
             cycles: 0,
             regs: Regs::new(),
-            interrupt: Interrupt::None,
+            interrupt: None,
         };
 
         cpu
@@ -147,7 +146,7 @@ impl Cpu {
         self.regs.pc = mem.read_word(RESET_VECTOR);
         self.regs.sp = 0xFD;
         self.regs.status = StatusFlags::INTERRUPT_DISABLE | StatusFlags::EXPANSION;
-        self.interrupt = Interrupt::None;
+        self.interrupt = None;
     }
 
     pub fn step<M: Memory>(&mut self, mem: &mut M) -> u32 {
@@ -772,23 +771,24 @@ impl Cpu {
     // Interrupts
     ///////////////
 
-    // Request NMI (Non-Maskable Interrupt) to be run on next step
-    pub fn request_nmi(&mut self) {
-        self.interrupt = Interrupt::Nmi;
-    }
-
-    // Request IRQ to be run on next step
-    pub fn request_irq(&mut self) {
-        if !self.get_flag(StatusFlags::INTERRUPT_DISABLE) {
-            self.interrupt = Interrupt::Irq;
+    // Request interrupt to be run on next step
+    pub fn request_interrupt(&mut self, interrupt: Interrupt) {
+        match interrupt {
+            Interrupt::Nmi => self.interrupt = Some(interrupt),
+            Interrupt::Irq => {
+                if !self.get_flag(StatusFlags::INTERRUPT_DISABLE) {
+                    self.interrupt = Some(interrupt);
+                }
+            }
         }
     }
 
     fn handle_interrupts<M: Memory>(&mut self, mem: &mut M) {
-        match self.interrupt {
-            Interrupt::Nmi => self.handle_interrupt(mem, NMI_VECTOR),
-            Interrupt::Irq => self.handle_interrupt(mem, IRQ_VECTOR),
-            Interrupt::None => (),
+        if let Some(interrupt) = self.interrupt {
+            match interrupt {
+                Interrupt::Nmi => self.handle_interrupt(mem, NMI_VECTOR),
+                Interrupt::Irq => self.handle_interrupt(mem, IRQ_VECTOR),
+            }
         }
     }
 
@@ -799,7 +799,7 @@ impl Cpu {
         self.push_byte(mem, status);
         self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
         self.regs.pc = mem.read_word(vector);
-        self.interrupt = Interrupt::None;
+        self.interrupt = None;
         self.cycles += 7;
     }
 }
