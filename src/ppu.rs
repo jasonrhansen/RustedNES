@@ -157,7 +157,7 @@ impl Ppu {
         }
     }
 
-    fn step(&mut self, cpu: &mut Cpu) {
+    pub fn step(&mut self, cpu: &mut Cpu) {
         let scanline_cycle = self.cycles - self.scanline_start_cycle;
 
         // TODO: Handle other important scanlines and cycles

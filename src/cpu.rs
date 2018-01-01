@@ -2,7 +2,8 @@ use std::fmt;
 use std::fmt::{Debug, Formatter};
 
 use disassembler::Disassembler;
-use memory::{Interconnect, Memory};
+use memory::Memory;
+use interconnect::Interconnect;
 
 bitflags! {
     struct StatusFlags: u8 {
@@ -34,7 +35,7 @@ impl fmt::Display for StatusFlags {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-enum Interrupt {
+pub enum Interrupt {
     None,
     Nmi,
     Irq,
@@ -171,7 +172,7 @@ impl Cpu {
         println!("cycles: {}", cycles);
     }
 
-    pub fn step(&mut self) -> u8 {
+    pub fn step(&mut self) -> u32 {
         let cycles = self.cycles;
 
         self.handle_interrupts();
@@ -181,7 +182,7 @@ impl Cpu {
 
         self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
 
-        (self.cycles - cycles) as u8
+        (self.cycles - cycles) as u32
     }
 
     fn next_pc_byte(&mut self) -> u8 {
