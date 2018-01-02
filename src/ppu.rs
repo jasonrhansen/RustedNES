@@ -39,6 +39,8 @@ pub struct Ppu {
     // The cycle that the current scanline started at
     scanline_start_cycle: u64,
 
+    frame: u64,
+
     // The PPU has an internal data bus that it uses for communication with the CPU.
     // This bus, called _io_db in Visual 2C02 and PPUGenLatch in FCEUX,[1] behaves as an
     // 8-bit dynamic latch due to capacitance of very long traces that run to various parts
@@ -50,6 +52,8 @@ pub struct Ppu {
 }
 
 impl Ppu {
+    const SCANLINE_NUM_CYCLES: u64 = 341;
+
     pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Ppu {
         Ppu {
             cycles: 0,
@@ -60,6 +64,7 @@ impl Ppu {
             sprites: Default::default(),
             scanline: 0,
             scanline_start_cycle: 0,
+            frame: 0,
             ppu_gen_latch: 0,
         }
     }
@@ -76,23 +81,35 @@ impl Ppu {
         self.regs.oam_addr += 1;
     }
 
+    fn increment_ppu_addr(&mut self) {
+        *self.regs.ppu_addr += match self.regs.ppu_ctrl.vram_address_increment() {
+            VramAddressIncrement::Add1Across => 1,
+            VramAddressIncrement::Add32Down => 32,
+        };
+    }
+
     fn read_ppu_data_byte(&mut self) -> u8 {
         let address = *self.regs.ppu_addr;
 
         let read_buffer = self.ppu_data_read_buffer;
         self.ppu_data_read_buffer = self.mem.read_byte(address);
-        if address < PaletteRam::START_ADDRESS {
+        let data = if address < PaletteRam::START_ADDRESS {
             // Return contents of read buffer before the read.
             read_buffer
         } else {
             // Palette data is returned immediately. No dummy read is required.
             self.ppu_data_read_buffer
-        }
+        };
+
+        self.increment_ppu_addr();
+
+        data
     }
 
     fn write_ppu_data_byte(&mut self, val: u8) {
         let address = *self.regs.ppu_addr;
-        self.mem.write_byte(address, val)
+        self.mem.write_byte(address, val);
+        self.increment_ppu_addr();
     }
 
     fn is_sprite_at_y_on_scanline(&mut self, y: u8) -> bool {
@@ -178,38 +195,43 @@ impl Ppu {
 
         match self.scanline {
             -1 => {
-                match scanline_cycle {
-                    1 => {
-                        self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
-                        self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
-                    },
-                    _ => (),
+                if scanline_cycle == 0 {
+                    self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
+                    self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
                 }
             },
             240 => {
                 // TODO: Render scanline
             },
             241 => {
-                match scanline_cycle {
-                    1 => {
-                        self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, true);
-                        interrupt = Some(Interrupt::Nmi);
-                    },
-                    _ => ()
+                if scanline_cycle == 0 {
+                    self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, true);
+                    interrupt = Some(Interrupt::Nmi);
                 }
             },
             260 => {
-                self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
+                if scanline_cycle == 0 {
+                    self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
+                }
             },
             _ => (),
         }
 
-        if scanline_cycle == 351 {
+        self.cycles += 1;
+
+        if scanline_cycle == Ppu::SCANLINE_NUM_CYCLES ||
+            // On pre-render scanline, for odd frames,
+            // the cycle at the end of the scanline is skipped
+            (self.scanline == -1 && scanline_cycle == Ppu::SCANLINE_NUM_CYCLES - 1 &&
+                self.frame % 2 != 0) {
             self.scanline_start_cycle = self.cycles;
             self.scanline += 1;
         }
 
-        self.cycles += 1;
+        if self.scanline > 260 {
+            self.scanline = -1;
+            self.frame += 1;
+        }
 
         interrupt
     }
@@ -258,10 +280,10 @@ impl Memory for Ppu {
     }
 }
 
-//VRAM address increment per CPU read/write of PPUDATA
+// VRAM address increment per CPU read/write of PPUDATA
 enum VramAddressIncrement {
     Add1Across,         // Add 1, going across
-    Add32Down,           // Add 32, going down
+    Add32Down,          // Add 32, going down
 }
 
 enum SpriteSize {

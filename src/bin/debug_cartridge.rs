@@ -1,20 +1,11 @@
 extern crate sadnes;
 
-use std::cell::RefCell;
 use std::env;
 use std::fs::File;
-use std::rc::Rc;
 
-use sadnes::apu::Apu;
 use sadnes::cartridge::{Cartridge, LoadError};
 use sadnes::disassembler::Disassembler;
-use sadnes::interconnect::Interconnect;
-use sadnes::mapper;
-use sadnes::mapper::Mapper;
 use sadnes::nes::Nes;
-use sadnes::ppu::Ppu;
-use sadnes::input::Input;
-use sadnes::cpu::Cpu;
 
 fn main() {
     if let Some(filename) = env::args().nth(1) {

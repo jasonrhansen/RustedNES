@@ -8,7 +8,7 @@ use cartridge::Cartridge;
 use ppu::Ppu;
 use apu::Apu;
 use input::Input;
-use cpu::{Cpu, Interrupt};
+use cpu::Cpu;
 
 pub struct Nes {
     pub interconnect: Interconnect,
