@@ -92,6 +92,6 @@ impl Interconnect {
     }
 
     pub fn reset(&mut self) {
-        // TODO: Reset all components
+        self.ppu.reset();
     }
 }

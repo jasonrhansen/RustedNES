@@ -65,6 +65,9 @@ pub struct Ppu {
     // also fills the latch with the bits read. Reading a nominally "write-only" register returns
     // the latch's current value, as do the unused bits of PPUSTATUS.
     ppu_gen_latch: u8,
+
+    scroll_x: u16,
+    scroll_y: u16,
 }
 
 impl Ppu {
@@ -81,7 +84,17 @@ impl Ppu {
             scanline_start_cycle: 0,
             frame: 0,
             ppu_gen_latch: 0,
+            scroll_x: 0,
+            scroll_y: 0,
         }
+    }
+
+    pub fn reset(&mut self) {
+        self.cycles = 0;
+        *self.regs.ppu_ctrl = 0;
+        *self.regs.ppu_mask = 0;
+        *self.regs.ppu_status != 0x80;
+        self.ppu_data_read_buffer = 0;
     }
 
     fn read_oam_byte(&self) -> u8 {
@@ -206,12 +219,13 @@ impl Ppu {
         let scanline_cycle = self.cycles - self.scanline_start_cycle;
         let mut interrupt = None;
 
-        // TODO: Handle other important scanlines and cycles
+        if self.scanline != PRE_RENDER_SCANLINE {
+
+        }
 
         match self.scanline {
             PRE_RENDER_SCANLINE => {
                 if scanline_cycle == 0 {
-                    self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
                     self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
                 }
             },
@@ -219,14 +233,19 @@ impl Ppu {
                 // TODO: Render scanline
             },
             VBLANK_SCANLINE => {
-                if scanline_cycle == 0 {
+                if scanline_cycle == 1 {
                     self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, true);
-                    interrupt = Some(Interrupt::Nmi);
+                    if self.regs.ppu_ctrl.generate_nmi_vblank() {
+                        interrupt = Some(Interrupt::Nmi);
+                    }
                 }
             },
             VBLANK_END_SCANLINE => {
                 if scanline_cycle == 0 {
                     self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
+                    let pattern_addr = self.regs.ppu_ctrl.sprite_pattern_table_address();
+                    self.scroll_x = self.regs.ppu_scroll.position_x as u16;
+                    self.scroll_y = self.regs.ppu_scroll.position_y as u16;
                 }
             },
             _ => (),
@@ -281,9 +300,19 @@ impl Memory for Ppu {
 
         let address = address & 0x2007;
 
+        // Writes to the following registers are ignored if earlier than
+        // ~29658 CPU clocks after reset: PPUCTRL, PPUMASK, PPUSCROLL, PPUADDR
+        if self.cycles < 3 * 29658 &&
+            (address == PPUCTRL_ADDRESS ||
+                address == PPUMASK_ADDRESS ||
+                address == PPUSCROLL_ADDRESS ||
+                address == PPUADDR_ADDRESS) {
+            return;
+        }
+
         self.ppu_gen_latch = value;
 
-        match address & 0x2007 {
+        match address {
             PPUCTRL_ADDRESS => *self.regs.ppu_ctrl = value,
             PPUMASK_ADDRESS => *self.regs.ppu_mask = value,
             OAMADDR_ADDRESS => self.regs.oam_addr = value,
