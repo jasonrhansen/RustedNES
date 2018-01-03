@@ -1,5 +1,3 @@
-use cpu::{AddressMode, Register8};
-
 // Used by Cpu and Disassembler to decode opcodes and handle the instructions
 macro_rules! handle_opcode {
 ($opcode:expr, $this:ident, $mem:ident) => {
@@ -167,11 +165,11 @@ macro_rules! handle_opcode {
         0x0E => $this.asl($mem, AddressMode::Absolute),
         0x1E => $this.asl($mem, AddressMode::AbsoluteIndexed(Register8::X)),
 
-        0x2A => $this.ror($mem, AddressMode::Register(Register8::A)),
-        0x26 => $this.ror($mem, AddressMode::ZeroPage),
-        0x36 => $this.ror($mem, AddressMode::ZeroPageIndexed(Register8::X)),
-        0x2E => $this.ror($mem, AddressMode::Absolute),
-        0x3E => $this.ror($mem, AddressMode::AbsoluteIndexed(Register8::X)),
+        0x6A => $this.ror($mem, AddressMode::Register(Register8::A)),
+        0x66 => $this.ror($mem, AddressMode::ZeroPage),
+        0x76 => $this.ror($mem, AddressMode::ZeroPageIndexed(Register8::X)),
+        0x6E => $this.ror($mem, AddressMode::Absolute),
+        0x7E => $this.ror($mem, AddressMode::AbsoluteIndexed(Register8::X)),
 
         0x2A => $this.rol($mem, AddressMode::Register(Register8::A)),
         0x26 => $this.rol($mem, AddressMode::ZeroPage),
@@ -185,7 +183,7 @@ macro_rules! handle_opcode {
         0xEA => $this.nop(),
 
         // Unofficial opcodes
-        0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xEA | 0xFA => $this.nop(),
+        0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => $this.nop(),
         0x80 | 0x82 | 0x89 | 0xC2 | 0xE2 => $this.nop_2_bytes($mem),
         0x8B => $this.xaa($mem),
         0xA7 => $this.lax($mem, AddressMode::ZeroPage),
