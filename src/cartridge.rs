@@ -68,12 +68,12 @@ pub struct Cartridge {
 
 impl Debug for Cartridge {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        writeln!(f, "mapper: {}", self.mapper);
-        writeln!(f, "sub mapper: {}", self.sub_mapper);
-        writeln!(f, "mirroring: {:?}", self.mirroring);
-        writeln!(f, "PRG ROM size: {}", self.prg_rom.len());
-        writeln!(f, "CHR ROM size: {}", self.chr_rom.len());
-        writeln!(f, "PRG RAM size: {}", self.prg_ram.len());
+        writeln!(f, "mapper: {}", self.mapper)?;
+        writeln!(f, "sub mapper: {}", self.sub_mapper)?;
+        writeln!(f, "mirroring: {:?}", self.mirroring)?;
+        writeln!(f, "PRG ROM size: {}", self.prg_rom.len())?;
+        writeln!(f, "CHR ROM size: {}", self.chr_rom.len())?;
+        writeln!(f, "PRG RAM size: {}", self.prg_ram.len())?;
         writeln!(f, "battery backed: {}", self.is_battery_backed)
     }
 }

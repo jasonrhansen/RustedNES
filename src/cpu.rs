@@ -129,7 +129,7 @@ pub struct Cpu {
 
 impl Cpu {
     pub fn new() -> Cpu {
-        let mut cpu = Cpu {
+        let cpu = Cpu {
             cycles: 0,
             regs: Regs::new(),
             interrupt: None,

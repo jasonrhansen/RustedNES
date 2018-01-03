@@ -1,5 +1,3 @@
-#![feature(associated_consts)]
-
 use std::cell::RefCell;
 use std::default::Default;
 use std::ops::{Deref, DerefMut};
@@ -8,6 +6,24 @@ use std::rc::Rc;
 use cpu::{Cpu, Interrupt};
 use mapper::Mapper;
 use memory::Memory;
+
+const SCREEN_WIDTH: usize = 256;
+const SCREEN_HEIGHT: usize = 240;
+const CYCLES_PER_SCANLINE: u64 = 341;
+const PRE_RENDER_SCANLINE: i16 = -1;
+const RENDER_SCANLINE: i16 = SCREEN_HEIGHT as i16;
+const VBLANK_SCANLINE: i16 = 241;
+const VBLANK_END_SCANLINE: i16 = 260;
+
+// Memory-mapped register addresses
+const PPUCTRL_ADDRESS: u16 = 0x2000;
+const PPUMASK_ADDRESS: u16 = 0x2001;
+const PPUSTATUS_ADDRESS: u16 = 0x2002;
+const OAMADDR_ADDRESS: u16 = 0x2003;
+const OAMDATA_ADDRESS: u16 = 0x2004;
+const PPUSCROLL_ADDRESS: u16 = 0x2005;
+const PPUADDR_ADDRESS: u16 = 0x2006;
+const PPUDATA_ADDRESS: u16 = 0x2007;
 
 pub struct Ppu {
     cycles: u64,
@@ -52,7 +68,6 @@ pub struct Ppu {
 }
 
 impl Ppu {
-    const SCANLINE_NUM_CYCLES: u64 = 341;
 
     pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Ppu {
         Ppu {
@@ -194,22 +209,22 @@ impl Ppu {
         // TODO: Handle other important scanlines and cycles
 
         match self.scanline {
-            -1 => {
+            PRE_RENDER_SCANLINE => {
                 if scanline_cycle == 0 {
                     self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
                     self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
                 }
             },
-            240 => {
+            RENDER_SCANLINE => {
                 // TODO: Render scanline
             },
-            241 => {
+            VBLANK_SCANLINE => {
                 if scanline_cycle == 0 {
                     self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, true);
                     interrupt = Some(Interrupt::Nmi);
                 }
             },
-            260 => {
+            VBLANK_END_SCANLINE => {
                 if scanline_cycle == 0 {
                     self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
                 }
@@ -219,17 +234,18 @@ impl Ppu {
 
         self.cycles += 1;
 
-        if scanline_cycle == Ppu::SCANLINE_NUM_CYCLES ||
+        if scanline_cycle == CYCLES_PER_SCANLINE ||
             // On pre-render scanline, for odd frames,
             // the cycle at the end of the scanline is skipped
-            (self.scanline == -1 && scanline_cycle == Ppu::SCANLINE_NUM_CYCLES - 1 &&
+            (self.scanline == PRE_RENDER_SCANLINE &&
+                scanline_cycle == CYCLES_PER_SCANLINE - 1 &&
                 self.frame % 2 != 0) {
             self.scanline_start_cycle = self.cycles;
             self.scanline += 1;
         }
 
-        if self.scanline > 260 {
-            self.scanline = -1;
+        if self.scanline > VBLANK_END_SCANLINE {
+            self.scanline = PRE_RENDER_SCANLINE;
             self.frame += 1;
         }
 
@@ -247,9 +263,9 @@ impl Memory for Ppu {
         let address = address & 0x2007;
 
         let val = match address & 0x2007 {
-            0x2002 => *self.regs.ppu_status | (self.ppu_gen_latch & 0x1F),
-            0x2004 => self.read_oam_byte(),
-            0x2007 => self.read_ppu_data_byte(),
+            PPUSTATUS_ADDRESS => *self.regs.ppu_status | (self.ppu_gen_latch & 0x1F),
+            OAMDATA_ADDRESS => self.read_oam_byte(),
+            PPUDATA_ADDRESS => self.read_ppu_data_byte(),
             _ => self.ppu_gen_latch,
         };
 
@@ -268,13 +284,13 @@ impl Memory for Ppu {
         self.ppu_gen_latch = value;
 
         match address & 0x2007 {
-            0x2000 => *self.regs.ppu_ctrl = value,
-            0x2001 => *self.regs.ppu_mask = value,
-            0x2003 => self.regs.oam_addr = value,
-            0x2004 => self.write_oam_byte(value),
-            0x2005 => self.regs.ppu_scroll.write_byte(value),
-            0x2006 => self.regs.ppu_addr.write_byte(value),
-            0x2007 => self.write_ppu_data_byte(value),
+            PPUCTRL_ADDRESS => *self.regs.ppu_ctrl = value,
+            PPUMASK_ADDRESS => *self.regs.ppu_mask = value,
+            OAMADDR_ADDRESS => self.regs.oam_addr = value,
+            OAMDATA_ADDRESS => self.write_oam_byte(value),
+            PPUSCROLL_ADDRESS => self.regs.ppu_scroll.write_byte(value),
+            PPUADDR_ADDRESS => self.regs.ppu_addr.write_byte(value),
+            PPUDATA_ADDRESS => self.write_ppu_data_byte(value),
             _ => ()
         }
     }
@@ -519,12 +535,13 @@ impl DerefMut for PpuAddr {
 }
 
 struct Regs {
-    ppu_ctrl: PpuCtrl,
-    ppu_mask: PpuMask,
-    ppu_status: PpuStatus,
-    oam_addr: u8,
-    ppu_scroll: PpuScroll,
-    ppu_addr: PpuAddr,
+    // Registers mapped from CPU address space
+    ppu_ctrl: PpuCtrl,          // 0x2000
+    ppu_mask: PpuMask,          // 0x2001
+    ppu_status: PpuStatus,      // 0x2002
+    oam_addr: u8,               // 0x2003
+    ppu_scroll: PpuScroll,      // 0x2005
+    ppu_addr: PpuAddr,          // 0x2006
 }
 
 impl Regs {
