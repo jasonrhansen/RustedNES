@@ -351,7 +351,7 @@ impl Cpu {
     fn compare<M: Memory>(&mut self, mem: &mut M, am: AddressMode, reg: Register8) {
         let m = self.load(mem, am);
         let r = self.get_register(reg);
-        let result = r - m;
+        let result = r.wrapping_sub(m);
 
         self.set_zero_negative(result);
         self.set_flags(StatusFlags::CARRY, m <= r);
@@ -581,37 +581,37 @@ impl Cpu {
     }
 
     fn inc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let val = self.load(mem, am) + 1;
+        let val = self.load(mem, am).wrapping_add(1);
         self.set_zero_negative(val);
         self.store(mem, am, val);
     }
 
     fn dec<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let val = self.load(mem, am) - 1;
+        let val = self.load(mem, am).wrapping_sub(1);
         self.set_zero_negative(val);
         self.store(mem, am, val);
     }
 
     fn inx(&mut self) {
-        let val = self.regs.x + 1;
+        let val = self.regs.x.wrapping_add(1);
         self.set_zero_negative(val);
         self.regs.x = val;
     }
 
     fn iny(&mut self) {
-        let val = self.regs.y + 1;
+        let val = self.regs.y.wrapping_add(1);
         self.set_zero_negative(val);
         self.regs.y = val;
     }
 
     fn dex(&mut self) {
-        let val = self.regs.x - 1;
+        let val = self.regs.x.wrapping_sub(1);
         self.set_zero_negative(val);
         self.regs.x = val;
     }
 
     fn dey(&mut self) {
-        let val = self.regs.y - 1;
+        let val = self.regs.y.wrapping_sub(1);
         self.set_zero_negative(val);
         self.regs.y = val;
     }
