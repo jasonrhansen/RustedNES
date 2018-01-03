@@ -1,13 +1,14 @@
 use std::cell::RefCell;
-use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use apu::Apu;
-use cpu::Interrupt;
+use cpu::{Cpu, Interrupt};
 use input::Input;
 use mapper::Mapper;
 use memory::{Memory, Ram};
-use ppu::Ppu;
+use ppu::{Ppu, OAMDATA_ADDRESS};
+
+const OAMDMA_ADDRESS: u16 = 0x4014;
 
 pub struct Interconnect {
     pub ram: Ram,
@@ -15,17 +16,36 @@ pub struct Interconnect {
     pub apu: Apu,
     pub input: Input,
     pub mapper: Rc<RefCell<Box<Mapper>>>,
+    pub cpu: Rc<RefCell<Box<Cpu>>>,
 }
 
 impl Interconnect {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Self {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: Rc<RefCell<Box<Cpu>>>) -> Self {
         Interconnect {
             ram: Ram::new(),
             ppu: Ppu::new(mapper.clone()),
             apu: Apu{},
             input: Input{},
             mapper,
+            cpu,
         }
+    }
+
+    fn handle_oam_dma(&mut self, addr_hi: u8) {
+        let start = (addr_hi as u16) << 8;
+        for i in 0..256 {
+            let val = self.read_byte(start + i);
+            self.write_byte(OAMDATA_ADDRESS, val);
+        }
+
+        let mut cpu = self.cpu.borrow_mut();
+
+        // FIXME: An extra cycle should be added on an odd CPU cycle
+        // http://wiki.nesdev.com/w/index.php/PPU_registers#OAMDMA
+        // Currently we don't know what cycle we're on at this point
+        // because the instruction cycles get added after this function
+        // gets called.
+        cpu.cycles += 513;
     }
 }
 
@@ -50,6 +70,8 @@ impl Memory for Interconnect {
             self.ram.write_byte(address, value);
         } else if address < 0x4000 {
             self.ppu.write_byte(address, value);
+        } else if address == OAMDMA_ADDRESS {
+            self.handle_oam_dma(value);
         } else if address < 0x4015 {
             self.apu.write_byte(address, value);
         } else if address < 0x4018 {
@@ -67,5 +89,9 @@ impl Interconnect {
         self.apu.cycles(cycles);
 
         interrupt
+    }
+
+    pub fn reset(&mut self) {
+        // TODO: Reset all components
     }
 }

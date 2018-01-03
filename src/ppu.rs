@@ -3,7 +3,7 @@ use std::default::Default;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
-use cpu::{Cpu, Interrupt};
+use cpu::Interrupt;
 use mapper::Mapper;
 use memory::Memory;
 
@@ -20,7 +20,7 @@ const PPUCTRL_ADDRESS: u16 = 0x2000;
 const PPUMASK_ADDRESS: u16 = 0x2001;
 const PPUSTATUS_ADDRESS: u16 = 0x2002;
 const OAMADDR_ADDRESS: u16 = 0x2003;
-const OAMDATA_ADDRESS: u16 = 0x2004;
+pub const OAMDATA_ADDRESS: u16 = 0x2004;
 const PPUSCROLL_ADDRESS: u16 = 0x2005;
 const PPUADDR_ADDRESS: u16 = 0x2006;
 const PPUDATA_ADDRESS: u16 = 0x2007;

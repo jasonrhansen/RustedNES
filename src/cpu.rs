@@ -1,9 +1,7 @@
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
-use disassembler::Disassembler;
 use memory::Memory;
-use interconnect::Interconnect;
 
 bitflags! {
     pub struct StatusFlags: u8 {
@@ -122,7 +120,7 @@ fn mem_pages_same(m1: u16, m2: u16) -> bool {
 }
 
 pub struct Cpu {
-    cycles: u64,
+    pub cycles: u64,
     regs: Regs,
     interrupt: Option<Interrupt>,
 }

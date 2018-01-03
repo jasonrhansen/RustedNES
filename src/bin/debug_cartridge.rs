@@ -36,14 +36,13 @@ fn run_rom(rom: Cartridge) {
     let mut nes = Nes::new(rom);
 
     for _ in 0..100 {
-        {
-            let regs = nes.cpu.regs();
-            let mut d = Disassembler::new(regs.pc);
-            println!("{:?}", regs);
-            println!("{}", d.disassemble_next(&mut nes.interconnect));
-        }
+        let mut cpu = nes.cpu.borrow_mut();
+        let regs = cpu.regs();
+        let mut d = Disassembler::new(regs.pc);
+        println!("{:?}", regs);
+        println!("{}", d.disassemble_next(&mut nes.interconnect));
 
-        let cycles = nes.cpu.step(&mut nes.interconnect);
+        let cycles = cpu.step(&mut nes.interconnect);
         println!("cycles: {}", cycles);
     }
 }
