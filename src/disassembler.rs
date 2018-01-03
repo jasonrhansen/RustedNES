@@ -300,11 +300,11 @@ impl Disassembler {
         self.dis_instruction("rol", mem, am)
     }
 
-    fn brk<M: Memory>(&mut self, mem: &mut M) -> String {
+    fn brk<M: Memory>(&mut self, _mem: &mut M) -> String {
         "brk".into()
     }
 
-    fn rti<M: Memory>(&mut self, mem: &mut M) -> String {
+    fn rti<M: Memory>(&mut self, _mem: &mut M) -> String {
         "rti".into()
     }
 
@@ -320,7 +320,7 @@ impl Disassembler {
         format!("nop2 {}", self.dis_pc_byte(mem)).into()
     }
 
-    fn xaa<M: Memory>(&mut self, mem: &mut M) -> String {
+    fn xaa<M: Memory>(&mut self, _mem: &mut M) -> String {
         "xaa".into()
     }
 
