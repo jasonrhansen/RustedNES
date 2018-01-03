@@ -8,7 +8,7 @@ use cpu::Cpu;
 
 pub struct Nes {
     pub interconnect: Interconnect,
-    pub cpu: Rc<RefCell<Box<Cpu>>>,
+    pub cpu: Rc<RefCell<Cpu>>,
 }
 
 impl Nes {
@@ -20,7 +20,7 @@ impl Nes {
         );
 
         let cpu = Rc::new(
-            RefCell::new(Box::new(Cpu::new()))
+            RefCell::new(Cpu::new())
         );
 
         let interconnect = Interconnect::new(mapper, cpu.clone());
@@ -35,13 +35,13 @@ impl Nes {
         nes
     }
 
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.interconnect.reset();
         let mut cpu = self.cpu.borrow_mut();
         cpu.reset(&mut self.interconnect);
     }
 
-    fn step(&mut self) -> u32 {
+    pub fn step(&mut self) -> u32 {
         let mut cpu = self.cpu.borrow_mut();
         let cpu_cycles = cpu.step(&mut self.interconnect);
 

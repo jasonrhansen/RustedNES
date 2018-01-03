@@ -16,11 +16,11 @@ pub struct Interconnect {
     pub apu: Apu,
     pub input: Input,
     pub mapper: Rc<RefCell<Box<Mapper>>>,
-    pub cpu: Rc<RefCell<Box<Cpu>>>,
+    pub cpu: Rc<RefCell<Cpu>>,
 }
 
 impl Interconnect {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: Rc<RefCell<Box<Cpu>>>) -> Self {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: Rc<RefCell<Cpu>>) -> Self {
         Interconnect {
             ram: Ram::new(),
             ppu: Ppu::new(mapper.clone()),
