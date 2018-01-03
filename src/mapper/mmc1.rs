@@ -107,6 +107,18 @@ impl Mmc1 {
         (bank as usize * PRG_ROM_BANK_SIZE as usize) |
             (address as usize & (PRG_ROM_BANK_SIZE as usize - 1))
     }
+
+    fn mirror(&self, address: u16) -> u16 {
+        // 0x3000-0x3EFF are mirrors of 0x2000-0x2EFF
+        let address = address & 0x2FFF;
+
+        match self.mirroring() {
+            Mirroring::Horizontal => address | 0x2BFF,
+            Mirroring::Vertical => address | 0x27FF,
+            Mirroring::OneScreenLower => address & 0x23FF,
+            Mirroring::OneScreenUpper => (address & 0x27FF) | 0x0400,
+        }
+    }
 }
 
 impl Mapper for Mmc1 {
@@ -153,8 +165,7 @@ impl Mapper for Mmc1 {
         if address < 0x2000 {
             self.cartridge.chr_rom[address as usize]
         } else {
-            // TODO: Handle mirroring
-            vram.read_byte(address)
+            vram.read_byte(self.mirror(address))
         }
     }
 
@@ -162,8 +173,7 @@ impl Mapper for Mmc1 {
         if address < 0x2000 {
             self.cartridge.chr_rom[address as usize] = value
         } else {
-            // TODO: Handle mirroring
-            vram.write_byte(address, value);
+            vram.write_byte(self.mirror(address), value);
         }
     }
 }

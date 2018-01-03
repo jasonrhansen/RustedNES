@@ -1,4 +1,4 @@
-use cartridge::{Cartridge, PRG_ROM_BANK_SIZE};
+use cartridge::{Cartridge, Mirroring, PRG_ROM_BANK_SIZE};
 use mapper::Mapper;
 use memory::Memory;
 use ppu::Vram;
@@ -11,6 +11,17 @@ impl Nrom {
     pub fn new(cartridge: Box<Cartridge>) -> Self {
         Nrom {
             cartridge,
+        }
+    }
+
+    fn mirror(&self, address: u16) -> u16 {
+        // 0x3000-0x3EFF are mirrors of 0x2000-0x2EFF
+        let address = address & 0x2FFF;
+
+        match self.cartridge.mirroring {
+            Mirroring::Horizontal => address & 0x2BFF,
+            Mirroring::Vertical => address & 0x27FF,
+            Mirroring::FourScreen => address,
         }
     }
 }
@@ -41,15 +52,13 @@ impl Mapper for Nrom {
         if address < 0x2000 {
             self.cartridge.chr_rom[address as usize]
         } else {
-            // TODO: Handle mirroring
-            vram.read_byte(address)
+            vram.read_byte(self.mirror(address))
         }
     }
 
     fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8) {
         if address >= 0x2000 {
-            // TODO: Handle mirroring
-            vram.write_byte(address, value);
+            vram.write_byte(self.mirror(address), value);
         }
     }
 }
