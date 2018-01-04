@@ -455,7 +455,7 @@ impl Cpu {
     fn sbc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
         let m = self.load(mem, am);
         let a = self.regs.a;
-        let result = a as u32 - m as u32 -
+        let result = a as i32 - m as i32 -
             if self.get_flag(StatusFlags::CARRY) { 0 } else { 1 };
 
         self.set_flags(StatusFlags::CARRY, result & 0x100 == 0);
@@ -674,9 +674,9 @@ impl Cpu {
     }
 
     fn jsr<M: Memory>(&mut self, mem: &mut M) {
+        let addr = self.next_pc_word(mem);
         let pc = self.regs.pc;
         self.push_word(mem, pc);
-        let addr = self.next_pc_word(mem);
         self.regs.pc = addr;
     }
 
