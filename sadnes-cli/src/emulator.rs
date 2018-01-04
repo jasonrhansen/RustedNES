@@ -149,6 +149,8 @@ impl Emulator {
         self.mode = Mode::Debugging;
 
         self.cursor = self.nes.cpu.regs().pc;
+
+        print!("0x{:04x}  ", self.cursor);
         self.disassemble_instruction();
 
         self.print_cursor();
@@ -182,6 +184,7 @@ impl Emulator {
                         for _ in 0..count {
                             self.nes.step(video_frame_sink, audio_frame_sink);
                             self.cursor = self.nes.cpu.regs().pc;
+                            print!("0x{:04x}  ", self.cursor);
                             self.disassemble_instruction();
                         }
                     },
