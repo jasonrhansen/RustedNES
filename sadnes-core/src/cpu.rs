@@ -157,12 +157,11 @@ impl Cpu {
         self.trigger_watchpoint = false;
         let cycles = self.cycles;
 
-        self.handle_interrupts(mem);
-
-        let opcode = self.next_pc_byte(mem);
-        handle_opcode!(opcode, self, mem);
-
-        self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
+        if !self.handle_interrupts(mem) {
+            let opcode = self.next_pc_byte(mem);
+            handle_opcode!(opcode, self, mem);
+            self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
+        }
 
         let cycles = (self.cycles - cycles) as u32;
 
@@ -808,12 +807,15 @@ impl Cpu {
         }
     }
 
-    fn handle_interrupts<M: Memory>(&mut self, mem: &mut M) {
+    fn handle_interrupts<M: Memory>(&mut self, mem: &mut M) -> bool {
         if let Some(interrupt) = self.interrupt {
             match interrupt {
                 Interrupt::Nmi => self.handle_interrupt(mem, NMI_VECTOR),
                 Interrupt::Irq => self.handle_interrupt(mem, IRQ_VECTOR),
             }
+            true
+        } else {
+            false
         }
     }
 
@@ -824,6 +826,7 @@ impl Cpu {
         self.push_byte(mem, status);
         self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
         self.regs.pc = mem.read_word(vector);
+        println!("interrupt vector: {:04x}, jump_to: {:04x}, pc: {:04x}", vector, self.regs.pc, pc);
         self.interrupt = None;
         self.cycles += 7;
     }
