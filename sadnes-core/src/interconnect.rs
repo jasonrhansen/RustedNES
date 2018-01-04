@@ -7,6 +7,7 @@ use input::Input;
 use mapper::Mapper;
 use memory::{Memory, Ram};
 use ppu::{Ppu, OAMDATA_ADDRESS};
+use sinks::*;
 
 const OAMDMA_ADDRESS: u16 = 0x4014;
 
@@ -16,11 +17,11 @@ pub struct Interconnect {
     pub apu: Apu,
     pub input: Input,
     pub mapper: Rc<RefCell<Box<Mapper>>>,
-    pub cpu: Rc<RefCell<Cpu>>,
+    pub cpu: *mut Cpu,
 }
 
 impl Interconnect {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: Rc<RefCell<Cpu>>) -> Self {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: *mut Cpu) -> Self {
         Interconnect {
             ram: Ram::new(),
             ppu: Ppu::new(mapper.clone()),
@@ -38,14 +39,16 @@ impl Interconnect {
             self.write_byte(OAMDATA_ADDRESS, val);
         }
 
-        let mut cpu = self.cpu.borrow_mut();
 
-        // FIXME: An extra cycle should be added on an odd CPU cycle
-        // http://wiki.nesdev.com/w/index.php/PPU_registers#OAMDMA
-        // Currently we don't know what cycle we're on at this point
-        // because the instruction cycles get added after this function
-        // gets called.
-        cpu.cycles += 513;
+        unsafe {
+            let cpu = &mut *self.cpu;
+            // FIXME: An extra cycle should be added on an odd CPU cycle
+            // http://wiki.nesdev.com/w/index.php/PPU_registers#OAMDMA
+            // Currently we don't know what cycle we're on at this point
+            // because the instruction cycles get added after this function
+            // gets called.
+            cpu.cycles += 513;
+        }
     }
 }
 
@@ -84,9 +87,12 @@ impl Memory for Interconnect {
 }
 
 impl Interconnect {
-    pub fn cycles(&mut self, cycles: u32) -> Option<Interrupt> {
-        let interrupt = self.ppu.cycles(cycles);
-        self.apu.cycles(cycles);
+    pub fn cycles(&mut self,
+                  cycles: u32,
+                  video_frame_sink: &mut Sink<VideoFrame>,
+                  audio_frame_sink: &mut Sink<AudioFrame>) -> Option<Interrupt> {
+        let interrupt = self.ppu.cycles(cycles, video_frame_sink);
+        self.apu.cycles(cycles, audio_frame_sink);
 
         interrupt
     }

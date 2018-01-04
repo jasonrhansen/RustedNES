@@ -1,0 +1,12 @@
+[package]
+name = "sadnes-cli"
+version = "0.1.0"
+authors = ["Jason Rodney Hansen <jasonrodneyhansen@gmail.com>"]
+description = "A CLI frontend for sadnes-core"
+license = "MIT/Apache-2.0"
+
+[dependencies]
+clap = "2.0.0"
+combine = "2.2.0"
+minifb = "0.10.3"
+sadnes-core = { path = "../sadnes-core" }

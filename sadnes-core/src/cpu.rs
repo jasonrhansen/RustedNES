@@ -361,6 +361,7 @@ impl Cpu {
     fn push_byte<M: Memory>(&mut self, mem: &mut M, val: u8) {
         let s = self.regs.sp;
         mem.write_byte(0x0100 | (s as u16), val);
+
         self.regs.sp = s - 1;
     }
 

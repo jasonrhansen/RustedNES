@@ -6,9 +6,10 @@ use std::rc::Rc;
 use cpu::Interrupt;
 use mapper::Mapper;
 use memory::Memory;
+use sinks::*;
 
-const SCREEN_WIDTH: usize = 256;
-const SCREEN_HEIGHT: usize = 240;
+pub const SCREEN_WIDTH: usize = 256;
+pub const SCREEN_HEIGHT: usize = 240;
 const CYCLES_PER_SCANLINE: u64 = 341;
 const PRE_RENDER_SCANLINE: i16 = -1;
 const RENDER_SCANLINE: i16 = SCREEN_HEIGHT as i16;
@@ -203,11 +204,13 @@ impl Ppu {
     }
 
     // Run for the given number of cpu cycles
-    pub fn cycles(&mut self, cycles: u32) -> Option<Interrupt> {
+    pub fn cycles(&mut self,
+                  cycles: u32,
+                  video_frame_sink: &mut Sink<VideoFrame>) -> Option<Interrupt> {
         let mut interrupt = None;
         // 3 PPU cycles per CPU cycle
         for _ in 0..cycles * 3 {
-            if let Some(step_interrupt) = self.step() {
+            if let Some(step_interrupt) = self.step(video_frame_sink) {
                 interrupt = Some(step_interrupt);
             }
         }
@@ -215,7 +218,7 @@ impl Ppu {
         interrupt
     }
 
-    fn step(&mut self) -> Option<Interrupt> {
+    fn step(&mut self, video_frame_sink: &mut Sink<VideoFrame>) -> Option<Interrupt> {
         let scanline_cycle = self.cycles - self.scanline_start_cycle;
         let mut interrupt = None;
 

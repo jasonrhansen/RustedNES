@@ -2,7 +2,7 @@ use memory::Memory;
 use cpu::{AddressMode, Register8};
 
 pub struct Disassembler {
-    pc: u16,
+    pub pc: u16,
 }
 
 impl Disassembler {
@@ -77,7 +77,7 @@ impl Disassembler {
     }
 
     fn dis_branch<M: Memory>(&mut self, instruction: &str, mem: &mut M) -> String {
-        format!("{} {}", instruction, self.dis_pc_byte(mem)).into()
+        format!("{} {}", instruction, self.next_pc_byte(mem) as i8).into()
     }
 
     ///////////////////

@@ -1,4 +1,5 @@
 use memory::Memory;
+use sinks::*;
 
 pub struct Apu {
 
@@ -6,7 +7,7 @@ pub struct Apu {
 
 impl Apu {
     // Run for the given number of cpu cycles
-    pub fn cycles(&mut self, cycles: u32) {
+    pub fn cycles(&mut self, cycles: u32, audio_frame_sink: &mut Sink<AudioFrame>) {
 //        unimplemented!()
     }
 }
