@@ -196,19 +196,19 @@ impl Cpu {
         }
     }
 
-    fn load<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> u8 {
+    fn load<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> (u8, Option<u16>) {
         use self::AddressMode::*;
         match am {
-            Immediate => self.next_pc_byte(mem),
+            Immediate => (self.next_pc_byte(mem), None),
             Absolute => {
                 let addr = self.next_pc_word(mem);
                 self.trigger_watchpoint |= self.check_watchpoints(addr);
-                mem.read_byte(addr)
+                (mem.read_byte(addr), Some(addr))
             },
             ZeroPage => {
                 let addr = self.next_pc_byte(mem) as u16;
                 self.trigger_watchpoint |= self.check_watchpoints(addr);
-                mem.read_byte(addr)
+                (mem.read_byte(addr), Some(addr))
             },
             AbsoluteIndexed(reg) => {
                 let base = self.next_pc_word(mem);
@@ -221,7 +221,7 @@ impl Cpu {
                     self.cycles += 1;
                 }
 
-                mem.read_byte(addr)
+                (mem.read_byte(addr), Some(addr))
             },
             ZeroPageIndexed(reg) => {
                 let base = self.next_pc_byte(mem) as u16;
@@ -229,7 +229,7 @@ impl Cpu {
                 let addr = base + index;
                 self.trigger_watchpoint |= self.check_watchpoints(addr);
 
-                mem.read_byte(addr)
+                (mem.read_byte(addr), Some(addr))
             },
             IndexedIndirect(reg) => {
                 let base = self.next_pc_byte(mem);
@@ -237,7 +237,7 @@ impl Cpu {
                 let addr = self.load_word_zero_page(mem,base + index);
                 self.trigger_watchpoint |= self.check_watchpoints(addr);
 
-                mem.read_byte(addr)
+                (mem.read_byte(addr), Some(addr))
             },
             IndirectIndexed(reg) => {
                 let zp_offset = self.next_pc_byte(mem);
@@ -251,9 +251,9 @@ impl Cpu {
                     self.cycles += 1;
                 }
 
-                mem.read_byte(addr)
+                (mem.read_byte(addr), Some(addr))
             },
-            Register(reg) => self.get_register(reg),
+            Register(reg) => (self.get_register(reg), None),
         }
     }
 
@@ -343,7 +343,7 @@ impl Cpu {
     //////////////////////
 
     fn ld_reg<M: Memory>(&mut self, mem: &mut M, am: AddressMode, r: Register8) {
-        let m = self.load(mem, am);
+        let (m, _) = self.load(mem, am);
         self.set_zero_negative(m);
         self.set_register(r, m);
     }
@@ -371,7 +371,7 @@ impl Cpu {
     }
 
     fn compare<M: Memory>(&mut self, mem: &mut M, am: AddressMode, reg: Register8) {
-        let m = self.load(mem, am);
+        let (m, _) = self.load(mem, am);
         let r = self.get_register(reg);
         let result = r.wrapping_sub(m);
 
@@ -438,7 +438,7 @@ impl Cpu {
     }
 
     fn adc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let m = self.load(mem, am);
+        let (m, _) = self.load(mem, am);
         let a = self.regs.a;
         let result = a as u32 + m as u32 +
             if self.get_flag(StatusFlags::CARRY) { 1 } else { 0 };
@@ -453,7 +453,7 @@ impl Cpu {
     }
 
     fn sbc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let m = self.load(mem, am);
+        let (m, _) = self.load(mem, am);
         let a = self.regs.a;
         let result = a as i32 - m as i32 -
             if self.get_flag(StatusFlags::CARRY) { 0 } else { 1 };
@@ -468,7 +468,7 @@ impl Cpu {
     }
 
     fn and<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let m = self.load(mem, am);
+        let (m, _) = self.load(mem, am);
         let a = self.regs.a;
         let result = m & a;
         self.set_zero_negative(result);
@@ -476,7 +476,7 @@ impl Cpu {
     }
 
     fn ora<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let m = self.load(mem, am);
+        let (m, _) = self.load(mem, am);
         let a = self.regs.a;
         let result = m | a;
         self.set_zero_negative(result);
@@ -484,7 +484,7 @@ impl Cpu {
     }
 
     fn eor<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let m = self.load(mem, am);
+        let (m, _) = self.load(mem, am);
         let a = self.regs.a;
         let result = m ^ a;
         self.set_zero_negative(result);
@@ -595,7 +595,7 @@ impl Cpu {
     }
 
     fn bit<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let m = self.load(mem, am);
+        let (m, _) = self.load(mem, am);
         let a = self.regs.a;
 
         self.set_flags(StatusFlags::NEGATIVE_RESULT, m & 0x80 != 0);
@@ -604,15 +604,19 @@ impl Cpu {
     }
 
     fn inc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let val = self.load(mem, am).wrapping_add(1);
-        self.set_zero_negative(val);
-        self.store(mem, am, val);
+        if let (mut val, Some(addr)) = self.load(mem, am) {
+            val.wrapping_add(1);
+            self.set_zero_negative(val);
+            mem.write_byte(addr, val);
+        }
     }
 
     fn dec<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let val = self.load(mem, am).wrapping_sub(1);
-        self.set_zero_negative(val);
-        self.store(mem, am, val);
+        if let (mut val, Some(addr)) = self.load(mem, am) {
+            val.wrapping_sub(1);
+            self.set_zero_negative(val);
+            mem.write_byte(addr, val);
+        }
     }
 
     fn inx(&mut self) {
@@ -706,7 +710,7 @@ impl Cpu {
     }
 
     fn lsr<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let val = self.load(mem, am);
+        let (val, _) = self.load(mem, am);
         let result = (val >> 1) & 0x7F;
         self.set_zero_negative(result);
         self.set_flags(StatusFlags::CARRY, (val & 0x01) != 0);
@@ -714,7 +718,7 @@ impl Cpu {
     }
 
     fn asl<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let val = self.load(mem, am);
+        let (val, _) = self.load(mem, am);
         let result = (val << 1) & 0xFE;
         self.set_zero_negative(result);
         self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
@@ -722,7 +726,7 @@ impl Cpu {
     }
 
     fn ror<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let val = self.load(mem, am);
+        let (val, _) = self.load(mem, am);
         let carry: u8 = if self.get_flag(StatusFlags::CARRY) { 1 << 7 } else { 0 };
         let result = ((val >> 1) & 0x7F) | carry;
         self.set_zero_negative(result);
@@ -731,7 +735,7 @@ impl Cpu {
     }
 
     fn rol<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        let val = self.load(mem, am);
+        let (val, _) = self.load(mem, am);
         let carry: u8 = if self.get_flag(StatusFlags::CARRY) { 1 } else { 0 };
         let result = ((val << 1) & 0xFE) | carry;
         self.set_zero_negative(result);
