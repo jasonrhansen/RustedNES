@@ -11,3 +11,4 @@ combine = "2.2.0"
 minifb = "0.10.3"
 sadnes-core = { path = "../sadnes-core" }
 time = "0.1"
+liner = "0.4.3"

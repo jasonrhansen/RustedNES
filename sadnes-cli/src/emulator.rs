@@ -4,6 +4,7 @@ use time::precise_time_ns;
 use command::*;
 use audio_frame_sink::AudioFrameSink;
 use video_frame_sink::VideoFrameSink;
+use liner;
 
 use sadnes_core::cartridge::{Cartridge, LoadError};
 use sadnes_core::disassembler::Disassembler;
@@ -18,7 +19,7 @@ use std::fs::File;
 use std::io::{stdin, stdout, Write};
 use std::thread::{self, JoinHandle};
 use std::time;
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::{channel, Sender, Receiver};
 
 const CPU_CYCLE_TIME_NS: u64 = 559;
 
@@ -40,6 +41,7 @@ pub struct Emulator {
     cursor: u16,
     last_command: Option<Command>,
 
+    prompt_sender: Sender<String>,
     stdin_receiver: Receiver<String>,
 
     start_time_ns: u64,
@@ -48,10 +50,19 @@ pub struct Emulator {
 
 impl Emulator {
     pub fn new(cartridge: Cartridge) -> Emulator {
+        let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
-        let stdin_thread = thread::spawn(move || {
+        let _stdin_thread = thread::spawn(move || {
+            let mut con = liner::Context::new();
             loop {
-                stdin_sender.send(read_stdin()).unwrap();
+                if let Ok(prompt) = prompt_receiver.recv() {
+                    let res = con.read_line(prompt,
+                                                &mut |_| {});
+                    if let Ok(res) = res {
+                        stdin_sender.send(res.as_str().into()).unwrap();
+                        con.history.push(res.into()).unwrap();
+                    }
+                }
             }
         });
 
@@ -72,6 +83,7 @@ impl Emulator {
             breakpoints: HashSet::new(),
             labels: HashMap::new(),
 
+            prompt_sender,
             stdin_receiver,
 
             cursor: 0,
@@ -89,7 +101,7 @@ impl Emulator {
             self.start_debugger();
         }
 
-        let mut frame_buffer: Vec<u32> = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
+        let frame_buffer: Vec<u32> = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
         let mut video_frame_sink = VideoFrameSink::new();
         let mut audio_frame_sink = AudioFrameSink::new();
 
@@ -286,8 +298,7 @@ impl Emulator {
     }
 
     fn print_cursor(&self) {
-        print!("(sadnes-debug 0x{:04x}) > ", self.cursor);
-        stdout().flush().unwrap();
+        self.prompt_sender.send(format!("(sadnes-debug 0x{:04x}) > ", self.cursor)).unwrap();
     }
 
     fn print_labels_at_cursor(&mut self) {
@@ -295,10 +306,4 @@ impl Emulator {
             println!(".{}:", name);
         }
     }
-}
-
-fn read_stdin() -> String {
-    let mut input = String::new();
-    stdin().read_line(&mut input).unwrap();
-    input.trim().into()
 }

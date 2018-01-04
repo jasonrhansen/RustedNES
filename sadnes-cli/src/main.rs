@@ -5,6 +5,7 @@ extern crate time;
 
 extern crate combine;
 extern crate minifb;
+extern crate liner;
 
 extern crate sadnes_core;
 
