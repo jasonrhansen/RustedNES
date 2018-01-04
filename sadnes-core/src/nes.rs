@@ -42,7 +42,8 @@ impl Nes {
     pub fn step(&mut self,
                 video_frame_sink: &mut Sink<VideoFrame>,
                 audio_frame_sink: &mut Sink<AudioFrame>) -> (u32, bool) {
-        let cpu_cycles = self.cpu.step(&mut self.interconnect);
+        let (cpu_cycles, trigger_watchpoint) =
+            self.cpu.step(&mut self.interconnect);
 
         if let Some(interrupt) = self.interconnect.cycles(cpu_cycles,
                                                           video_frame_sink,
@@ -50,6 +51,6 @@ impl Nes {
             self.cpu.request_interrupt(interrupt);
         }
 
-        (cpu_cycles, false)
+        (cpu_cycles, trigger_watchpoint)
     }
 }

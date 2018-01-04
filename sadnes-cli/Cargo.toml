@@ -10,3 +10,4 @@ clap = "2.0.0"
 combine = "2.2.0"
 minifb = "0.10.3"
 sadnes-core = { path = "../sadnes-core" }
+time = "0.1"

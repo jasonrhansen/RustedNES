@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
@@ -19,7 +20,7 @@ bitflags! {
 
 impl fmt::Display for StatusFlags {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "Flags {{C: {}, Z: {}, I: {}, D: {}, B: {}, E: {}, O: {}, N: {}}}",
+        write!(f, "{{C: {}, Z: {}, I: {}, D: {}, B: {}, E: {}, O: {}, N: {}}}",
                self.contains(StatusFlags::CARRY) as u8,
                self.contains(StatusFlags::ZERO_RESULT) as u8,
                self.contains(StatusFlags::INTERRUPT_DISABLE) as u8,
@@ -123,6 +124,9 @@ pub struct Cpu {
     pub cycles: u64,
     regs: Regs,
     interrupt: Option<Interrupt>,
+
+    pub watchpoints: HashSet<u16>,
+    trigger_watchpoint: bool,
 }
 
 impl Cpu {
@@ -131,6 +135,8 @@ impl Cpu {
             cycles: 0,
             regs: Regs::new(),
             interrupt: None,
+            watchpoints: HashSet::new(),
+            trigger_watchpoint: false,
         };
 
         cpu
@@ -147,7 +153,8 @@ impl Cpu {
         self.interrupt = None;
     }
 
-    pub fn step<M: Memory>(&mut self, mem: &mut M) -> u32 {
+    pub fn step<M: Memory>(&mut self, mem: &mut M) -> (u32, bool) {
+        self.trigger_watchpoint = false;
         let cycles = self.cycles;
 
         self.handle_interrupts(mem);
@@ -157,7 +164,13 @@ impl Cpu {
 
         self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
 
-        (self.cycles - cycles) as u32
+        let cycles = (self.cycles - cycles) as u32;
+
+        (cycles, self.trigger_watchpoint)
+    }
+
+    fn check_watchpoints(&self, addr: u16) -> bool {
+        self.watchpoints.len() != 0 && self.watchpoints.contains(&addr)
     }
 
     fn next_pc_byte<M: Memory>(&mut self, mem: &mut M) -> u8 {
@@ -189,16 +202,19 @@ impl Cpu {
             Immediate => self.next_pc_byte(mem),
             Absolute => {
                 let addr = self.next_pc_word(mem);
+                self.trigger_watchpoint |= self.check_watchpoints(addr);
                 mem.read_byte(addr)
             },
             ZeroPage => {
                 let addr = self.next_pc_byte(mem) as u16;
+                self.trigger_watchpoint |= self.check_watchpoints(addr);
                 mem.read_byte(addr)
             },
             AbsoluteIndexed(reg) => {
                 let base = self.next_pc_word(mem);
                 let index = self.get_register(reg) as u16;
                 let addr = base + index;
+                self.trigger_watchpoint |= self.check_watchpoints(addr);
 
                 // Crossing page boundaries adds an extra cycle
                 if !mem_pages_same(base, addr) {
@@ -210,12 +226,17 @@ impl Cpu {
             ZeroPageIndexed(reg) => {
                 let base = self.next_pc_byte(mem) as u16;
                 let index = self.get_register(reg) as u16;
-                mem.read_byte(base + index)
+                let addr = base + index;
+                self.trigger_watchpoint |= self.check_watchpoints(addr);
+
+                mem.read_byte(addr)
             },
             IndexedIndirect(reg) => {
                 let base = self.next_pc_byte(mem);
                 let index = self.get_register(reg);
                 let addr = self.load_word_zero_page(mem,base + index);
+                self.trigger_watchpoint |= self.check_watchpoints(addr);
+
                 mem.read_byte(addr)
             },
             IndirectIndexed(reg) => {
@@ -223,6 +244,7 @@ impl Cpu {
                 let base = self.load_word_zero_page(mem,zp_offset);
                 let index = self.get_register(reg) as u16;
                 let addr = base + index;
+                self.trigger_watchpoint |= self.check_watchpoints(addr);
 
                 // Crossing page boundaries adds an extra cycle
                 if !mem_pages_same(base, addr) {

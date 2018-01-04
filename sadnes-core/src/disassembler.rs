@@ -32,11 +32,11 @@ impl Disassembler {
     }
 
     fn dis_pc_byte<M: Memory>(&mut self, mem: &mut M) -> String {
-        format!("${:02X}", self.next_pc_byte(mem))
+        format!("${:02x}", self.next_pc_byte(mem))
     }
 
     fn dis_pc_word<M: Memory>(&mut self, mem: &mut M) -> String {
-        format!("${:04X}", self.next_pc_word(mem))
+        format!("${:04x}", self.next_pc_word(mem))
     }
 
     fn dis_am<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {

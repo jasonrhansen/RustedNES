@@ -1,11 +1,15 @@
 #[macro_use]
 extern crate clap;
 
+extern crate time;
+
 extern crate combine;
 extern crate minifb;
 
 extern crate sadnes_core;
 
+mod audio_frame_sink;
+mod video_frame_sink;
 mod argparse;
 mod command;
 mod emulator;
@@ -37,9 +41,9 @@ fn load_rom(filename: &str) -> Result<Cartridge, LoadError> {
     Cartridge::load(&mut file)
 }
 
-fn run_rom(rom: Cartridge, debug: bool) {
+fn run_rom(rom: Cartridge, start_debugger: bool) {
     let mut emulator = Emulator::new(rom);
 
-    emulator.run();
+    emulator.run(start_debugger);
 }
 

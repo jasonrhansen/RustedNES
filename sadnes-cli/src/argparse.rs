@@ -17,6 +17,7 @@ pub fn parse_args() -> CommandLineConfig {
         )
         .arg(Arg::with_name("debug")
             .help("Start in debug mode")
+            .long("debug")
             .short("d")
         );
 
