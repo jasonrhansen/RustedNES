@@ -20,6 +20,7 @@ use std::io::{stdin, stdout, Write};
 use std::thread::{self, JoinHandle};
 use std::time;
 use std::sync::mpsc::{channel, Sender, Receiver};
+use std::cmp::min;
 
 const CPU_CYCLE_TIME_NS: u64 = 559;
 
@@ -228,6 +229,15 @@ impl Emulator {
                                 }
                             }
                             println!();
+                        }
+                    },
+                    Command::ShowStack => {
+                        let sp = self.nes.cpu.regs().sp;
+                        let addr = 0x0100 | sp as u16;
+
+                        for i in 0..min(10, 0x01FF - addr + 1) {
+                            let byte = self.nes.interconnect.read_byte(addr + i);
+                            println!("0x{:04x}  {:02x}", addr + i, byte);
                         }
                     },
                     Command::Disassemble(count) => {
