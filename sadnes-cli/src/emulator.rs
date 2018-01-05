@@ -302,6 +302,7 @@ impl Emulator {
     }
 
     fn disassemble_instruction(&mut self) -> u16 {
+        self.print_labels_at_cursor();
         let mut d = Disassembler::new(self.cursor);
         println!("{}", d.disassemble_next(&mut self.nes.interconnect));
         d.pc
