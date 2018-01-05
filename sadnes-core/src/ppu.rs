@@ -107,7 +107,7 @@ impl Ppu {
         // http://wiki.nesdev.com/w/index.php/PPU_registers#OAM_data_.28.242004.29_.3C.3E_read.2Fwrite
 
         self.oam[self.regs.oam_addr as usize] = val;
-        self.regs.oam_addr += 1;
+        self.regs.oam_addr = self.regs.oam_addr.wrapping_add(1);
     }
 
     fn increment_ppu_addr(&mut self) {
