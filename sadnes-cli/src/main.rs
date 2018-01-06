@@ -15,9 +15,7 @@ mod argparse;
 mod command;
 mod emulator;
 
-use std::env;
 use std::fs::File;
-use std::io;
 
 use sadnes_core::cartridge::*;
 

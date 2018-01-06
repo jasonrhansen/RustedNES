@@ -830,7 +830,6 @@ impl Cpu {
         self.push_byte(mem, status);
         self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
         self.regs.pc = mem.read_word(vector);
-        println!("interrupt vector: {:04x}, jump_to: {:04x}, pc: {:04x}", vector, self.regs.pc, pc);
         self.interrupt = None;
         self.cycles += 7;
     }

@@ -234,6 +234,10 @@ impl Ppu {
             },
             RENDER_SCANLINE => {
                 // TODO: Render scanline
+                if scanline_cycle == 0 {
+                    let mut buffer: Box<[u8]> = vec![(self.frame % 255) as u8; SCREEN_WIDTH * SCREEN_HEIGHT * 3].into_boxed_slice();
+                    video_frame_sink.append(buffer);
+                }
             },
             VBLANK_SCANLINE => {
                 if scanline_cycle == 1 {
@@ -256,7 +260,8 @@ impl Ppu {
 
         self.cycles += 1;
 
-        if scanline_cycle == CYCLES_PER_SCANLINE ||
+
+        if scanline_cycle >= CYCLES_PER_SCANLINE ||
             // On pre-render scanline, for odd frames,
             // the cycle at the end of the scanline is skipped
             (self.scanline == PRE_RENDER_SCANLINE &&
@@ -265,6 +270,7 @@ impl Ppu {
             self.scanline_start_cycle = self.cycles;
             self.scanline += 1;
         }
+
 
         if self.scanline > VBLANK_END_SCANLINE {
             self.scanline = PRE_RENDER_SCANLINE;

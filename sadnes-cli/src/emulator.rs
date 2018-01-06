@@ -6,7 +6,7 @@ use audio_frame_sink::AudioFrameSink;
 use video_frame_sink::VideoFrameSink;
 use liner;
 
-use sadnes_core::cartridge::{Cartridge, LoadError};
+use sadnes_core::cartridge::Cartridge;
 use sadnes_core::disassembler::Disassembler;
 use sadnes_core::nes::Nes;
 use sadnes_core::ppu::{SCREEN_WIDTH, SCREEN_HEIGHT};
@@ -14,10 +14,7 @@ use sadnes_core::sinks::*;
 use sadnes_core::memory::Memory;
 
 use std::collections::{HashSet, HashMap};
-use std::env;
-use std::fs::File;
-use std::io::{stdin, stdout, Write};
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::cmp::min;
@@ -74,7 +71,7 @@ impl Emulator {
                                     borderless: false,
                                     title: true,
                                     resize: false,
-                                    scale: Scale::X2,
+                                    scale: Scale::X1,
                                 }
             ).unwrap(),
 
@@ -102,12 +99,9 @@ impl Emulator {
             self.start_debugger();
         }
 
-        let frame_buffer: Vec<u32> = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
-        let mut video_frame_sink = VideoFrameSink::new();
-        let mut audio_frame_sink = AudioFrameSink::new();
-
         while self.window.is_open() && !self.window.is_key_down(Key::Escape) {
-            self.window.update_with_buffer(&frame_buffer).unwrap();
+            let mut video_frame_sink = VideoFrameSink::new();
+            let mut audio_frame_sink = AudioFrameSink::new();
 
             let target_time_ns = precise_time_ns() - self.start_time_ns;
             let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
@@ -115,10 +109,10 @@ impl Emulator {
             match self.mode {
                 Mode::Running => {
                     let mut start_debugger = false;
-
                     while self.emulated_cycles < target_cycles && !start_debugger {
-                        let (_, trigger_watchpoint) =
+                        let (cycles, trigger_watchpoint) =
                             self.step(&mut video_frame_sink, &mut audio_frame_sink);
+
                         if trigger_watchpoint ||
                             (self.breakpoints.len() != 0 &&
                                 self.breakpoints.contains(&self.nes.cpu.regs().pc)) {
@@ -139,11 +133,35 @@ impl Emulator {
                 }
             }
 
-            if self.window.is_key_pressed(Key::F12, KeyRepeat::No) {
-                self.start_debugger();
-            }
+            if let Some(sink_frame) = video_frame_sink.into_frame() {
+                let mut frame = Vec::with_capacity(sink_frame.len() / 3);
+                let mut byte_num = 0u32;
+                let mut color = 0xFF000000u32;
+                for &b in sink_frame.iter() {
+                    if byte_num == 0 {
+                        color = 0xFF000000;
+                    }
 
-            thread::sleep(time::Duration::from_millis(3));
+                    color |= (b as u32) << (2 - byte_num) * 8;
+
+                    if byte_num == 2 {
+                        frame.push(color);
+                    }
+
+                    byte_num = (byte_num + 1) % 3;
+                }
+
+                self.window.update_with_buffer(&frame).unwrap();
+
+                if self.mode == Mode::Running {
+//                    self.read_input_keys();
+                    if self.window.is_key_pressed(Key::F12, KeyRepeat::No) {
+                        self.start_debugger();
+                    }
+                }
+            } else {
+                thread::sleep(time::Duration::from_millis(3));
+            }
         }
     }
 
