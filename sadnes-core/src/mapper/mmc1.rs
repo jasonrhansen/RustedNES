@@ -165,7 +165,7 @@ impl Mapper for Mmc1 {
         if address < 0x2000 {
             self.cartridge.chr_rom[address as usize]
         } else {
-            vram.read_byte(self.mirror(address))
+            vram.read_byte(self.mirror(address) - 0x2000)
         }
     }
 
@@ -173,7 +173,7 @@ impl Mapper for Mmc1 {
         if address < 0x2000 {
             self.cartridge.chr_rom[address as usize] = value
         } else {
-            vram.write_byte(self.mirror(address), value);
+            vram.write_byte(self.mirror(address) - 0x2000, value);
         }
     }
 }

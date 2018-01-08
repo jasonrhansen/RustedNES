@@ -52,13 +52,13 @@ impl Mapper for Nrom {
         if address < 0x2000 {
             self.cartridge.chr_rom[address as usize]
         } else {
-            vram.read_byte(self.mirror(address))
+            vram.read_byte(self.mirror(address) - 0x2000)
         }
     }
 
     fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8) {
         if address >= 0x2000 {
-            vram.write_byte(self.mirror(address), value);
+            vram.write_byte(self.mirror(address) - 0x2000, value);
         }
     }
 }
