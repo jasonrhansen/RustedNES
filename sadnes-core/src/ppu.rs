@@ -306,20 +306,6 @@ impl Ppu {
         0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
     }
 
-    fn render_scanline(&mut self) {
-        let x = self.regs.ppu_ctrl.base_name_table_x_inc();
-        let y = self.regs.ppu_ctrl.base_name_table_y_inc() + self.scanline as u16;
-
-        let addr = 0x2000 + y * SCREEN_WIDTH as u16 + x;
-
-        let pattern_table = self.regs.ppu_ctrl.background_pattern_table_address();
-
-        for i in 0..33 {
-            let tile = self.mem.read_byte(addr + i);
-
-        }
-    }
-
     fn fetch_tile(&mut self) {
         let name_addr = self.current_tile_address();
         let name_entry = self.mem.read_byte(name_addr);
