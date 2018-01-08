@@ -10,10 +10,14 @@ use sink::*;
 
 pub const SCREEN_WIDTH: usize = 256;
 pub const SCREEN_HEIGHT: usize = 240;
+
 const CYCLES_PER_SCANLINE: u64 = 341;
+
 const PRE_RENDER_SCANLINE: i16 = -1;
-const RENDER_SCANLINE: i16 = SCREEN_HEIGHT as i16;
-const VBLANK_SCANLINE: i16 = 241;
+const VISIBLE_START_SCANLINE: i16 = 0;
+const VISIBLE_END_SCANLINE: i16 = 239;
+const POST_RENDER_SCANLINE: i16 = 240;
+const VBLANK_START_SCANLINE: i16 = 241;
 const VBLANK_END_SCANLINE: i16 = 260;
 
 // Memory-mapped register addresses
@@ -69,6 +73,9 @@ pub struct Ppu {
 
     frame: u64,
 
+    frame_buffer: Box<[u8]>,
+    frame_index: usize,
+
     // The PPU has an internal data bus that it uses for communication with the CPU.
     // This bus, called _io_db in Visual 2C02 and PPUGenLatch in FCEUX,[1] behaves as an
     // 8-bit dynamic latch due to capacitance of very long traces that run to various parts
@@ -77,6 +84,10 @@ pub struct Ppu {
     // also fills the latch with the bits read. Reading a nominally "write-only" register returns
     // the latch's current value, as do the unused bits of PPUSTATUS.
     ppu_gen_latch: u8,
+
+    background_pattern_shift_lo: u16,
+    background_pattern_shift_hi: u16,
+    background_palette: u8,
 }
 
 impl Ppu {
@@ -92,7 +103,12 @@ impl Ppu {
             scanline: 0,
             scanline_start_cycle: 0,
             frame: 0,
+            frame_buffer: Box::new([0; SCREEN_WIDTH * SCREEN_HEIGHT]),
+            frame_index: 0,
             ppu_gen_latch: 0,
+            background_pattern_shift_lo: 0,
+            background_pattern_shift_hi: 0,
+            background_palette: 0,
         }
     }
 
@@ -304,6 +320,62 @@ impl Ppu {
         }
     }
 
+    fn fetch_tile(&mut self) {
+        let name_addr = self.current_tile_address();
+        let name_entry = self.mem.read_byte(name_addr);
+
+        let fine_y = ((self.regs.v >> 12) & 0x07) as u8;
+
+        let pattern_index = self.regs.ppu_ctrl.background_pattern_table_address() +
+            (name_entry * 16 + fine_y) as u16;
+        let pattern_lo = self.mem.read_byte(pattern_index);
+        let pattern_hi = self.mem.read_byte(pattern_index + 8);
+
+        self.background_pattern_shift_lo =
+            ((self.background_pattern_shift_lo >> 8) & 0x00FF) | ((pattern_lo as u16) << 8);
+        self.background_pattern_shift_hi =
+            ((self.background_pattern_shift_hi >> 8) & 0x00FF) | ((pattern_hi as u16) << 8);
+
+        let attr_addr = self.current_attribute_address();
+        let attr_entry = self.mem.read_byte(attr_addr);
+
+        let mut attr_shift = 0;
+        if self.regs.v & 0x0001 == 1 {
+            attr_shift += 2;
+        }
+        if self.regs.v & 0x0020 == 0x0020 {
+            attr_shift += 4;
+        }
+        self.background_palette = (attr_entry >> attr_shift) & 0x03;
+    }
+
+    fn color_from_palette_index(&mut self, index: u8) -> u8 {
+        self.mem.read_byte(0x3F00 | (index & 0x1F) as u16)
+    }
+
+    fn render_pixel(&mut self) {
+        let fine_x = self.regs.x;
+
+        let palette_index =
+                ((self.background_pattern_shift_lo as u8 >> (7 - fine_x)) & 0x01) |
+                ((self.background_pattern_shift_hi as u8 >> (6 - fine_x)) & 0x02) |
+                ((self.background_palette << 2) & 0x0C);
+
+        let background_color = self.color_from_palette_index(palette_index);
+
+        for sprite in self.sprites.iter() {
+            if let &Some(ref sprite) = sprite {
+                let x = sprite.x;
+                let y = sprite.y;
+            }
+        }
+
+        self.frame_buffer[self.frame_index] = self.color_from_palette_index(palette_index);
+
+        self.frame_index = (self.frame_index + 1) % ((SCREEN_WIDTH * SCREEN_HEIGHT) - 1);
+    }
+
+
     fn inc_coarse_x_with_wrap(&mut self) {
         if (self.regs.v & 0x001F) == 31 {
             self.regs.v &= !0x001F;         // course X = 0
@@ -363,10 +435,6 @@ impl Ppu {
             }
         }
 
-        if self.scanline != PRE_RENDER_SCANLINE {
-
-        }
-
         match self.scanline {
             PRE_RENDER_SCANLINE => {
                 if scanline_cycle == 0 {
@@ -377,13 +445,48 @@ impl Ppu {
                     self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
                 }
             },
-            RENDER_SCANLINE => {
-                // TODO: Render scanline
+            VISIBLE_START_SCANLINE ... VISIBLE_END_SCANLINE => {
+                if self.rendering_enabled() {
+                    if scanline_cycle == 1 {
+                        self.evaluate_sprites_for_scanline();
+                    }
+
+                    // Background tiles
+                    match scanline_cycle {
+                        1 ... 256 => {
+                            self.render_pixel();
+                            if (scanline_cycle - 1) % 8 == 0 {
+                                self.fetch_tile();
+                            }
+                        },
+                        257 ... 320 => {
+                            // Fetch sprite tile data
+                        },
+                        // Fetch two tiles for next scanline
+                        321 => { self.fetch_tile() },
+                        329 => { self.fetch_tile() },
+                        337 ... 340 => {
+                            // Fetch two nametable bytes
+                        },
+                        _ => (),
+                    }
+
+                    // Sprites
+                    match scanline_cycle {
+                        1 ... 64 => {},
+                        _ => (),
+                    }
+                }
+            }
+            POST_RENDER_SCANLINE => {
                 if scanline_cycle == 0 {
-                    let mut buffer: Box<[u32]> = vec![PALETTE[(self.frame % 64) as usize]; SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(); video_frame_sink.append(buffer);
+//                    let mut buffer: Box<[u32]> = vec![PALETTE[(self.frame % 64) as usize]; SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice();
+                    let buffer: Vec<u32> = self.frame_buffer.iter()
+                        .map(|b| PALETTE[(b & 0x3F) as usize]).collect();
+                    video_frame_sink.append(buffer.into_boxed_slice());
                 }
             },
-            VBLANK_SCANLINE => {
+            VBLANK_START_SCANLINE => {
                 if scanline_cycle == 1 {
                     self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, true);
                     if self.regs.ppu_ctrl.generate_nmi_vblank() {
@@ -401,7 +504,6 @@ impl Ppu {
 
         self.cycles += 1;
 
-
         if scanline_cycle >= CYCLES_PER_SCANLINE ||
             // On pre-render scanline, for odd frames,
             // the cycle at the end of the scanline is skipped
@@ -411,7 +513,6 @@ impl Ppu {
             self.scanline_start_cycle = self.cycles;
             self.scanline += 1;
         }
-
 
         if self.scanline > VBLANK_END_SCANLINE {
             self.scanline = PRE_RENDER_SCANLINE;
@@ -673,6 +774,8 @@ struct Regs {
     t: u16,                     // Temporary VRAM address (15 bits)
     x: u8,                      // Fine X scroll (3 bits)
     w: WriteToggle,             // First of second write toggle
+
+
 }
 
 impl Regs {
@@ -854,70 +957,55 @@ impl Memory for MemMap {
 }
 
 enum SpritePriority {
-    FrontOfBackground,
+    InFrontOfBackground,
     BehindBackground,
 }
 
 struct Sprite {
-    x: u8,
     y: u8,
-    size: SpriteSize,
-    tile_number: u8,
-    bank_address: u16,
-    palette: u8,
-    priority: SpritePriority,
-    flip_horizontally: bool,
-    flip_vertically: bool,
+    tile_index: u8,
+    attributes: u8,
+    x: u8,
 }
 
 impl Sprite {
     fn from_oam_bytes(ppu_ctrl: &PpuCtrl, oam_bytes: &[u8]) -> Sprite {
-        let size = ppu_ctrl.sprite_size();
-
-        let tile_number = match size {
-            SpriteSize::Size8x8 => oam_bytes[1],
-            SpriteSize::Size8x16 => oam_bytes[1] & 0xFE,
-        };
-
-        let bank_address = match size {
-            SpriteSize::Size8x8 => if (oam_bytes[1] | 0x01) == 0 {
-                0x0000
-            } else {
-                0x1000
-            },
-            SpriteSize::Size8x16 => ppu_ctrl.sprite_pattern_table_address(),
-        };
-
         Sprite {
-            x: oam_bytes[3],
             y: oam_bytes[0],
-            size,
-            tile_number,
-            bank_address,
-            palette: (oam_bytes[2] & 0x03) + 4,
-            priority: if (oam_bytes[2] & 0x20) == 0 {
-                SpritePriority::FrontOfBackground
-            } else {
-                SpritePriority::BehindBackground
-            },
-            flip_horizontally: (oam_bytes[2] & 0x40) != 0,
-            flip_vertically: (oam_bytes[2] & 0x40) != 0,
+            tile_index: oam_bytes[1],
+            attributes: oam_bytes[2],
+            x: oam_bytes[3],
         }
+    }
+
+    fn palette(&self) -> u8 {
+        (self.attributes & 0x03) + 4
+    }
+
+    fn priority(&self) -> SpritePriority {
+        if self.attributes & 0x20 == 0 {
+            SpritePriority::InFrontOfBackground
+        } else {
+            SpritePriority::BehindBackground
+        }
+    }
+
+    fn flip_horizontally(&self) -> bool {
+        self.attributes & 0x40 == 0x40
+    }
+
+    fn flip_vertically(&self) -> bool {
+        self.attributes & 0x80 == 0x80
     }
 }
 
 impl Default for Sprite {
     fn default() -> Sprite {
         Sprite {
-            x: 0,
             y: 0,
-            size: SpriteSize::Size8x8,
-            tile_number: 0,
-            bank_address: 0x0000,
-            palette: 4,
-            priority: SpritePriority::FrontOfBackground,
-            flip_horizontally: false,
-            flip_vertically: false,
+            tile_index: 0,
+            attributes: 0,
+            x: 0,
         }
     }
 }
