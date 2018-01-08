@@ -7,7 +7,7 @@ use input::Input;
 use mapper::Mapper;
 use memory::{Memory, Ram};
 use ppu::{Ppu, OAMDATA_ADDRESS};
-use sinks::*;
+use sink::*;
 
 const OAMDMA_ADDRESS: u16 = 0x4014;
 

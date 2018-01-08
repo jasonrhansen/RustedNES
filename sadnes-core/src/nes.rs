@@ -5,7 +5,7 @@ use interconnect::Interconnect;
 use mapper;
 use cartridge::Cartridge;
 use cpu::Cpu;
-use sinks::*;
+use sink::*;
 
 pub struct Nes {
     pub interconnect: Interconnect,

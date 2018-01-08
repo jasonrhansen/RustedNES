@@ -10,7 +10,7 @@ use sadnes_core::cartridge::Cartridge;
 use sadnes_core::disassembler::Disassembler;
 use sadnes_core::nes::Nes;
 use sadnes_core::ppu::{SCREEN_WIDTH, SCREEN_HEIGHT};
-use sadnes_core::sinks::*;
+use sadnes_core::sink::*;
 use sadnes_core::memory::Memory;
 
 use std::collections::{HashSet, HashMap};
@@ -134,24 +134,7 @@ impl Emulator {
             }
 
             if let Some(sink_frame) = video_frame_sink.into_frame() {
-                let mut frame = Vec::with_capacity(sink_frame.len() / 3);
-                let mut byte_num = 0u32;
-                let mut color = 0xFF000000u32;
-                for &b in sink_frame.iter() {
-                    if byte_num == 0 {
-                        color = 0xFF000000;
-                    }
-
-                    color |= (b as u32) << (2 - byte_num) * 8;
-
-                    if byte_num == 2 {
-                        frame.push(color);
-                    }
-
-                    byte_num = (byte_num + 1) % 3;
-                }
-
-                self.window.update_with_buffer(&frame).unwrap();
+                self.window.update_with_buffer(&sink_frame).unwrap();
 
                 if self.mode == Mode::Running {
 //                    self.read_input_keys();

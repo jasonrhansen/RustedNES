@@ -3,6 +3,6 @@ pub trait Sink<T> {
 }
 
 
-pub type VideoFrame = Box<[u8]>;
+pub type VideoFrame = Box<[u32]>;
 
 pub type AudioFrame = i16;

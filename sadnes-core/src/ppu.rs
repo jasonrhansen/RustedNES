@@ -6,7 +6,7 @@ use std::rc::Rc;
 use cpu::Interrupt;
 use mapper::Mapper;
 use memory::Memory;
-use sinks::*;
+use sink::*;
 
 pub const SCREEN_WIDTH: usize = 256;
 pub const SCREEN_HEIGHT: usize = 240;
@@ -25,6 +25,17 @@ pub const OAMDATA_ADDRESS: u16 = 0x2004;
 const PPUSCROLL_ADDRESS: u16 = 0x2005;
 const PPUADDR_ADDRESS: u16 = 0x2006;
 const PPUDATA_ADDRESS: u16 = 0x2007;
+
+static PALETTE: &'static [u32] = &[
+    0x666666, 0x002A88, 0x1412A7, 0x3B00A4, 0x5C007E, 0x6E0040, 0x6C0600, 0x561D00,
+    0x333500, 0x0B4800, 0x005200, 0x004F08, 0x00404D, 0x000000, 0x000000, 0x000000,
+    0xADADAD, 0x155FD9, 0x4240FF, 0x7527FE, 0xA01ACC, 0xB71E7B, 0xB53120, 0x994E00,
+    0x6B6D00, 0x388700, 0x0C9300, 0x008F32, 0x007C8D, 0x000000, 0x000000, 0x000000,
+    0xFFFEFF, 0x64B0FF, 0x9290FF, 0xC676FF, 0xF36AFF, 0xFE6ECC, 0xFE8170, 0xEA9E22,
+    0xBCBE00, 0x88D800, 0x5CE430, 0x45E082, 0x48CDDE, 0x4F4F4F, 0x000000, 0x000000,
+    0xFFFEFF, 0xC0DFFF, 0xD3D2FF, 0xE8C8FF, 0xFBC2FF, 0xFEC4EA, 0xFECCC5, 0xF7D8A5,
+    0xE4E594, 0xCFEF96, 0xBDF4AB, 0xB3F3CC, 0xB5EBF2, 0xB8B8B8, 0x000000, 0x000000,
+];
 
 pub struct Ppu {
     cycles: u64,
@@ -66,9 +77,6 @@ pub struct Ppu {
     // also fills the latch with the bits read. Reading a nominally "write-only" register returns
     // the latch's current value, as do the unused bits of PPUSTATUS.
     ppu_gen_latch: u8,
-
-    scroll_x: u16,
-    scroll_y: u16,
 }
 
 impl Ppu {
@@ -85,8 +93,6 @@ impl Ppu {
             scanline_start_cycle: 0,
             frame: 0,
             ppu_gen_latch: 0,
-            scroll_x: 0,
-            scroll_y: 0,
         }
     }
 
@@ -96,6 +102,13 @@ impl Ppu {
         *self.regs.ppu_mask = 0;
         *self.regs.ppu_status != 0x80;
         self.ppu_data_read_buffer = 0;
+    }
+
+    fn read_ppu_status(&mut self) -> u8 {
+        // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242002_read
+        self.regs.w = WriteToggle::FirstWrite;
+
+        *self.regs.ppu_status | (self.ppu_gen_latch & 0x1F)
     }
 
     fn read_oam_byte(&self) -> u8 {
@@ -110,15 +123,75 @@ impl Ppu {
         self.regs.oam_addr = self.regs.oam_addr.wrapping_add(1);
     }
 
-    fn increment_ppu_addr(&mut self) {
-        *self.regs.ppu_addr += match self.regs.ppu_ctrl.vram_address_increment() {
+    fn write_ppu_ctrl(&mut self, value: u8) {
+        // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242000_write
+        self.regs.t = (self.regs.t & 0x73FF) | ((value as u16 & 0x03) << 10);
+        *self.regs.ppu_ctrl = value;
+    }
+
+    fn write_ppu_scroll(&mut self, value: u8) {
+        match self.regs.w {
+            WriteToggle::FirstWrite => {
+                // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242005_first_write_.28w_is_0.29
+                self.regs.t = (self.regs.t & 0xFFE0) |
+                    (((value as u16) >> 3) & 0x01F);
+                self.regs.x = value & 0x07;
+                self.regs.w = WriteToggle::SecondWrite;
+
+                self.regs.ppu_scroll.position_x = value;
+            },
+            WriteToggle::SecondWrite => {
+                // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242005_second_write_.28w_is_1.29
+                self.regs.t = (self.regs.t & 0x0C1F) |
+                    ((value as u16 & 0x07) << 12) |
+                    ((value as u16 & 0xF8) << 2);
+                self.regs.w = WriteToggle::FirstWrite;
+
+                self.regs.ppu_scroll.position_y = value;
+            },
+        }
+    }
+
+    fn inc_ppu_addr(&mut self) {
+        self.regs.ppu_addr += match self.regs.ppu_ctrl.vram_address_increment() {
             VramAddressIncrement::Add1Across => 1,
             VramAddressIncrement::Add32Down => 32,
         };
+
+        // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242007_reads_and_writes
+        if self.rendering_enabled() && self.scanline < 240 {
+            self.inc_coarse_x_with_wrap();
+            self.inc_y_with_wrap();
+        } else {
+            self.regs.v += match self.regs.ppu_ctrl.vram_address_increment() {
+                VramAddressIncrement::Add1Across => 1,
+                VramAddressIncrement::Add32Down => 32,
+            };
+        }
+    }
+
+    fn write_ppu_addr(&mut self, value: u8) {
+        match self.regs.w {
+            WriteToggle::FirstWrite => {
+                // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242006_first_write_.28w_is_0.29
+                self.regs.t = (self.regs.t & 0x00FF) | ((value as u16 & 0x3F) << 8);
+                self.regs.w = WriteToggle::SecondWrite;
+
+                self.regs.ppu_addr = (self.regs.ppu_addr & 0x00FF) | ((value as u16) << 8);
+            },
+            WriteToggle::SecondWrite => {
+                // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242006_second_write_.28w_is_1.29
+                self.regs.t = (self.regs.t & 0xFF00) | (value as u16);
+                self.regs.v = self.regs.t;
+                self.regs.w = WriteToggle::FirstWrite;
+
+                self.regs.ppu_addr = (self.regs.ppu_addr & 0xFF00) | (value as u16);
+            },
+        }
     }
 
     fn read_ppu_data_byte(&mut self) -> u8 {
-        let address = *self.regs.ppu_addr;
+        let address = self.regs.ppu_addr;
 
         let read_buffer = self.ppu_data_read_buffer;
         self.ppu_data_read_buffer = self.mem.read_byte(address);
@@ -130,15 +203,15 @@ impl Ppu {
             self.ppu_data_read_buffer
         };
 
-        self.increment_ppu_addr();
+        self.inc_ppu_addr();
 
         data
     }
 
     fn write_ppu_data_byte(&mut self, val: u8) {
-        let address = *self.regs.ppu_addr;
+        let address = self.regs.ppu_addr;
         self.mem.write_byte(address, val);
-        self.increment_ppu_addr();
+        self.inc_ppu_addr();
     }
 
     fn is_sprite_at_y_on_scanline(&mut self, y: u8) -> bool {
@@ -203,6 +276,62 @@ impl Ppu {
         }
     }
 
+    fn rendering_enabled(&self) -> bool {
+        self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND) ||
+            self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES)
+    }
+
+    fn current_tile_address(&self) -> u16 {
+        0x2000 | (self.regs.v & 0x0FFF)
+    }
+
+    fn current_attribute_address(&self) -> u16 {
+        let v = self.regs.v;
+        0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
+    }
+
+    fn render_scanline(&mut self) {
+        let x = self.regs.ppu_ctrl.base_name_table_x_inc();
+        let y = self.regs.ppu_ctrl.base_name_table_y_inc() + self.scanline as u16;
+
+        let addr = 0x2000 + y * SCREEN_WIDTH as u16 + x;
+
+        let pattern_table = self.regs.ppu_ctrl.background_pattern_table_address();
+
+        for i in 0..33 {
+            let tile = self.mem.read_byte(addr + i);
+
+        }
+    }
+
+    fn inc_coarse_x_with_wrap(&mut self) {
+        if (self.regs.v & 0x001F) == 31 {
+            self.regs.v &= !0x001F;         // course X = 0
+            self.regs.v ^= 0x0400;          // switch horizontal nametable
+        } else {
+            self.regs.v += 1;
+        }
+    }
+
+    fn inc_y_with_wrap(&mut self) {
+        if (self.regs.v & 0x7000) != 0x7000 {
+            self.regs.v += 0x1000;
+        } else {
+            self.regs.v &= !0x7000;
+            let mut y = (self.regs.v & 0x03E0) >> 5;
+            if y == 29 {
+                y = 0;
+                self.regs.v ^= 0x0800;
+            } else if y == 31 {
+                y = 0;
+            } else {
+                y += 1;
+            }
+
+            self.regs.v = (self.regs.v & !0x03E0) | (y << 5);
+        }
+    }
+
     // Run for the given number of cpu cycles
     pub fn cycles(&mut self,
                   cycles: u32,
@@ -222,6 +351,18 @@ impl Ppu {
         let scanline_cycle = self.cycles - self.scanline_start_cycle;
         let mut interrupt = None;
 
+        if self.rendering_enabled() {
+            if scanline_cycle == 256 {
+                self.inc_y_with_wrap();
+            } else if scanline_cycle == 257 {
+                // Copy bits related to horizontal position from t to v
+                self.regs.v = (self.regs.v & !0x041F) | (self.regs.t & 0x041F);
+            } else if (scanline_cycle >= 328 || scanline_cycle <= 256) && scanline_cycle % 8 == 0 {
+                // Increment the effective x scroll coordinate every 8 cycles
+                self.inc_coarse_x_with_wrap();
+            }
+        }
+
         if self.scanline != PRE_RENDER_SCANLINE {
 
         }
@@ -230,13 +371,16 @@ impl Ppu {
             PRE_RENDER_SCANLINE => {
                 if scanline_cycle == 0 {
                     self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
+                } else if self.rendering_enabled() &&
+                    280 <= scanline_cycle && scanline_cycle <= 304 {
+                    // Copy bits related to vertical position from t to v
+                    self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
                 }
             },
             RENDER_SCANLINE => {
                 // TODO: Render scanline
                 if scanline_cycle == 0 {
-                    let mut buffer: Box<[u8]> = vec![(self.frame % 255) as u8; SCREEN_WIDTH * SCREEN_HEIGHT * 3].into_boxed_slice();
-                    video_frame_sink.append(buffer);
+                    let mut buffer: Box<[u32]> = vec![PALETTE[(self.frame % 64) as usize]; SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice(); video_frame_sink.append(buffer);
                 }
             },
             VBLANK_SCANLINE => {
@@ -250,9 +394,6 @@ impl Ppu {
             VBLANK_END_SCANLINE => {
                 if scanline_cycle == 0 {
                     self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
-                    let pattern_addr = self.regs.ppu_ctrl.sprite_pattern_table_address();
-                    self.scroll_x = self.regs.ppu_scroll.position_x as u16;
-                    self.scroll_y = self.regs.ppu_scroll.position_y as u16;
                 }
             },
             _ => (),
@@ -291,7 +432,7 @@ impl Memory for Ppu {
         let address = address & 0x2007;
 
         let val = match address & 0x2007 {
-            PPUSTATUS_ADDRESS => *self.regs.ppu_status | (self.ppu_gen_latch & 0x1F),
+            PPUSTATUS_ADDRESS => self.read_ppu_status(),
             OAMDATA_ADDRESS => self.read_oam_byte(),
             PPUDATA_ADDRESS => self.read_ppu_data_byte(),
             _ => self.ppu_gen_latch,
@@ -322,12 +463,12 @@ impl Memory for Ppu {
         self.ppu_gen_latch = value;
 
         match address {
-            PPUCTRL_ADDRESS => *self.regs.ppu_ctrl = value,
+            PPUCTRL_ADDRESS => self.write_ppu_ctrl(value),
             PPUMASK_ADDRESS => *self.regs.ppu_mask = value,
             OAMADDR_ADDRESS => self.regs.oam_addr = value,
             OAMDATA_ADDRESS => self.write_oam_byte(value),
-            PPUSCROLL_ADDRESS => self.regs.ppu_scroll.write_byte(value),
-            PPUADDR_ADDRESS => self.regs.ppu_addr.write_byte(value),
+            PPUSCROLL_ADDRESS => self.write_ppu_scroll(value),
+            PPUADDR_ADDRESS => self.write_ppu_addr(value),
             PPUDATA_ADDRESS => self.write_ppu_data_byte(value),
             _ => ()
         }
@@ -371,6 +512,14 @@ impl PpuCtrl {
             3 => 0x2C00,
             _ => 0, // Unreachable
         }
+    }
+
+    fn base_name_table_x_inc(&self) -> u16 {
+        if self.val & 0x01 == 0x01 { 256 } else { 0 }
+    }
+
+    fn base_name_table_y_inc(&self) -> u16 {
+        if self.val & 0x02 == 0x02 { 240 } else { 0 }
     }
 
     fn vram_address_increment(&self) -> VramAddressIncrement {
@@ -494,23 +643,6 @@ enum PpuScrollAxis {
 struct PpuScroll {
     position_x: u8,
     position_y: u8,
-    next_axis: PpuScrollAxis
-}
-
-impl PpuScroll {
-    fn write_byte(&mut self, val: u8) {
-        use self::PpuScrollAxis::*;
-        match self.next_axis {
-            X => {
-                self.position_x = val;
-                self.next_axis = Y;
-            }
-            Y => {
-                self.position_y = val;
-                self.next_axis = X;
-            }
-        }
-    }
 }
 
 impl Default for PpuScroll {
@@ -518,58 +650,13 @@ impl Default for PpuScroll {
         PpuScroll {
             position_x: 0,
             position_y: 0,
-            next_axis: PpuScrollAxis::X,
         }
     }
 }
 
-enum WordByte {
-    HI,
-    LO,
-}
-
-struct PpuAddr {
-    address: u16,
-    next_byte: WordByte,
-}
-
-impl PpuAddr {
-    fn write_byte(&mut self, val: u8) {
-        use self::WordByte::*;
-        match self.next_byte {
-            HI => {
-                self.address = (self.address & 0x0F) | ((val as u16) << 8);
-                self.next_byte = LO;
-            }
-            LO => {
-                self.address = (self.address & 0xF0) | (val as u16);
-                self.next_byte = HI;
-            }
-        }
-    }
-}
-
-impl Default for PpuAddr {
-    fn default() -> PpuAddr {
-        PpuAddr {
-            address: 0,
-            next_byte: WordByte::HI,
-        }
-    }
-}
-
-impl Deref for PpuAddr {
-    type Target = u16;
-
-    fn deref(&self) -> &Self::Target {
-        &self.address
-    }
-}
-
-impl DerefMut for PpuAddr {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.address
-    }
+enum WriteToggle {
+    FirstWrite,
+    SecondWrite,
 }
 
 struct Regs {
@@ -579,7 +666,13 @@ struct Regs {
     ppu_status: PpuStatus,      // 0x2002
     oam_addr: u8,               // 0x2003
     ppu_scroll: PpuScroll,      // 0x2005
-    ppu_addr: PpuAddr,          // 0x2006
+    ppu_addr: u16,              // 0x2006
+
+    // Internal registers
+    v: u16,                     // Current VRAM address (15 bits)
+    t: u16,                     // Temporary VRAM address (15 bits)
+    x: u8,                      // Fine X scroll (3 bits)
+    w: WriteToggle,             // First of second write toggle
 }
 
 impl Regs {
@@ -590,7 +683,11 @@ impl Regs {
             ppu_status: PpuStatus::NONE,
             oam_addr: 0,
             ppu_scroll: PpuScroll::default(),
-            ppu_addr: PpuAddr::default(),
+            ppu_addr: 0,
+            v: 0,
+            t: 0,
+            x: 0,
+            w: WriteToggle::FirstWrite,
         }
     }
 }

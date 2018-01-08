@@ -16,4 +16,4 @@ pub mod input;
 pub mod disassembler;
 pub mod interconnect;
 pub mod nes;
-pub mod sinks;
+pub mod sink;

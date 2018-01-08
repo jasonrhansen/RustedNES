@@ -1,5 +1,5 @@
 use memory::Memory;
-use sinks::*;
+use sink::*;
 
 pub struct Apu {
 

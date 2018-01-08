@@ -1,4 +1,4 @@
-use sadnes_core::sinks::*;
+use sadnes_core::sink::*;
 
 pub struct AudioFrameSink {}
 
