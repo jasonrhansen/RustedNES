@@ -2,6 +2,7 @@
 extern crate bitflags;
 
 extern crate byteorder;
+extern crate bit_reverse;
 
 #[macro_use]
 mod opcode;

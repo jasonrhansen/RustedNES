@@ -3,6 +3,8 @@ use std::default::Default;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
+use bit_reverse::ParallelReverse;
+
 use cpu::Interrupt;
 use mapper::Mapper;
 use memory::Memory;
@@ -74,7 +76,6 @@ pub struct Ppu {
     frame: u64,
 
     frame_buffer: Box<[u8]>,
-    frame_index: usize,
 
     // The PPU has an internal data bus that it uses for communication with the CPU.
     // This bus, called _io_db in Visual 2C02 and PPUGenLatch in FCEUX,[1] behaves as an
@@ -85,9 +86,20 @@ pub struct Ppu {
     // the latch's current value, as do the unused bits of PPUSTATUS.
     ppu_gen_latch: u8,
 
+    // Registers used during rendering to hold background data
     background_pattern_shift_lo: u16,
     background_pattern_shift_hi: u16,
     background_palette: u8,
+
+    // Registers used during rendering to hold sprite data
+    sprite_pattern_shifts_lo: [u8; 8],
+    sprite_pattern_shifts_hi: [u8; 8],
+    sprite_attribute_latches: [u8; 8],
+    sprite_x_counters: [u8; 8],
+
+    // Indices into OAM used during sprite evaluation
+    sprite_n: usize,
+    sprite_m: usize,
 }
 
 impl Ppu {
@@ -104,11 +116,16 @@ impl Ppu {
             scanline_start_cycle: 0,
             frame: 0,
             frame_buffer: Box::new([0; SCREEN_WIDTH * SCREEN_HEIGHT]),
-            frame_index: 0,
             ppu_gen_latch: 0,
             background_pattern_shift_lo: 0,
             background_pattern_shift_hi: 0,
             background_palette: 0,
+            sprite_pattern_shifts_lo: [0; 8],
+            sprite_pattern_shifts_hi: [0; 8],
+            sprite_attribute_latches: [0; 8],
+            sprite_x_counters: [0; 8],
+            sprite_n: 0,
+            sprite_m: 0,
         }
     }
 
@@ -128,12 +145,24 @@ impl Ppu {
     }
 
     fn read_oam_byte(&self) -> u8 {
+        // http://wiki.nesdev.com/w/index.php/PPU_sprite_evaluation
+        if VISIBLE_START_SCANLINE <= self.scanline && self.scanline <= VISIBLE_END_SCANLINE {
+            let scanline_cycle = self.scanline_cycle();
+            if 1 <= scanline_cycle && scanline_cycle <= 64 {
+                return 0xFF;
+            }
+        }
+
         self.oam[self.regs.oam_addr as usize]
     }
 
     fn write_oam_byte(&mut self, val: u8) {
-        // TODO: Ignore writes during rendering
+        // Ignore writes during rendering
         // http://wiki.nesdev.com/w/index.php/PPU_registers#OAM_data_.28.242004.29_.3C.3E_read.2Fwrite
+        if self.rendering_enabled() &&
+            VISIBLE_START_SCANLINE <= self.scanline && self.scanline <= VISIBLE_END_SCANLINE {
+            return;
+        }
 
         self.oam[self.regs.oam_addr as usize] = val;
         self.regs.oam_addr = self.regs.oam_addr.wrapping_add(1);
@@ -297,17 +326,17 @@ impl Ppu {
             self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES)
     }
 
-    fn current_tile_address(&self) -> u16 {
+    fn current_background_nametable_address(&self) -> u16 {
         0x2000 | (self.regs.v & 0x0FFF)
     }
 
-    fn current_attribute_address(&self) -> u16 {
+    fn current_background_attribute_address(&self) -> u16 {
         let v = self.regs.v;
         0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
     }
 
-    fn fetch_tile(&mut self) {
-        let name_addr = self.current_tile_address();
+    fn fetch_background_tile(&mut self) {
+        let name_addr = self.current_background_nametable_address();
         let name_entry = self.mem.read_byte(name_addr);
 
         let fine_y = ((self.regs.v >> 12) & 0x07) as u8;
@@ -322,7 +351,7 @@ impl Ppu {
         self.background_pattern_shift_hi =
             ((self.background_pattern_shift_hi >> 8) & 0x00FF) | ((pattern_hi as u16) << 8);
 
-        let attr_addr = self.current_attribute_address();
+        let attr_addr = self.current_background_attribute_address();
         let attr_entry = self.mem.read_byte(attr_addr);
 
         let mut attr_shift = 0;
@@ -335,32 +364,142 @@ impl Ppu {
         self.background_palette = (attr_entry >> attr_shift) & 0x03;
     }
 
+    fn fetch_sprite_tile(&mut self, sprite_index: usize) {
+        if let Some(ref sprite) = self.sprites[sprite_index] {
+            let mut row = self.scanline as u16 - sprite.y as u16;
+            let size = self.regs.ppu_ctrl.sprite_size();
+            let pattern_addr = match size {
+                SpriteSize::Size8x8 => {
+                    if sprite.flip_vertically() {
+                        row = 7 - row;
+                    }
+
+                    sprite.tile_index as u16 +
+                        self.regs.ppu_ctrl.sprite_pattern_table_address() + row
+                },
+                SpriteSize::Size8x16 => {
+                    if sprite.flip_vertically() {
+                        row = 15 - row;
+                    }
+
+                    if row > 7 {
+                        // Jump to second tile
+                        row += 8;
+                    }
+
+                    sprite.tile_index as u16 >> 1 +
+                        if sprite.tile_index & 0x01 == 0 { 0x0000 } else { 0x1000 }
+                }
+            };
+
+            let mut pattern_lo = self.mem.read_byte(pattern_addr);
+            let mut pattern_hi = self.mem.read_byte(pattern_addr + 8);
+
+            if sprite.flip_horizontally() {
+                pattern_lo = pattern_lo.swap_bits();
+                pattern_hi = pattern_hi.swap_bits();
+            }
+
+            self.sprite_pattern_shifts_lo[sprite_index] = pattern_lo;
+            self.sprite_pattern_shifts_hi[sprite_index] = pattern_hi;
+            self.sprite_attribute_latches[sprite_index] = sprite.attributes;
+            self.sprite_x_counters[sprite_index] = sprite.x;
+        } else {
+            self.sprite_pattern_shifts_lo[sprite_index] = 0;
+            self.sprite_pattern_shifts_hi[sprite_index] = 0;
+            self.sprite_attribute_latches[sprite_index] = 0;
+            self.sprite_x_counters[sprite_index] = 0;
+        }
+    }
+
+    fn update_sprite_rendering_registers(&mut self) {
+        for i in 0..8 {
+            let counter = &mut self.sprite_x_counters[i];
+            if *counter > 0 {
+                *counter -= 1;
+            }
+
+            if *counter == 0 {
+                self.sprite_pattern_shifts_lo[i] = self.sprite_pattern_shifts_lo[i] << 1;
+                self.sprite_pattern_shifts_hi[i] = self.sprite_pattern_shifts_hi[i] << 1;
+            }
+        }
+    }
+
     fn color_from_palette_index(&mut self, index: u8) -> u8 {
         self.mem.read_byte(0x3F00 | (index & 0x1F) as u16)
     }
 
     fn render_pixel(&mut self) {
+        let background_pixel = self.background_pixel();
+        let (sprite_pixel, sprite_index) = self.sprite_pixel_and_index();
+
+        let background_pattern = background_pixel & 0x03;
+        let sprite_pattern = background_pixel & 0x03;
+
+        let color = if background_pattern == 0 && sprite_pattern == 0 {
+            0
+        } else if background_pattern == 0 && sprite_pattern > 0 {
+            self.color_from_palette_index(sprite_pixel)
+        } else if background_pattern > 0 && sprite_pattern == 0 {
+            self.color_from_palette_index(background_pixel)
+        } else {
+            if sprite_index == 0 {
+                self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, true);
+            }
+
+            let priority = if let Some(ref sprite) = self.sprites[sprite_index] {
+                sprite.priority()
+            } else {
+                SpritePriority::BehindBackground
+            };
+
+            match priority {
+                SpritePriority::InFrontOfBackground =>
+                    self.color_from_palette_index(sprite_pixel),
+                SpritePriority::BehindBackground =>
+                    self.color_from_palette_index(background_pixel),
+            }
+        };
+
+        let x = self.scanline_cycle() - 1;
+        let y = self.scanline as u16;
+
+        self.frame_buffer[(y as usize * SCREEN_WIDTH) + x as usize] = color;
+    }
+
+    fn background_pixel(&self) -> u8 {
+        if !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND) {
+            return 0;
+        }
+
         let fine_x = self.regs.x;
 
-        let palette_index =
-                ((self.background_pattern_shift_lo as u8 >> (7 - fine_x)) & 0x01) |
-                ((self.background_pattern_shift_hi as u8 >> (6 - fine_x)) & 0x02) |
-                ((self.background_palette << 2) & 0x0C);
+        ((self.background_pattern_shift_lo as u8 >> (7 - fine_x)) & 0x01) |
+            ((self.background_pattern_shift_hi as u8 >> (6 - fine_x)) & 0x02) |
+            ((self.background_palette << 2) & 0x0C)
+    }
 
-        let background_color = self.color_from_palette_index(palette_index);
+    fn sprite_pixel_and_index(&mut self) -> (u8, usize) {
+        if !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES) {
+            return (0, 0);
+        }
 
-        for sprite in self.sprites.iter() {
-            if let &Some(ref sprite) = sprite {
-                let x = sprite.x;
-                let y = sprite.y;
+        for i in 0..8 {
+            if let Some(ref sprite) = self.sprites[i] {
+                let pixel =
+                    ((self.sprite_pattern_shifts_lo[i] as u8 >> 7) & 0x01) |
+                    ((self.sprite_pattern_shifts_hi[i] as u8 >> 6) & 0x02) |
+                    ((sprite.palette() << 2) & 0x1C);
+
+                if pixel & 0x03 != 0 {
+                    return (pixel, i);
+                }
             }
         }
 
-        self.frame_buffer[self.frame_index] = self.color_from_palette_index(palette_index);
-
-        self.frame_index = (self.frame_index + 1) % ((SCREEN_WIDTH * SCREEN_HEIGHT) - 1);
+        (0, 0)
     }
-
 
     fn inc_coarse_x_with_wrap(&mut self) {
         if (self.regs.v & 0x001F) == 31 {
@@ -390,6 +529,10 @@ impl Ppu {
         }
     }
 
+    fn scanline_cycle(&self) -> u64 {
+        self.cycles - self.scanline_start_cycle
+    }
+
     // Run for the given number of cpu cycles
     pub fn cycles(&mut self,
                   cycles: u32,
@@ -406,7 +549,7 @@ impl Ppu {
     }
 
     fn step(&mut self, video_frame_sink: &mut Sink<VideoFrame>) -> Option<Interrupt> {
-        let scanline_cycle = self.cycles - self.scanline_start_cycle;
+        let scanline_cycle = self.scanline_cycle();
         let mut interrupt = None;
 
         if self.rendering_enabled() {
@@ -425,10 +568,18 @@ impl Ppu {
             PRE_RENDER_SCANLINE => {
                 if scanline_cycle == 0 {
                     self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
-                } else if self.rendering_enabled() &&
-                    280 <= scanline_cycle && scanline_cycle <= 304 {
-                    // Copy bits related to vertical position from t to v
-                    self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
+                    self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, false);
+                } else if self.rendering_enabled() {
+                    match scanline_cycle {
+                        280 ... 304 => {
+                            // Copy bits related to vertical position from t to v
+                            self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
+                        },
+                        // Fetch two tiles for next scanline
+                        321 => { self.fetch_background_tile() },
+                        329 => { self.fetch_background_tile() },
+                        _ => (),
+                    }
                 }
             },
             VISIBLE_START_SCANLINE ... VISIBLE_END_SCANLINE => {
@@ -441,16 +592,14 @@ impl Ppu {
                     match scanline_cycle {
                         1 ... 256 => {
                             self.render_pixel();
-                            if (scanline_cycle - 1) % 8 == 0 {
-                                self.fetch_tile();
+                            self.update_sprite_rendering_registers();
+                            if scanline_cycle > 1 && (scanline_cycle - 1) % 8 == 0 {
+                                self.fetch_background_tile();
                             }
                         },
-                        257 ... 320 => {
-                            // Fetch sprite tile data
-                        },
                         // Fetch two tiles for next scanline
-                        321 => { self.fetch_tile() },
-                        329 => { self.fetch_tile() },
+                        321 => { self.fetch_background_tile() },
+                        329 => { self.fetch_background_tile() },
                         337 ... 340 => {
                             // Fetch two nametable bytes
                         },
@@ -459,7 +608,20 @@ impl Ppu {
 
                     // Sprites
                     match scanline_cycle {
-                        1 ... 64 => {},
+                        1 ... 64 => {
+                            // Clear secondary OAM
+                            if scanline_cycle > 1 && (scanline_cycle - 1) % 8 == 0 {
+                                self.sprites[(scanline_cycle / 8) as usize] = None;
+                            }
+                        },
+                        65 => {
+                            self.evaluate_sprites_for_scanline();
+                        },
+                        257 ... 320 => {
+                            if scanline_cycle % 8 == 0 {
+                                self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
+                            }
+                        },
                         _ => (),
                     }
                 }

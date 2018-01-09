@@ -603,7 +603,7 @@ impl Cpu {
     }
 
     fn inc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        if let (mut val, Some(addr)) = self.load(mem, am) {
+        if let (val, Some(addr)) = self.load(mem, am) {
             val.wrapping_add(1);
             self.set_zero_negative(val);
             mem.write_byte(addr, val);
@@ -611,7 +611,7 @@ impl Cpu {
     }
 
     fn dec<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        if let (mut val, Some(addr)) = self.load(mem, am) {
+        if let (val, Some(addr)) = self.load(mem, am) {
             val.wrapping_sub(1);
             self.set_zero_negative(val);
             mem.write_byte(addr, val);
