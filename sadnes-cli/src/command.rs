@@ -14,6 +14,7 @@ pub enum Command {
     Continue,
     Goto(u16),
     ShowMem(Option<u16>),
+    ShowPpuMem(u16),
     ShowStack,
     Disassemble(u16),
     Label,
@@ -66,6 +67,13 @@ fn command<I: Stream<Item=char>>(input: I) -> ParseResult<Command, I> {
         (choice([try(string("showmem")), try(string("m"))]),
          optional((spaces(), u16_hex()).map(|x| x.1)))
             .map(|(_, addr)| Command::ShowMem(addr))
+            .boxed();
+
+    let show_ppu_mem =
+        (choice([try(string("showppumem")), try(string("pm"))]),
+         space(),
+         u16_hex())
+            .map(|(_, _, addr)| Command::ShowPpuMem(addr))
             .boxed();
 
     let show_stack =
@@ -152,6 +160,7 @@ fn command<I: Stream<Item=char>>(input: I) -> ParseResult<Command, I> {
             continue_,
             goto,
             show_mem,
+            show_ppu_mem,
             show_stack,
             disassemble,
             label,

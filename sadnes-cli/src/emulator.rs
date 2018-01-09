@@ -232,6 +232,24 @@ impl Emulator {
                             println!();
                         }
                     },
+                    Command::ShowPpuMem(address) => {
+                        let mut cursor = address;
+
+                        const NUM_ROWS: u32 = 16;
+                        const NUM_COLS: u32 = 16;
+                        for _ in 0..NUM_ROWS {
+                            print!("0x{:04x}  ", cursor);
+                            for x in 0..NUM_COLS {
+                                let byte = self.nes.interconnect.ppu.mem.read_byte(cursor);
+                                cursor = (cursor + 1) % 0x4000;
+                                print!("{:02x}", byte);
+                                if x < NUM_COLS - 1 {
+                                    print!(" ");
+                                }
+                            }
+                            println!();
+                        }
+                    },
                     Command::ShowStack => {
                         let sp = self.nes.cpu.regs().sp;
                         let addr = 0x0100 | sp as u16;

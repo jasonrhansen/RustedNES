@@ -60,7 +60,7 @@ pub struct Ppu {
     ppu_data_read_buffer: u8,
 
     // PPU address space
-    mem: MemMap,
+    pub mem: MemMap,
 
     // Object Attribute Memory
     oam: Oam,
@@ -427,7 +427,7 @@ impl Ppu {
     }
 
     fn color_from_palette_index(&mut self, index: u8) -> u8 {
-        self.mem.read_byte(0x3F00 | (index & 0x1F) as u16)
+        self.mem.read_byte(PaletteRam::START_ADDRESS | (index & 0x1F) as u16)
     }
 
     fn render_pixel(&mut self) {
@@ -464,6 +464,7 @@ impl Ppu {
 
         let x = self.scanline_cycle() - 1;
         let y = self.scanline as u16;
+
 
         self.frame_buffer[(y as usize * SCREEN_WIDTH) + x as usize] = color;
     }
@@ -1026,8 +1027,8 @@ pub struct PaletteRam { bytes: [u8; PaletteRam::SIZE] }
 
 impl PaletteRam {
     const SIZE: usize = 32;
-    const START_ADDRESS: u16 = 0x3FF0;
-    const MIRROR_MASK: u16 = 0x3F1F;
+    const START_ADDRESS: u16 = 0x3F00;
+    const MIRROR_MASK: u16 = 0x001F;
 
     fn new() -> PaletteRam {
         PaletteRam {
