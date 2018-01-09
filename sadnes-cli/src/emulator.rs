@@ -12,6 +12,7 @@ use sadnes_core::nes::Nes;
 use sadnes_core::ppu::{SCREEN_WIDTH, SCREEN_HEIGHT};
 use sadnes_core::sink::*;
 use sadnes_core::memory::Memory;
+use sadnes_core::input::Button;
 
 use std::collections::{HashSet, HashMap};
 use std::thread;
@@ -137,7 +138,7 @@ impl Emulator {
                 self.window.update_with_buffer(&sink_frame).unwrap();
 
                 if self.mode == Mode::Running {
-//                    self.read_input_keys();
+                    self.read_input_keys();
                     if self.window.is_key_pressed(Key::F12, KeyRepeat::No) {
                         self.start_debugger();
                     }
@@ -157,6 +158,27 @@ impl Emulator {
         self.emulated_cycles += cycles as u64;
 
         (cycles, trigger_watchpoint)
+    }
+
+    fn read_input_keys(&mut self) {
+        let game_pad_1 = &mut self.nes.interconnect.input.game_pad_1;
+
+        game_pad_1.set_button_pressed(Button::A,
+                                      self.window.is_key_down(Key::X));
+        game_pad_1.set_button_pressed(Button::B,
+                                      self.window.is_key_down(Key::Z));
+        game_pad_1.set_button_pressed(Button::Select,
+                                      self.window.is_key_down(Key::Space));
+        game_pad_1.set_button_pressed(Button::Start,
+                                      self.window.is_key_down(Key::Enter));
+        game_pad_1.set_button_pressed(Button::Up,
+                                      self.window.is_key_down(Key::Up));
+        game_pad_1.set_button_pressed(Button::Down,
+                                      self.window.is_key_down(Key::Down));
+        game_pad_1.set_button_pressed(Button::Left,
+                                      self.window.is_key_down(Key::Left));
+        game_pad_1.set_button_pressed(Button::Right,
+                                      self.window.is_key_down(Key::Right));
     }
 
     fn start_debugger(&mut self) {
