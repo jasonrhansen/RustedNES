@@ -285,7 +285,7 @@ impl Disassembler {
     }
 
     fn lsr<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
-        self.dis_instruction("cpy", mem, am)
+        self.dis_instruction("lsr", mem, am)
     }
 
     fn asl<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
