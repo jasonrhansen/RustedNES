@@ -709,40 +709,60 @@ impl Cpu {
     }
 
     fn lsr<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        if let (val, Some(addr)) = self.load(mem, am) {
-            let result = (val >> 1) & 0x7F;
-            self.set_zero_negative(result);
-            self.set_flags(StatusFlags::CARRY, (val & 0x01) != 0);
+        let (val, addr) = self.load(mem, am);
+
+        let result = (val >> 1) & 0x7F;
+        self.set_zero_negative(result);
+        self.set_flags(StatusFlags::CARRY, (val & 0x01) != 0);
+
+        if let Some(addr) = addr {
             mem.write_byte(addr, result);
+        } else if let AddressMode::Register(reg) = am {
+            self.set_register(reg, result);
         }
     }
 
     fn asl<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        if let (val, Some(addr)) = self.load(mem, am) {
-            let result = (val << 1) & 0xFE;
-            self.set_zero_negative(result);
-            self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
+        let (val, addr) = self.load(mem, am);
+
+        let result = (val << 1) & 0xFE;
+        self.set_zero_negative(result);
+        self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
+
+        if let Some(addr) = addr {
             mem.write_byte(addr, result);
+        } else if let AddressMode::Register(reg) = am {
+            self.set_register(reg, result);
         }
     }
 
     fn ror<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        if let (val, Some(addr)) = self.load(mem, am) {
-            let carry: u8 = if self.get_flag(StatusFlags::CARRY) { 1 << 7 } else { 0 };
-            let result = ((val >> 1) & 0x7F) | carry;
-            self.set_zero_negative(result);
-            self.set_flags(StatusFlags::CARRY, (val & 0x01) != 0);
+        let (val, addr) = self.load(mem, am);
+
+        let carry: u8 = if self.get_flag(StatusFlags::CARRY) { 1 << 7 } else { 0 };
+        let result = ((val >> 1) & 0x7F) | carry;
+        self.set_zero_negative(result);
+        self.set_flags(StatusFlags::CARRY, (val & 0x01) != 0);
+
+        if let Some(addr) = addr {
             mem.write_byte(addr, result);
+        } else if let AddressMode::Register(reg) = am {
+            self.set_register(reg, result);
         }
     }
 
     fn rol<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
-        if let (val, Some(addr)) = self.load(mem, am) {
-            let carry: u8 = if self.get_flag(StatusFlags::CARRY) { 1 } else { 0 };
-            let result = ((val << 1) & 0xFE) | carry;
-            self.set_zero_negative(result);
-            self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
+        let (val, addr) = self.load(mem, am);
+
+        let carry: u8 = if self.get_flag(StatusFlags::CARRY) { 1 } else { 0 };
+        let result = ((val << 1) & 0xFE) | carry;
+        self.set_zero_negative(result);
+        self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
+
+        if let Some(addr) = addr {
             mem.write_byte(addr, result);
+        } else if let AddressMode::Register(reg) = am {
+            self.set_register(reg, result);
         }
     }
 
