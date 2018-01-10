@@ -20,7 +20,7 @@ bitflags! {
 
 impl fmt::Display for StatusFlags {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{{C: {}, Z: {}, I: {}, D: {}, B: {}, E: {}, O: {}, N: {}}}",
+        write!(f, "{{C: {}, Z: {}, I: {}, D: {}, B: {}, E: {}, V: {}, N: {}}}",
                self.contains(StatusFlags::CARRY) as u8,
                self.contains(StatusFlags::ZERO_RESULT) as u8,
                self.contains(StatusFlags::INTERRUPT_DISABLE) as u8,
@@ -225,7 +225,7 @@ impl Cpu {
             ZeroPageIndexed(reg) => {
                 let base = self.next_pc_byte(mem) as u16;
                 let index = self.get_register(reg) as u16;
-                let addr = base + index;
+                let addr = (base + index) % 0x0100;
                 self.trigger_watchpoint |= self.check_watchpoints(addr);
 
                 (mem.read_byte(addr), Some(addr))
@@ -275,7 +275,8 @@ impl Cpu {
             ZeroPageIndexed(reg) => {
                 let base = self.next_pc_byte(mem) as u16;
                 let index = self.get_register(reg) as u16;
-                mem.write_byte(base + index, val);
+                let addr = (base + index) % 0x0100;
+                mem.write_byte(addr, val);
             },
             IndexedIndirect(reg) => {
                 let base = self.next_pc_byte(mem);
@@ -455,12 +456,12 @@ impl Cpu {
         let (m, _) = self.load(mem, am);
         let a = self.regs.a;
         let result = a as i32 - m as i32 -
-            if self.get_flag(StatusFlags::CARRY) { 0 } else { 1 };
+            if self.get_flag(StatusFlags::CARRY) { 1 } else { 0 };
 
-        self.set_flags(StatusFlags::CARRY, result & 0x100 == 0);
+        self.set_flags(StatusFlags::CARRY, result >= 0);
+        self.set_flags(StatusFlags::OVERFLOW, result > 127 || result < -127);
+
         let result = result as u8;
-        self.set_flags(StatusFlags::OVERFLOW,
-                       !(((a & 0x80) != (m & 0x80)) && (a & 0x80 != result & 0x80)));
         self.set_zero_negative(result);
 
         self.regs.a = result;
@@ -604,17 +605,17 @@ impl Cpu {
 
     fn inc<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
         if let (val, Some(addr)) = self.load(mem, am) {
-            val.wrapping_add(1);
-            self.set_zero_negative(val);
-            mem.write_byte(addr, val);
+            let result = val.wrapping_add(1);
+            self.set_zero_negative(result);
+            mem.write_byte(addr, result);
         }
     }
 
     fn dec<M: Memory>(&mut self, mem: &mut M, am: AddressMode) {
         if let (val, Some(addr)) = self.load(mem, am) {
-            val.wrapping_sub(1);
-            self.set_zero_negative(val);
-            mem.write_byte(addr, val);
+            let result = val.wrapping_sub(1);
+            self.set_zero_negative(result);
+            mem.write_byte(addr, result);
         }
     }
 
@@ -678,13 +679,13 @@ impl Cpu {
 
     fn jsr<M: Memory>(&mut self, mem: &mut M) {
         let addr = self.next_pc_word(mem);
-        let pc = self.regs.pc;
+        let pc = self.regs.pc - 1;
         self.push_word(mem, pc);
         self.regs.pc = addr;
     }
 
     fn rts<M: Memory>(&mut self, mem: &mut M) {
-        self.regs.pc = self.pull_word(mem);
+        self.regs.pc = self.pull_word(mem) + 1;
     }
 
     fn pha<M: Memory>(&mut self, mem: &mut M) {
@@ -768,9 +769,10 @@ impl Cpu {
 
     fn brk<M: Memory>(&mut self, mem: &mut M) {
         let pc = self.regs.pc;
-        let status = self.regs.status.bits();
-        self.push_word(mem, pc);
-        self.push_byte(mem, status);
+        let mut status = self.regs.status;
+        status.set(StatusFlags::BREAK_COMMAND, true);
+        self.push_word(mem, pc + 1);
+        self.push_byte(mem, status.bits());
         self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
         self.regs.pc = mem.read_word(BRK_VECTOR);
     }
