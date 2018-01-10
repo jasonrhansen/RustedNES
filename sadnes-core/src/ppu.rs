@@ -96,10 +96,6 @@ pub struct Ppu {
     sprite_pattern_shifts_hi: [u8; 8],
     sprite_attribute_latches: [u8; 8],
     sprite_x_counters: [u8; 8],
-
-    // Indices into OAM used during sprite evaluation
-    sprite_n: usize,
-    sprite_m: usize,
 }
 
 impl Ppu {
@@ -124,8 +120,6 @@ impl Ppu {
             sprite_pattern_shifts_hi: [0; 8],
             sprite_attribute_latches: [0; 8],
             sprite_x_counters: [0; 8],
-            sprite_n: 0,
-            sprite_m: 0,
         }
     }
 
@@ -141,7 +135,12 @@ impl Ppu {
         // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242002_read
         self.regs.w = WriteToggle::FirstWrite;
 
-        *self.regs.ppu_status | (self.ppu_gen_latch & 0x1F)
+
+        let status = *self.regs.ppu_status | (self.ppu_gen_latch & 0x1F);
+
+        self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
+
+        status
     }
 
     fn read_oam_byte(&self) -> u8 {
@@ -327,7 +326,7 @@ impl Ppu {
     }
 
     fn current_background_nametable_address(&self) -> u16 {
-        0x2000 | (self.regs.v & 0x0FFF)
+        self.regs.ppu_ctrl.base_name_table_address() | (self.regs.v & 0x0FFF)
     }
 
     fn current_background_attribute_address(&self) -> u16 {
@@ -438,7 +437,7 @@ impl Ppu {
         let sprite_pattern = background_pixel & 0x03;
 
         let color = if background_pattern == 0 && sprite_pattern == 0 {
-            0
+            self.color_from_palette_index(0x3F00)
         } else if background_pattern == 0 && sprite_pattern > 0 {
             self.color_from_palette_index(sprite_pixel)
         } else if background_pattern > 0 && sprite_pattern == 0 {
@@ -488,13 +487,15 @@ impl Ppu {
 
         for i in 0..8 {
             if let Some(ref sprite) = self.sprites[i] {
-                let pixel =
-                    ((self.sprite_pattern_shifts_lo[i] as u8 >> 7) & 0x01) |
-                    ((self.sprite_pattern_shifts_hi[i] as u8 >> 6) & 0x02) |
-                    ((sprite.palette() << 2) & 0x1C);
+                if self.sprite_x_counters[i] == 0 {
+                    let pixel =
+                        ((self.sprite_pattern_shifts_lo[i] as u8 >> 7) & 0x01) |
+                            ((self.sprite_pattern_shifts_hi[i] as u8 >> 6) & 0x02) |
+                            ((sprite.palette() << 2) & 0x1C);
 
-                if pixel & 0x03 != 0 {
-                    return (pixel, i);
+                    if pixel & 0x03 != 0 {
+                        return (pixel, i);
+                    }
                 }
             }
         }
@@ -1092,6 +1093,8 @@ impl Memory for MemMap {
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
+        let address = address & 0x3FFF;
+
         if address < PaletteRam::START_ADDRESS {
             let mut mapper = self.mapper.borrow_mut();
             mapper.ppu_write_byte(&mut self.vram, address, value);
@@ -1100,7 +1103,7 @@ impl Memory for MemMap {
             // internal palette control in VRAM.
             self.palette_ram.write_byte(address, value);
         } else {
-            panic!("Invalid write to PPU-space memory, address: {:X}, value: {}", address, value)
+            panic!("Invalid write to PPU-space memory, address: 0x{:04x}, value: 0x{:02x}", address, value)
         }
     }
 }
