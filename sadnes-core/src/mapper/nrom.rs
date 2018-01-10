@@ -19,7 +19,14 @@ impl Nrom {
         let address = address & 0x2FFF;
 
         match self.cartridge.mirroring {
-            Mirroring::Horizontal => address & 0x2BFF,
+            Mirroring::Horizontal => {
+                let address = address & 0x2BFF;
+                if address < 0x2800 {
+                    address
+                } else {
+                    address - 0x0400
+                }
+            },
             Mirroring::Vertical => address & 0x27FF,
             Mirroring::FourScreen => address,
         }
@@ -33,9 +40,9 @@ impl Mapper for Nrom {
         } else if address < 0x8000 {
             self.cartridge.prg_ram[(address & 0x1FFF) as usize]
         } else if self.cartridge.prg_rom.len() > PRG_ROM_BANK_SIZE as usize {
-            // Mirror second bank to first
             self.cartridge.prg_rom[(address & 0x7FFF) as usize]
         } else {
+            // Mirror second bank to first
             self.cartridge.prg_rom[(address & 0x3FFF) as usize]
         }
     }

@@ -113,8 +113,15 @@ impl Mmc1 {
         let address = address & 0x2FFF;
 
         match self.mirroring() {
-            Mirroring::Horizontal => address | 0x2BFF,
-            Mirroring::Vertical => address | 0x27FF,
+            Mirroring::Horizontal => {
+                let address = address & 0x2BFF;
+                if address < 0x2800 {
+                    address
+                } else {
+                    address - 0x0400
+                }
+            },
+            Mirroring::Vertical => address & 0x27FF,
             Mirroring::OneScreenLower => address & 0x23FF,
             Mirroring::OneScreenUpper => (address & 0x27FF) | 0x0400,
         }
