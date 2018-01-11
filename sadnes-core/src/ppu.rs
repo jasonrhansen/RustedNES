@@ -87,6 +87,10 @@ pub struct Ppu {
     ppu_gen_latch: u8,
 
     // Registers used during rendering to hold background data
+    name_table_byte: u8,
+    attribute_table_byte: u8,
+    tile_bitmap_byte_lo: u8,
+    tile_bitmap_byte_hi: u8,
     background_pattern_shift_lo: u16,
     background_pattern_shift_hi: u16,
     background_palette: u8,
@@ -113,6 +117,10 @@ impl Ppu {
             frame: 0,
             frame_buffer: Box::new([0; SCREEN_WIDTH * SCREEN_HEIGHT]),
             ppu_gen_latch: 0,
+            name_table_byte: 0,
+            attribute_table_byte: 0,
+            tile_bitmap_byte_lo: 0,
+            tile_bitmap_byte_hi: 0,
             background_pattern_shift_lo: 0,
             background_pattern_shift_hi: 0,
             background_palette: 0,
@@ -197,11 +205,6 @@ impl Ppu {
     }
 
     fn inc_ppu_addr(&mut self) {
-        self.regs.ppu_addr += match self.regs.ppu_ctrl.vram_address_increment() {
-            VramAddressIncrement::Add1Across => 1,
-            VramAddressIncrement::Add32Down => 32,
-        };
-
         // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242007_reads_and_writes
         if self.rendering_enabled() && self.scanline < 240 {
             self.inc_coarse_x_with_wrap();
@@ -220,22 +223,18 @@ impl Ppu {
                 // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242006_first_write_.28w_is_0.29
                 self.regs.t = (self.regs.t & 0x00FF) | ((value as u16 & 0x3F) << 8);
                 self.regs.w = WriteToggle::SecondWrite;
-
-                self.regs.ppu_addr = (self.regs.ppu_addr & 0x00FF) | ((value as u16) << 8);
             },
             WriteToggle::SecondWrite => {
                 // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242006_second_write_.28w_is_1.29
                 self.regs.t = (self.regs.t & 0xFF00) | (value as u16);
                 self.regs.v = self.regs.t;
                 self.regs.w = WriteToggle::FirstWrite;
-
-                self.regs.ppu_addr = (self.regs.ppu_addr & 0xFF00) | (value as u16);
             },
         }
     }
 
     fn read_ppu_data_byte(&mut self) -> u8 {
-        let address = self.regs.ppu_addr;
+        let address = self.regs.v;
 
         let read_buffer = self.ppu_data_read_buffer;
         self.ppu_data_read_buffer = self.mem.read_byte(address);
@@ -253,7 +252,7 @@ impl Ppu {
     }
 
     fn write_ppu_data_byte(&mut self, val: u8) {
-        let address = self.regs.ppu_addr;
+        let address = self.regs.v;
         self.mem.write_byte(address, val);
         self.inc_ppu_addr();
     }
@@ -325,42 +324,49 @@ impl Ppu {
             self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES)
     }
 
-    fn current_background_nametable_address(&self) -> u16 {
-        self.regs.ppu_ctrl.base_name_table_address() | (self.regs.v & 0x0FFF)
+    fn current_name_address(&self) -> u16 {
+        0x2000 | (self.regs.v & 0x0FFF)
     }
 
-    fn current_background_attribute_address(&self) -> u16 {
+    fn current_attribute_address(&self) -> u16 {
         let v = self.regs.v;
         0x23C0 | (v & 0x0C00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
     }
 
-    fn fetch_background_tile(&mut self) {
-        let name_addr = self.current_background_nametable_address();
-        let name_entry = self.mem.read_byte(name_addr);
+    fn current_pattern_address(&self) -> u16 {
+        let fine_y = ((self.regs.v >> 12) & 0x07) as u16;
+        self.regs.ppu_ctrl.background_pattern_table_address() +
+            (self.name_table_byte as u16 * 16 + fine_y)
+    }
 
-        let fine_y = ((self.regs.v >> 12) & 0x07) as u8;
+    fn fetch_name_table_byte(&mut self) {
+        let name_addr = self.current_name_address();
+        self.name_table_byte = self.mem.read_byte(name_addr);
+    }
 
-        let pattern_index = self.regs.ppu_ctrl.background_pattern_table_address() +
-            (name_entry * 16 + fine_y) as u16;
-        let pattern_lo = self.mem.read_byte(pattern_index);
-        let pattern_hi = self.mem.read_byte(pattern_index + 8);
+    fn fetch_attribute_table_byte(&mut self) {
+        let attr_addr = self.current_attribute_address();
+        self.attribute_table_byte = self.mem.read_byte(attr_addr);
+    }
 
+    fn fetch_bitmap_byte_lo(&mut self) {
+        let addr = self.current_pattern_address();
+        self.tile_bitmap_byte_lo = self.mem.read_byte(addr);
+    }
+
+    fn fetch_bitmap_byte_hi(&mut self) {
+        let addr = self.current_pattern_address() + 8;
+        self.tile_bitmap_byte_hi = self.mem.read_byte(addr);
+    }
+
+    fn load_background_registers(&mut self) {
         self.background_pattern_shift_lo =
-            ((self.background_pattern_shift_lo >> 8) & 0x00FF) | ((pattern_lo as u16) << 8);
+            (self.background_pattern_shift_lo & 0xFF00) | (self.tile_bitmap_byte_lo as u16);
         self.background_pattern_shift_hi =
-            ((self.background_pattern_shift_hi >> 8) & 0x00FF) | ((pattern_hi as u16) << 8);
+            (self.background_pattern_shift_hi & 0xFF00) | (self.tile_bitmap_byte_hi as u16);
 
-        let attr_addr = self.current_background_attribute_address();
-        let attr_entry = self.mem.read_byte(attr_addr);
-
-        let mut attr_shift = 0;
-        if self.regs.v & 0x0001 == 1 {
-            attr_shift += 2;
-        }
-        if self.regs.v & 0x0020 == 0x0020 {
-            attr_shift += 4;
-        }
-        self.background_palette = (attr_entry >> attr_shift) & 0x03;
+        let palette_shift = ((self.regs.v >> 4) & 0x04) | (self.regs.v & 0x02);
+        self.background_palette = (self.attribute_table_byte >> palette_shift) & 0x03;
     }
 
     fn fetch_sprite_tile(&mut self, sprite_index: usize) {
@@ -554,15 +560,80 @@ impl Ppu {
         let scanline_cycle = self.scanline_cycle();
         let mut interrupt = None;
 
+        let on_visible_scanline =
+            VISIBLE_START_SCANLINE <= self.scanline && self.scanline <= VISIBLE_END_SCANLINE;
+        let on_visible_cycle =
+            on_visible_scanline && 1 <= scanline_cycle && scanline_cycle <= 256;
+
+        let on_fetch_scanline = self.scanline <= VISIBLE_END_SCANLINE;
+        let on_fetch_cycle =
+            on_fetch_scanline &&
+                (on_visible_cycle ||
+                    // Pre-fetch tiles for the next scanline
+                    321 <= scanline_cycle && scanline_cycle <= 336);
+
+
+        // Handle backgrounds
         if self.rendering_enabled() {
-            if scanline_cycle == 256 {
-                self.inc_y_with_wrap();
-            } else if scanline_cycle == 257 {
-                // Copy bits related to horizontal position from t to v
-                self.regs.v = (self.regs.v & !0x041F) | (self.regs.t & 0x041F);
-            } else if (scanline_cycle >= 328 || scanline_cycle <= 256) && scanline_cycle % 8 == 0 {
-                // Increment the effective x scroll coordinate every 8 cycles
-                self.inc_coarse_x_with_wrap();
+            if on_visible_cycle {
+                self.render_pixel();
+            }
+
+            if on_fetch_scanline {
+                if scanline_cycle == 256 {
+                    self.inc_y_with_wrap();
+                } else if scanline_cycle == 257 {
+                    // Copy bits related to horizontal position from t to v
+                    self.regs.v = (self.regs.v & !0x041F) | (self.regs.t & 0x041F);
+                } else if (scanline_cycle >= 328 || scanline_cycle <= 256) && scanline_cycle % 8 == 0 {
+                    // Increment the effective x scroll coordinate every 8 cycles
+                    self.inc_coarse_x_with_wrap();
+                }
+            }
+
+            if self.scanline == PRE_RENDER_SCANLINE &&
+                280 <= scanline_cycle && scanline_cycle <= 304 {
+                // Copy bits related to vertical position from t to v
+                self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
+            }
+
+            if on_fetch_cycle {
+
+                match scanline_cycle % 8 {
+                    1 => self.fetch_name_table_byte(),
+                    3 => self.fetch_attribute_table_byte(),
+                    5 => self.fetch_bitmap_byte_lo(),
+                    7 => self.fetch_bitmap_byte_hi(),
+                    0 => self.load_background_registers(),
+                    _ => (),
+                }
+            }
+        }
+
+        // Handle sprites
+        if self.rendering_enabled() {
+            if on_visible_scanline {
+                if on_visible_cycle {
+                    self.update_sprite_rendering_registers();
+                }
+
+                match scanline_cycle {
+                    1 ... 64 => {
+                        // Clear secondary OAM
+                        if scanline_cycle > 1 && (scanline_cycle - 1) % 8 == 0 {
+                            self.sprites[(scanline_cycle / 8) as usize] = None;
+                        }
+                    },
+                    65 => {
+                        self.evaluate_sprites_for_scanline();
+                    },
+                    257 ... 320 => {
+                        if scanline_cycle % 8 == 0 {
+                            self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
+                        }
+                    },
+                    _ => (),
+                }
             }
         }
 
@@ -571,66 +642,10 @@ impl Ppu {
                 if scanline_cycle == 0 {
                     self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
                     self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, false);
-                } else if self.rendering_enabled() {
-                    match scanline_cycle {
-                        280 ... 304 => {
-                            // Copy bits related to vertical position from t to v
-                            self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
-                        },
-                        // Fetch two tiles for next scanline
-                        321 => { self.fetch_background_tile() },
-                        329 => { self.fetch_background_tile() },
-                        _ => (),
-                    }
                 }
             },
-            VISIBLE_START_SCANLINE ... VISIBLE_END_SCANLINE => {
-                if self.rendering_enabled() {
-                    if scanline_cycle == 1 {
-                        self.evaluate_sprites_for_scanline();
-                    }
-
-                    // Background tiles
-                    match scanline_cycle {
-                        1 ... 256 => {
-                            self.render_pixel();
-                            self.update_sprite_rendering_registers();
-                            if scanline_cycle > 1 && (scanline_cycle - 1) % 8 == 0 {
-                                self.fetch_background_tile();
-                            }
-                        },
-                        // Fetch two tiles for next scanline
-                        321 => { self.fetch_background_tile() },
-                        329 => { self.fetch_background_tile() },
-                        337 ... 340 => {
-                            // Fetch two nametable bytes
-                        },
-                        _ => (),
-                    }
-
-                    // Sprites
-                    match scanline_cycle {
-                        1 ... 64 => {
-                            // Clear secondary OAM
-                            if scanline_cycle > 1 && (scanline_cycle - 1) % 8 == 0 {
-                                self.sprites[(scanline_cycle / 8) as usize] = None;
-                            }
-                        },
-                        65 => {
-                            self.evaluate_sprites_for_scanline();
-                        },
-                        257 ... 320 => {
-                            if scanline_cycle % 8 == 0 {
-                                self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
-                            }
-                        },
-                        _ => (),
-                    }
-                }
-            }
             POST_RENDER_SCANLINE => {
                 if scanline_cycle == 0 {
-//                    let mut buffer: Box<[u32]> = vec![PALETTE[(self.frame % 64) as usize]; SCREEN_WIDTH * SCREEN_HEIGHT].into_boxed_slice();
                     let buffer: Vec<u32> = self.frame_buffer.iter()
                         .map(|b| PALETTE[(b & 0x3F) as usize]).collect();
                     video_frame_sink.append(buffer.into_boxed_slice());
@@ -917,7 +932,6 @@ struct Regs {
     ppu_status: PpuStatus,      // 0x2002
     oam_addr: u8,               // 0x2003
     ppu_scroll: PpuScroll,      // 0x2005
-    ppu_addr: u16,              // 0x2006
 
     // Internal registers
     v: u16,                     // Current VRAM address (15 bits)
@@ -936,7 +950,6 @@ impl Regs {
             ppu_status: PpuStatus::NONE,
             oam_addr: 0,
             ppu_scroll: PpuScroll::default(),
-            ppu_addr: 0,
             v: 0,
             t: 0,
             x: 0,
