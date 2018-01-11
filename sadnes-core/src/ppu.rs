@@ -303,13 +303,14 @@ impl Ppu {
             if self.is_sprite_at_y_on_next_scanline(y) {
                 self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, true);
                 m += 3;
-                if m > 3 {
-                    m = 0;
-                    n += 1;
-                }
             } else {
                 n += 1;
                 m += 1;
+            }
+
+            if m > 3 {
+                m = 0;
+                n += 1;
             }
         }
 
