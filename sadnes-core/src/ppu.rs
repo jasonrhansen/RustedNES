@@ -369,6 +369,11 @@ impl Ppu {
         self.background_palette = (self.attribute_table_byte >> palette_shift) & 0x03;
     }
 
+    fn shift_background_registers(&mut self) {
+        self.background_pattern_shift_lo <<= 1;
+        self.background_pattern_shift_hi <<= 1;
+    }
+
     fn fetch_sprite_tile(&mut self, sprite_index: usize) {
         if let Some(ref sprite) = self.sprites[sprite_index] {
             let mut row = self.scanline as u16 - sprite.y as u16;
@@ -481,9 +486,9 @@ impl Ppu {
 
         let fine_x = self.regs.x;
 
-        ((self.background_pattern_shift_lo as u8 >> (7 - fine_x)) & 0x01) |
-            ((self.background_pattern_shift_hi as u8 >> (6 - fine_x)) & 0x02) |
-            ((self.background_palette << 2) & 0x0C)
+        ((self.background_pattern_shift_lo >> (15 - fine_x)) & 0x01) as u8 |
+            ((self.background_pattern_shift_hi >> (14 - fine_x)) & 0x02) as u8 |
+            (self.background_palette << 2)
     }
 
     fn sprite_pixel_and_index(&mut self) -> (u8, usize) {
@@ -598,7 +603,7 @@ impl Ppu {
             }
 
             if on_fetch_cycle {
-
+                self.shift_background_registers();
                 match scanline_cycle % 8 {
                     1 => self.fetch_name_table_byte(),
                     3 => self.fetch_attribute_table_byte(),
