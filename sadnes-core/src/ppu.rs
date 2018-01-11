@@ -588,24 +588,6 @@ impl Ppu {
                 self.render_pixel();
             }
 
-            if on_fetch_scanline {
-                if scanline_cycle == 256 {
-                    self.inc_y_with_wrap();
-                } else if scanline_cycle == 257 {
-                    // Copy bits related to horizontal position from t to v
-                    self.regs.v = (self.regs.v & !0x041F) | (self.regs.t & 0x041F);
-                } else if (scanline_cycle >= 328 || scanline_cycle <= 256) && scanline_cycle % 8 == 0 {
-                    // Increment the effective x scroll coordinate every 8 cycles
-                    self.inc_coarse_x_with_wrap();
-                }
-            }
-
-            if self.scanline == PRE_RENDER_SCANLINE &&
-                280 <= scanline_cycle && scanline_cycle <= 304 {
-                // Copy bits related to vertical position from t to v
-                self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
-            }
-
             if on_fetch_cycle {
                 self.shift_background_registers();
                 match scanline_cycle % 8 {
@@ -615,6 +597,28 @@ impl Ppu {
                     7 => self.fetch_bitmap_byte_hi(),
                     0 => self.load_background_registers(),
                     _ => (),
+                }
+            }
+
+            if self.scanline == PRE_RENDER_SCANLINE &&
+                280 <= scanline_cycle && scanline_cycle <= 304 {
+                // Copy bits related to vertical position from t to v
+                self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
+            }
+
+            if on_fetch_scanline {
+                if scanline_cycle != 0 &&
+                    (scanline_cycle >= 328 || scanline_cycle <= 256) &&
+                    scanline_cycle % 8 == 0 {
+                    // Increment the effective x scroll coordinate every 8 cycles
+                    self.inc_coarse_x_with_wrap();
+                }
+
+                if scanline_cycle == 256 {
+                    self.inc_y_with_wrap();
+                } else if scanline_cycle == 257 {
+                    // Copy bits related to horizontal position from t to v
+                    self.regs.v = (self.regs.v & !0x041F) | (self.regs.t & 0x041F);
                 }
             }
         }
