@@ -281,7 +281,7 @@ impl Ppu {
 
             if self.is_sprite_at_y_on_next_scanline(y) {
                 self.sprites[count] =
-                    Some(Sprite::from_oam_bytes(&self.oam[index..index+5]));
+                    Some(Sprite::from_oam_bytes(&self.oam[index..index+4]));
                 count += 1;
             }
 
@@ -775,12 +775,6 @@ impl SpriteSize {
     }
 }
 
-// PPU master/slave select
-enum MasterSlaveSelect {
-    ReadBackdrop,        // Read backdrop from EXT pins
-    OutputColor,         // Output color on EXT pins
-}
-
 struct PpuCtrl { val: u8 }
 
 impl PpuCtrl {
@@ -792,14 +786,6 @@ impl PpuCtrl {
             3 => 0x2C00,
             _ => 0, // Unreachable
         }
-    }
-
-    fn base_name_table_x_inc(&self) -> u16 {
-        if self.val & 0x01 == 0x01 { 256 } else { 0 }
-    }
-
-    fn base_name_table_y_inc(&self) -> u16 {
-        if self.val & 0x02 == 0x02 { 240 } else { 0 }
     }
 
     fn vram_address_increment(&self) -> VramAddressIncrement {
@@ -824,14 +810,6 @@ impl PpuCtrl {
             SpriteSize::Size8x8
         } else {
             SpriteSize::Size8x16
-        }
-    }
-
-    fn master_slave_select(&self) -> MasterSlaveSelect {
-        if (self.val & 0x40) == 0 {
-            MasterSlaveSelect::ReadBackdrop
-        } else {
-            MasterSlaveSelect::OutputColor
         }
     }
 
