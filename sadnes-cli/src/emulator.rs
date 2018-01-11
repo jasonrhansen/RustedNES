@@ -72,7 +72,7 @@ impl Emulator {
                                     borderless: false,
                                     title: true,
                                     resize: false,
-                                    scale: Scale::X1,
+                                    scale: Scale::X2,
                                 }
             ).unwrap(),
 
