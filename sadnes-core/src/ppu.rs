@@ -258,19 +258,19 @@ impl Ppu {
         self.inc_ppu_addr();
     }
 
-    fn is_sprite_at_y_on_scanline(&mut self, y: u8) -> bool {
+    fn is_sprite_at_y_on_next_scanline(&mut self, y: u8) -> bool {
         if self.scanline < 0 {
             return false;
         }
 
-        let scanline = self.scanline as u16;
+        let scanline = self.scanline as u16 + 1;
         let y = y as u16;
         let height = self.regs.ppu_ctrl.sprite_size().height() as u16;
 
         y < scanline && scanline <= y + height
     }
 
-    fn evaluate_sprites_for_scanline(&mut self) {
+    fn evaluate_sprites_for_next_scanline(&mut self) {
         let mut count = 0;
 
         let mut n = 0;
@@ -279,7 +279,7 @@ impl Ppu {
             let index = 4 * n;
             let y = self.oam[index];
 
-            if self.is_sprite_at_y_on_scanline(y) {
+            if self.is_sprite_at_y_on_next_scanline(y) {
                 self.sprites[count] =
                     Some(Sprite::from_oam_bytes(&self.oam[index..index+5]));
                 count += 1;
@@ -300,7 +300,7 @@ impl Ppu {
             let index = 4 * n + m;
             let y = self.oam[index];
 
-            if self.is_sprite_at_y_on_scanline(y) {
+            if self.is_sprite_at_y_on_next_scanline(y) {
                 self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, true);
                 m += 3;
                 if m > 3 {
@@ -430,13 +430,12 @@ impl Ppu {
     fn update_sprite_rendering_registers(&mut self) {
         for i in 0..8 {
             let counter = &mut self.sprite_x_counters[i];
-            if *counter > 0 {
-                *counter -= 1;
-            }
 
             if *counter == 0 {
                 self.sprite_pattern_shifts_lo[i] <<= 1;
                 self.sprite_pattern_shifts_hi[i] <<= 1;
+            } else {
+                *counter -= 1;
             }
         }
     }
@@ -635,7 +634,7 @@ impl Ppu {
 //                        }
                     },
                     65 => {
-                        self.evaluate_sprites_for_scanline();
+                        self.evaluate_sprites_for_next_scanline();
                     },
                     257 ... 320 => {
                         if scanline_cycle % 8 == 0 {
