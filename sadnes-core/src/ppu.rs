@@ -272,46 +272,46 @@ impl Ppu {
 
     fn evaluate_sprites_for_scanline(&mut self) {
         let mut count = 0;
-//
-//        let mut n = 0;
-//
-//        while n < 64 {
-//            let index = 4 * n;
-//            let y = self.oam[index];
-//
-//            if self.is_sprite_at_y_on_scanline(y) {
-//                self.sprites[count] =
-//                    Some(Sprite::from_oam_bytes(&self.oam[index..index+5]));
-//                count += 1;
-//            }
-//
-//            n += 1;
-//
-//            if count >= 8 {
-//                break;
-//            }
-//        }
-//
-//        let mut m = 0;
-//
-//        // Implement sprite overflow, including hardware bug
-//        // where m gets incremented when it doesn't make sense
-//        while n < 64 {
-//            let index = 4 * n + m;
-//            let y = self.oam[index];
-//
-//            if self.is_sprite_at_y_on_scanline(y) {
-//                self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, true);
-//                m += 3;
-//                if m > 3 {
-//                    m = 0;
-//                    n += 1;
-//                }
-//            } else {
-//                n += 1;
-//                m += 1;
-//            }
-//        }
+
+        let mut n = 0;
+
+        while n < 64 {
+            let index = 4 * n;
+            let y = self.oam[index];
+
+            if self.is_sprite_at_y_on_scanline(y) {
+                self.sprites[count] =
+                    Some(Sprite::from_oam_bytes(&self.oam[index..index+5]));
+                count += 1;
+            }
+
+            n += 1;
+
+            if count >= 8 {
+                break;
+            }
+        }
+
+        let mut m = 0;
+
+        // Implement sprite overflow, including hardware bug
+        // where m gets incremented when it doesn't make sense
+        while n < 64 {
+            let index = 4 * n + m;
+            let y = self.oam[index];
+
+            if self.is_sprite_at_y_on_scanline(y) {
+                self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, true);
+                m += 3;
+                if m > 3 {
+                    m = 0;
+                    n += 1;
+                }
+            } else {
+                n += 1;
+                m += 1;
+            }
+        }
 
         // Clear any remaining sprites if there were less than 8 on scanline
         while count < 8 {
@@ -387,7 +387,7 @@ impl Ppu {
                         row = 7 - row;
                     }
 
-                    sprite.tile_index as u16 +
+                    (sprite.tile_index as u16) * 16 +
                         self.regs.ppu_ctrl.sprite_pattern_table_address() + row
                 },
                 SpriteSize::Size8x16 => {
@@ -395,13 +395,15 @@ impl Ppu {
                         row = 15 - row;
                     }
 
+                    let table: u16 = if sprite.tile_index & 0x01 == 0 { 0x0000 } else { 0x1000 };
+                    let mut tile_index = sprite.tile_index & 0xFE;
                     if row > 7 {
                         // Jump to second tile
-                        row += 8;
+                        tile_index += 1;
+                        row -= 8;
                     }
 
-                    sprite.tile_index as u16 >> 1 +
-                        if sprite.tile_index & 0x01 == 0 { 0x0000 } else { 0x1000 }
+                    table + (tile_index as u16) * 16 + row
                 }
             };
 
@@ -448,7 +450,7 @@ impl Ppu {
         let (sprite_pixel, sprite_index) = self.sprite_pixel_and_index();
 
         let background_pattern = background_pixel & 0x03;
-        let sprite_pattern = background_pixel & 0x03;
+        let sprite_pattern = sprite_pixel & 0x03;
 
         let color = if background_pattern == 0 && sprite_pattern == 0 {
             self.color_from_palette_index(0x3F00)
@@ -628,9 +630,9 @@ impl Ppu {
                 match scanline_cycle {
                     1 ... 64 => {
                         // Clear secondary OAM
-                        if scanline_cycle > 1 && (scanline_cycle - 1) % 8 == 0 {
-                            self.sprites[(scanline_cycle / 8) as usize] = None;
-                        }
+//                        if scanline_cycle > 1 && (scanline_cycle - 1) % 8 == 0 {
+//                            self.sprites[(scanline_cycle / 8) as usize] = None;
+//                        }
                     },
                     65 => {
                         self.evaluate_sprites_for_scanline();
@@ -1162,7 +1164,7 @@ impl Sprite {
     }
 
     fn palette(&self) -> u8 {
-        (self.attributes & 0x03) + 4
+        (self.attributes & 0x03) | 0x04
     }
 
     fn priority(&self) -> SpritePriority {
