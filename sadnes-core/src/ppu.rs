@@ -93,7 +93,7 @@ pub struct Ppu {
     tile_bitmap_byte_hi: u8,
     background_pattern_shift_lo: u16,
     background_pattern_shift_hi: u16,
-    background_palette: u8,
+    background_palette: u16,
 
     // Registers used during rendering to hold sprite data
     sprite_pattern_shifts_lo: [u8; 8],
@@ -133,6 +133,7 @@ impl Ppu {
 
     pub fn reset(&mut self) {
         self.cycles = 0;
+        self.frame = 0;
         *self.regs.ppu_ctrl = 0;
         *self.regs.ppu_mask = 0;
         *self.regs.ppu_status != 0x80;
@@ -271,46 +272,46 @@ impl Ppu {
 
     fn evaluate_sprites_for_scanline(&mut self) {
         let mut count = 0;
-
-        let mut n = 0;
-
-        while n < 64 {
-            let index = 4 * n;
-            let y = self.oam[index];
-
-            if self.is_sprite_at_y_on_scanline(y) {
-                self.sprites[count] =
-                    Some(Sprite::from_oam_bytes(&self.regs.ppu_ctrl, &self.oam[index..index+5]));
-                count += 1;
-            }
-
-            n += 1;
-
-            if count >= 8 {
-                break;
-            }
-        }
-
-        let mut m = 0;
-
-        // Implement sprite overflow, including hardware bug
-        // where m gets incremented when it doesn't make sense
-        while n < 64 {
-            let index = 4 * n + m;
-            let y = self.oam[index];
-
-            if self.is_sprite_at_y_on_scanline(y) {
-                self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, true);
-                m += 3;
-                if m > 3 {
-                    m = 0;
-                    n += 1;
-                }
-            } else {
-                n += 1;
-                m += 1;
-            }
-        }
+//
+//        let mut n = 0;
+//
+//        while n < 64 {
+//            let index = 4 * n;
+//            let y = self.oam[index];
+//
+//            if self.is_sprite_at_y_on_scanline(y) {
+//                self.sprites[count] =
+//                    Some(Sprite::from_oam_bytes(&self.oam[index..index+5]));
+//                count += 1;
+//            }
+//
+//            n += 1;
+//
+//            if count >= 8 {
+//                break;
+//            }
+//        }
+//
+//        let mut m = 0;
+//
+//        // Implement sprite overflow, including hardware bug
+//        // where m gets incremented when it doesn't make sense
+//        while n < 64 {
+//            let index = 4 * n + m;
+//            let y = self.oam[index];
+//
+//            if self.is_sprite_at_y_on_scanline(y) {
+//                self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, true);
+//                m += 3;
+//                if m > 3 {
+//                    m = 0;
+//                    n += 1;
+//                }
+//            } else {
+//                n += 1;
+//                m += 1;
+//            }
+//        }
 
         // Clear any remaining sprites if there were less than 8 on scanline
         while count < 8 {
@@ -366,7 +367,9 @@ impl Ppu {
             (self.background_pattern_shift_hi & 0xFF00) | (self.tile_bitmap_byte_hi as u16);
 
         let palette_shift = ((self.regs.v >> 4) & 0x04) | (self.regs.v & 0x02);
-        self.background_palette = (self.attribute_table_byte >> palette_shift) & 0x03;
+        self.background_palette =
+            ((self.background_palette << 8) & 0xFF00) |
+                ((((self.attribute_table_byte >> palette_shift) & 0x03) << 2) as u16);
     }
 
     fn shift_background_registers(&mut self) {
@@ -430,8 +433,8 @@ impl Ppu {
             }
 
             if *counter == 0 {
-                self.sprite_pattern_shifts_lo[i] = self.sprite_pattern_shifts_lo[i] << 1;
-                self.sprite_pattern_shifts_hi[i] = self.sprite_pattern_shifts_hi[i] << 1;
+                self.sprite_pattern_shifts_lo[i] <<= 1;
+                self.sprite_pattern_shifts_hi[i] <<= 1;
             }
         }
     }
@@ -488,7 +491,7 @@ impl Ppu {
 
         ((self.background_pattern_shift_lo >> (15 - fine_x)) & 0x01) as u8 |
             ((self.background_pattern_shift_hi >> (14 - fine_x)) & 0x02) as u8 |
-            (self.background_palette << 2)
+            (self.background_palette >> 8) as u8
     }
 
     fn sprite_pixel_and_index(&mut self) -> (u8, usize) {
@@ -1149,7 +1152,7 @@ struct Sprite {
 }
 
 impl Sprite {
-    fn from_oam_bytes(ppu_ctrl: &PpuCtrl, oam_bytes: &[u8]) -> Sprite {
+    fn from_oam_bytes(oam_bytes: &[u8]) -> Sprite {
         Sprite {
             y: oam_bytes[0],
             tile_index: oam_bytes[1],
