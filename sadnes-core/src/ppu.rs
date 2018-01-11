@@ -1047,22 +1047,32 @@ pub struct PaletteRam { bytes: [u8; PaletteRam::SIZE] }
 impl PaletteRam {
     const SIZE: usize = 32;
     const START_ADDRESS: u16 = 0x3F00;
-    const MIRROR_MASK: u16 = 0x001F;
 
     fn new() -> PaletteRam {
         PaletteRam {
             bytes: [0u8; PaletteRam::SIZE],
         }
     }
+
+    fn index(address: u16) -> usize {
+        let index = (address & 0x00FF) as usize;
+
+        // Addresses 0x3F10/0x3F14/0x3F18/0x3F1C are mirrors of 0x3F00/0x3F04/0x3F08/0x3F0C
+        if index >= 0x10 && index % 4 == 0 {
+            index - 0x10
+        } else {
+            index
+        }
+    }
 }
 
 impl Memory for PaletteRam {
     fn read_byte(&mut self, address: u16) -> u8 {
-        self[(address & PaletteRam::MIRROR_MASK) as usize]
+        self[PaletteRam::index(address)]
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        self[(address & PaletteRam::MIRROR_MASK) as usize] = value
+        self[PaletteRam::index(address)] = value
     }
 }
 
