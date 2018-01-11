@@ -456,12 +456,12 @@ impl Cpu {
         let (m, _) = self.load(mem, am);
         let a = self.regs.a;
         let result = a as i32 - m as i32 -
-            if self.get_flag(StatusFlags::CARRY) { 1 } else { 0 };
+            if self.get_flag(StatusFlags::CARRY) { 0 } else { 1 };
 
         self.set_flags(StatusFlags::CARRY, result >= 0);
-        self.set_flags(StatusFlags::OVERFLOW, result > 127 || result < -127);
 
         let result = result as u8;
+        self.set_flags(StatusFlags::OVERFLOW, (a ^ m) & 0x80 != 0 && (a ^ result) & 0x80 != 0);
         self.set_zero_negative(result);
 
         self.regs.a = result;
