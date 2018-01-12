@@ -93,7 +93,8 @@ pub struct Ppu {
     tile_bitmap_byte_hi: u8,
     background_pattern_shift_lo: u16,
     background_pattern_shift_hi: u16,
-    background_palette: u16,
+    background_palette_shift_lo: u16,
+    background_palette_shift_hi: u16,
 
     // Registers used during rendering to hold sprite data
     sprite_pattern_shifts_lo: [u8; 8],
@@ -123,7 +124,8 @@ impl Ppu {
             tile_bitmap_byte_hi: 0,
             background_pattern_shift_lo: 0,
             background_pattern_shift_hi: 0,
-            background_palette: 0,
+            background_palette_shift_lo: 0,
+            background_palette_shift_hi: 0,
             sprite_pattern_shifts_lo: [0; 8],
             sprite_pattern_shifts_hi: [0; 8],
             sprite_attribute_latches: [0; 8],
@@ -368,14 +370,21 @@ impl Ppu {
             (self.background_pattern_shift_hi & 0xFF00) | (self.tile_bitmap_byte_hi as u16);
 
         let palette_shift = ((self.regs.v >> 4) & 0x04) | (self.regs.v & 0x02);
-        self.background_palette =
-            ((self.background_palette << 8) & 0xFF00) |
-                ((((self.attribute_table_byte >> palette_shift) & 0x03) << 2) as u16);
+        let palette = ((self.attribute_table_byte >> palette_shift) & 0x03) as u16;
+
+        self.background_palette_shift_lo =
+            (self.background_palette_shift_lo & 0xFF00) |
+                (if (palette & 0x01) == 0x01 { 0xFF } else { 0x00 });
+        self.background_palette_shift_hi =
+            (self.background_palette_shift_hi & 0xFF00) |
+                (if (palette & 0x02) == 0x02 { 0xFF } else { 0x00 });
     }
 
     fn shift_background_registers(&mut self) {
         self.background_pattern_shift_lo <<= 1;
         self.background_pattern_shift_hi <<= 1;
+        self.background_palette_shift_lo <<= 1;
+        self.background_palette_shift_hi <<= 1;
     }
 
     fn fetch_sprite_tile(&mut self, sprite_index: usize) {
@@ -493,7 +502,8 @@ impl Ppu {
 
         ((self.background_pattern_shift_lo >> (15 - fine_x)) & 0x01) as u8 |
             ((self.background_pattern_shift_hi >> (14 - fine_x)) & 0x02) as u8 |
-            (self.background_palette >> 8) as u8
+            ((self.background_palette_shift_lo >> (13 - fine_x)) & 0x04) as u8 |
+            ((self.background_palette_shift_hi >> (12 - fine_x)) & 0x08) as u8
     }
 
     fn sprite_pixel_and_index(&mut self) -> (u8, usize) {
