@@ -700,8 +700,8 @@ impl Cpu {
     }
 
     fn php<M: Memory>(&mut self, mem: &mut M) {
-        let p = self.regs.status.bits();
-        self.push_byte(mem, p);
+        let p = self.regs.status | StatusFlags::BREAK_COMMAND | StatusFlags::EXPANSION;
+        self.push_byte(mem, p.bits);
     }
 
     fn plp<M: Memory>(&mut self, mem: &mut M) {
@@ -769,8 +769,7 @@ impl Cpu {
 
     fn brk<M: Memory>(&mut self, mem: &mut M) {
         let pc = self.regs.pc;
-        let mut status = self.regs.status;
-        status.set(StatusFlags::BREAK_COMMAND, true);
+        let status = self.regs.status | StatusFlags::BREAK_COMMAND | StatusFlags::EXPANSION;
         self.push_word(mem, pc + 1);
         self.push_byte(mem, status.bits());
         self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
