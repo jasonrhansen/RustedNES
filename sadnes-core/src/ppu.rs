@@ -455,6 +455,9 @@ impl Ppu {
     }
 
     fn render_pixel(&mut self) {
+        let x = self.scanline_cycle() - 1;
+        let y = self.scanline as u16;
+
         let background_pixel = self.background_pixel();
         let (sprite_pixel, sprite_index) = self.sprite_pixel_and_index();
 
@@ -468,7 +471,8 @@ impl Ppu {
         } else if background_pattern > 0 && sprite_pattern == 0 {
             self.color_from_palette_index(background_pixel)
         } else {
-            if sprite_index == 0 {
+            // Sprite 0 hit is not detected at x=255
+            if sprite_index == 0 && x != 255 {
                 self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, true);
             }
 
@@ -486,15 +490,13 @@ impl Ppu {
             }
         };
 
-        let x = self.scanline_cycle() - 1;
-        let y = self.scanline as u16;
-
-
         self.frame_buffer[(y as usize * SCREEN_WIDTH) + x as usize] = color;
     }
 
     fn background_pixel(&self) -> u8 {
-        if !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND) {
+        let x = self.scanline_cycle() - 1;
+        if !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND) ||
+            x < 8 && !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND_LEFT_8) {
             return 0;
         }
 
@@ -507,7 +509,9 @@ impl Ppu {
     }
 
     fn sprite_pixel_and_index(&mut self) -> (u8, usize) {
-        if !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES) {
+        let x = self.scanline_cycle() - 1;
+        if !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES) ||
+            x < 8 && !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES_LEFT_8) {
             return (0, 0);
         }
 
@@ -641,29 +645,23 @@ impl Ppu {
                     self.update_sprite_rendering_registers();
                 }
 
-                match scanline_cycle {
-                    1 ... 64 => {
-                        // Clear secondary OAM
-//                        if scanline_cycle > 1 && (scanline_cycle - 1) % 8 == 0 {
-//                            self.sprites[(scanline_cycle / 8) as usize] = None;
-//                        }
-                    },
-                    65 => {
-                        self.evaluate_sprites_for_next_scanline();
-                    },
-                    257 ... 320 => {
-                        if scanline_cycle % 8 == 0 {
-                            self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
-                        }
-                    },
-                    _ => (),
+                if scanline_cycle == 65 {
+                    self.evaluate_sprites_for_next_scanline();
+                }
+            }
+
+            if self.scanline <= VISIBLE_END_SCANLINE {
+                if 257 <= scanline_cycle && scanline_cycle <= 320 {
+                    if scanline_cycle % 8 == 0 {
+                        self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
+                    }
                 }
             }
         }
 
         match self.scanline {
             PRE_RENDER_SCANLINE => {
-                if scanline_cycle == 0 {
+                if scanline_cycle == 1 {
                     self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
                     self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, false);
                 }
