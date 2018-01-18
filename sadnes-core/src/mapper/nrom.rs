@@ -41,7 +41,7 @@ impl Mapper for Nrom {
 
     fn ppu_read_byte(&mut self, vram: &mut Vram, address: u16) -> u8 {
         if address < 0x2000 {
-            self.cartridge.chr_rom[address as usize]
+            self.cartridge.chr[address as usize]
         } else {
             vram.read_byte(self.mirror_address(address) - 0x2000)
         }

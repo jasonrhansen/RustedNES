@@ -78,7 +78,7 @@ pub struct Cartridge {
     pub sub_mapper: u8,
     pub mirroring: Mirroring,
     pub prg_rom: Vec<u8>,
-    pub chr_rom: Vec<u8>,
+    pub chr: Vec<u8>,
     pub prg_ram: Vec<u8>,
     pub is_battery_backed: bool,
 }
@@ -89,7 +89,7 @@ impl Debug for Cartridge {
         writeln!(f, "sub mapper: {}", self.sub_mapper)?;
         writeln!(f, "mirroring: {:?}", self.mirroring)?;
         writeln!(f, "PRG ROM size: {}", self.prg_rom.len())?;
-        writeln!(f, "CHR ROM size: {}", self.chr_rom.len())?;
+        writeln!(f, "CHR ROM size: {}", self.chr.len())?;
         writeln!(f, "PRG RAM size: {}", self.prg_ram.len())?;
         writeln!(f, "battery backed: {}", self.is_battery_backed)
     }
@@ -103,8 +103,11 @@ impl Cartridge {
             return Err(LoadError::new("magic constant in header is incorrect"));
         }
 
-        let prg_rom_size = r.read_u8()? as usize * PRG_ROM_BANK_SIZE as usize;
-        let chr_rom_size = r.read_u8()? as usize * CHR_ROM_BANK_SIZE as usize;
+        let num_prg_banks = r.read_u8()?;
+        let num_chr_banks = r.read_u8()?;
+
+        let prg_rom_size = num_prg_banks as usize * PRG_ROM_BANK_SIZE as usize;
+        let chr_rom_size = num_chr_banks as usize * CHR_ROM_BANK_SIZE as usize;
 
         let flags6 = r.read_u8()?;
         let flags7 = r.read_u8()?;
@@ -135,11 +138,17 @@ impl Cartridge {
             Mirroring::Horizontal
         };
 
+
         let mut prg_rom = vec![0u8; prg_rom_size];
         r.read_exact(&mut prg_rom[..])?;
 
-        let mut chr_rom = vec![0u8; chr_rom_size];
-        r.read_exact(&mut chr_rom[..])?;
+        let mut chr = vec![0u8; chr_rom_size];
+        r.read_exact(&mut chr[..])?;
+
+        // Add CHR bank if not in file
+        if num_chr_banks == 0 {
+            chr = vec![0u8; CHR_ROM_BANK_SIZE as usize];
+        }
 
         let prg_ram = vec![0u8; prg_ram_size];
 
@@ -148,7 +157,7 @@ impl Cartridge {
             sub_mapper,
             mirroring,
             prg_rom,
-            chr_rom,
+            chr,
             prg_ram,
             is_battery_backed,
         })

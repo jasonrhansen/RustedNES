@@ -69,7 +69,7 @@ impl Mmc1 {
                 _ => Mirroring::Horizontal,
             };
             println!("CHR MODE: {:?}, PRG MODE: {:?}, MIRRORING: {:?}, PRG FIRST: 0x{:02}, PRG LAST: 0x{:02}",
-                     self.prg_rom_mode(), self.chr_rom_mode(), self.cartridge.mirroring,
+                     self.chr_rom_mode(), self.prg_rom_mode(), self.cartridge.mirroring,
                      self.prg_rom_bank_first(), self.prg_rom_bank_last());
         } else if address < 0xC000 {
             self.regs.chr_bank_0 = shift;
@@ -114,6 +114,10 @@ impl Mapper for Mmc1 {
     fn prg_read_byte(&mut self, address: u16) -> u8 {
         if address < 0x6000 {
             0
+        } else if address < 0x8000 {
+            self.cartridge.prg_ram[(address - 0x6000) as usize]
+//            println!("Reading address: 0x{:04x}", address);
+//            0
         } else if address < 0xC000 {
             let rom_addr = Mmc1::prg_rom_address(self.prg_rom_bank_first(), address);
             self.cartridge.prg_rom[rom_addr as usize]
@@ -124,8 +128,8 @@ impl Mapper for Mmc1 {
     }
 
     fn prg_write_byte(&mut self, address: u16, value: u8) {
-        if address < 0x8000 {
-            return;
+        if 0x6000 <= address && address < 0x8000 {
+            self.cartridge.prg_ram[(address - 0x6000) as usize] = value
         } else {
             if (value & 0x80) == 0 {
                 // If a 1 has been shifted into bit 0, it's time to write to a register
@@ -150,7 +154,7 @@ impl Mapper for Mmc1 {
 
     fn ppu_read_byte(&mut self, vram: &mut Vram, address: u16) -> u8 {
         if address < 0x2000 {
-            self.cartridge.prg_ram[address as usize]
+            self.cartridge.chr[address as usize]
         } else {
             vram.read_byte(self.mirror_address(address) - 0x2000)
         }
@@ -158,7 +162,7 @@ impl Mapper for Mmc1 {
 
     fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8) {
         if address < 0x2000 {
-            self.cartridge.prg_ram[address as usize] = value
+            self.cartridge.chr[address as usize] = value
         } else {
             vram.write_byte(self.mirror_address(address) - 0x2000, value);
         }
