@@ -68,16 +68,12 @@ impl Mmc1 {
                 2 => Mirroring::Vertical,
                 _ => Mirroring::Horizontal,
             };
-            println!("CHR MODE: {:?}, PRG MODE: {:?}, MIRRORING: {:?}, PRG FIRST: 0x{:02}, PRG LAST: 0x{:02}",
-                     self.chr_rom_mode(), self.prg_rom_mode(), self.cartridge.mirroring,
-                     self.prg_rom_bank_first(), self.prg_rom_bank_last());
         } else if address < 0xC000 {
             self.regs.chr_bank_0 = shift;
         } else if address <  0xE000 {
             self.regs.chr_bank_1 = shift;
         } else {
             self.regs.prg_bank = shift;
-            println!("PRG bank: {}, PRG FIRST: 0x{:02x}, PRG LAST: 0x{:02x}", shift, self.prg_rom_bank_first(), self.prg_rom_bank_last());
         }
 
     }
@@ -116,8 +112,6 @@ impl Mapper for Mmc1 {
             0
         } else if address < 0x8000 {
             self.cartridge.prg_ram[(address - 0x6000) as usize]
-//            println!("Reading address: 0x{:04x}", address);
-//            0
         } else if address < 0xC000 {
             let rom_addr = Mmc1::prg_rom_address(self.prg_rom_bank_first(), address);
             self.cartridge.prg_rom[rom_addr as usize]
