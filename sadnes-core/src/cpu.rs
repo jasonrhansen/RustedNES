@@ -157,11 +157,11 @@ impl Cpu {
         self.trigger_watchpoint = false;
         let cycles = self.cycles;
 
-        if !self.handle_interrupts(mem) {
-            let opcode = self.next_pc_byte(mem);
-            handle_opcode!(opcode, self, mem);
-            self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
-        }
+        self.handle_interrupts(mem);
+
+        let opcode = self.next_pc_byte(mem);
+        handle_opcode!(opcode, self, mem);
+        self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
 
         let cycles = (self.cycles - cycles) as u32;
 
@@ -770,7 +770,7 @@ impl Cpu {
     fn brk<M: Memory>(&mut self, mem: &mut M) {
         let pc = self.regs.pc;
         let status = self.regs.status | StatusFlags::BREAK_COMMAND | StatusFlags::EXPANSION;
-        self.push_word(mem, pc + 1);
+        self.push_word(mem, pc);
         self.push_byte(mem, status.bits());
         self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
         self.regs.pc = mem.read_word(BRK_VECTOR);
@@ -846,11 +846,10 @@ impl Cpu {
 
     fn handle_interrupt<M: Memory>(&mut self, mem: &mut M, vector: u16) {
         let pc = self.regs.pc;
-        let status = self.regs.status.bits();
         self.push_word(mem, pc);
-        self.push_byte(mem, status);
-        self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
+        self.php(mem);
         self.regs.pc = mem.read_word(vector);
+        self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
         self.interrupt = None;
         self.cycles += 7;
     }
