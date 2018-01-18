@@ -101,6 +101,11 @@ pub struct Ppu {
     sprite_pattern_shifts_hi: [u8; 8],
     sprite_attribute_latches: [u8; 8],
     sprite_x_counters: [u8; 8],
+
+    nmi_occurred: bool,
+    nmi_output: bool,
+    nmi_previous: bool,
+    nmi_delay: u8,
 }
 
 impl Ppu {
@@ -130,6 +135,10 @@ impl Ppu {
             sprite_pattern_shifts_hi: [0; 8],
             sprite_attribute_latches: [0; 8],
             sprite_x_counters: [0; 8],
+            nmi_occurred: false,
+            nmi_output: false,
+            nmi_previous: false,
+            nmi_delay: 0,
         }
     }
 
@@ -147,9 +156,16 @@ impl Ppu {
         self.regs.w = WriteToggle::FirstWrite;
 
 
-        let status = *self.regs.ppu_status | (self.ppu_gen_latch & 0x1F);
+        let mut status = *self.regs.ppu_status | (self.ppu_gen_latch & 0x1F);
 
-        self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
+        if self.nmi_occurred {
+            status |= 1 << 7;
+        }
+
+        self.nmi_occurred = false;
+        self.nmi_change();
+//        self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
+
 
         status
     }
@@ -180,8 +196,11 @@ impl Ppu {
 
     fn write_ppu_ctrl(&mut self, value: u8) {
         // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242000_write
-        self.regs.t = (self.regs.t & 0x73FF) | ((value as u16 & 0x03) << 10);
+        self.regs.t = (self.regs.t & 0xF3FF) | ((value as u16 & 0x03) << 10);
         *self.regs.ppu_ctrl = value;
+
+        self.nmi_output = (value>>7) & 0x01 == 0x01;
+        self.nmi_change();
     }
 
     fn write_ppu_scroll(&mut self, value: u8) {
@@ -260,19 +279,19 @@ impl Ppu {
         self.inc_ppu_addr();
     }
 
-    fn is_sprite_at_y_on_next_scanline(&mut self, y: u8) -> bool {
+    fn is_sprite_at_y_on_scanline(&mut self, y: u8) -> bool {
         if self.scanline < 0 {
             return false;
         }
 
-        let scanline = self.scanline as u16 + 1;
+        let scanline = self.scanline as u16;
         let y = y as u16;
         let height = self.regs.ppu_ctrl.sprite_size().height() as u16;
 
-        y < scanline && scanline <= y + height
+        y <= scanline && scanline < y + height
     }
 
-    fn evaluate_sprites_for_next_scanline(&mut self) {
+    fn evaluate_sprites_for_scanline(&mut self) {
         let mut count = 0;
 
         let mut n = 0;
@@ -281,7 +300,7 @@ impl Ppu {
             let index = 4 * n;
             let y = self.oam[index];
 
-            if self.is_sprite_at_y_on_next_scanline(y) {
+            if self.is_sprite_at_y_on_scanline(y) {
                 self.sprites[count] =
                     Some(Sprite::from_oam_bytes(&self.oam[index..index+4]));
                 count += 1;
@@ -302,7 +321,7 @@ impl Ppu {
             let index = 4 * n + m;
             let y = self.oam[index];
 
-            if self.is_sprite_at_y_on_next_scanline(y) {
+            if self.is_sprite_at_y_on_scanline(y) {
                 self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, true);
                 m += 3;
             } else {
@@ -561,6 +580,26 @@ impl Ppu {
         }
     }
 
+
+    fn nmi_change(&mut self) {
+        let nmi = self.nmi_output && self.nmi_occurred;
+        if nmi && !self.nmi_previous {
+            self.nmi_delay = 15;
+        }
+
+        self.nmi_previous = nmi;
+    }
+
+    fn set_vblank(&mut self) {
+        self.nmi_occurred = true;
+        self.nmi_change();
+    }
+
+    fn clear_vblank(&mut self) {
+        self.nmi_occurred = false;
+        self.nmi_change();
+    }
+
     fn scanline_cycle(&self) -> u64 {
         self.cycles - self.scanline_start_cycle
     }
@@ -587,11 +626,10 @@ impl Ppu {
         let on_visible_scanline =
             VISIBLE_START_SCANLINE <= self.scanline && self.scanline <= VISIBLE_END_SCANLINE;
         let on_visible_cycle =
-            on_visible_scanline && 1 <= scanline_cycle && scanline_cycle <= 256;
+            1 <= scanline_cycle && scanline_cycle <= 256;
 
         let on_fetch_scanline = self.scanline <= VISIBLE_END_SCANLINE;
         let on_fetch_cycle =
-            on_fetch_scanline &&
                 (on_visible_cycle ||
                     // Pre-fetch tiles for the next scanline
                     321 <= scanline_cycle && scanline_cycle <= 336);
@@ -599,11 +637,11 @@ impl Ppu {
 
         // Handle backgrounds
         if self.rendering_enabled() {
-            if on_visible_cycle {
+            if on_visible_scanline && on_visible_cycle {
                 self.render_pixel();
             }
 
-            if on_fetch_cycle {
+            if on_fetch_scanline && on_fetch_cycle {
                 self.shift_background_registers();
                 match scanline_cycle % 8 {
                     1 => self.fetch_name_table_byte(),
@@ -622,8 +660,7 @@ impl Ppu {
             }
 
             if on_fetch_scanline {
-                if scanline_cycle != 0 &&
-                    (scanline_cycle >= 328 || scanline_cycle <= 256) &&
+                if on_fetch_cycle &&
                     scanline_cycle % 8 == 0 {
                     // Increment the effective x scroll coordinate every 8 cycles
                     self.inc_coarse_x_with_wrap();
@@ -645,15 +682,10 @@ impl Ppu {
                     self.update_sprite_rendering_registers();
                 }
 
-                if scanline_cycle == 65 {
-                    self.evaluate_sprites_for_next_scanline();
-                }
-            }
-
-            if self.scanline <= VISIBLE_END_SCANLINE {
-                if 257 <= scanline_cycle && scanline_cycle <= 320 {
-                    if scanline_cycle % 8 == 0 {
-                        self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
+                if scanline_cycle == 257 {
+                    self.evaluate_sprites_for_scanline();
+                    for i in 0..8 {
+                        self.fetch_sprite_tile(i);
                     }
                 }
             }
@@ -662,6 +694,7 @@ impl Ppu {
         match self.scanline {
             PRE_RENDER_SCANLINE => {
                 if scanline_cycle == 1 {
+                    self.clear_vblank();
                     self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
                     self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, false);
                 }
@@ -675,18 +708,17 @@ impl Ppu {
             },
             VBLANK_START_SCANLINE => {
                 if scanline_cycle == 1 {
-                    self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, true);
-                    if self.regs.ppu_ctrl.generate_nmi_vblank() {
-                        interrupt = Some(Interrupt::Nmi);
-                    }
-                }
-            },
-            VBLANK_END_SCANLINE => {
-                if scanline_cycle == 0 {
-                    self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
+                    self.set_vblank();
                 }
             },
             _ => (),
+        }
+
+        if self.nmi_delay > 0 {
+            self.nmi_delay -= 1;
+            if self.nmi_delay == 0 && self.nmi_output && self.nmi_occurred {
+                interrupt = Some(Interrupt::Nmi);
+            }
         }
 
         self.cycles += 1;
@@ -694,7 +726,8 @@ impl Ppu {
         if scanline_cycle >= CYCLES_PER_SCANLINE ||
             // On pre-render scanline, for odd frames,
             // the cycle at the end of the scanline is skipped
-            (self.scanline == PRE_RENDER_SCANLINE &&
+            (self.rendering_enabled() &&
+                self.scanline == PRE_RENDER_SCANLINE &&
                 scanline_cycle == CYCLES_PER_SCANLINE - 1 &&
                 self.frame % 2 != 0) {
             self.scanline_start_cycle = self.cycles;
@@ -883,7 +916,6 @@ bitflags! {
         const NONE            = 0;
         const SPRITE_OVERFLOW = 1 << 5;
         const SPRITE_ZERO_HIT = 1 << 6;
-        const VBLANK_STARTED  = 1 << 7;
     }
 }
 
@@ -1050,7 +1082,7 @@ impl PaletteRam {
     }
 
     fn index(address: u16) -> usize {
-        let index = (address & 0x00FF) as usize;
+        let index = (address & 0x001F) as usize;
 
         // Addresses 0x3F10/0x3F14/0x3F18/0x3F1C are mirrors of 0x3F00/0x3F04/0x3F08/0x3F0C
         if index >= 0x10 && index % 4 == 0 {
