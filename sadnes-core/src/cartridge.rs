@@ -17,7 +17,24 @@ pub const PRG_RAM_BANK_SIZE: u16 = 8 * 1024;
 pub enum Mirroring {
     Horizontal,
     Vertical,
+    OneScreenLower,
+    OneScreenUpper,
     FourScreen,
+}
+
+impl Mirroring {
+    pub fn mirror_address(&self, address: u16) -> u16 {
+        match *self {
+            Mirroring::Horizontal => {
+                let address = address & 0x2BFF;
+                if address < 0x2800 { address } else { address - 0x0400 }
+            },
+            Mirroring::Vertical => address & 0x27FF,
+            Mirroring::OneScreenLower => address & 0x23FF,
+            Mirroring::OneScreenUpper => (address & 0x27FF) | 0x0400,
+            Mirroring::FourScreen => address,
+        }
+    }
 }
 
 #[derive(Debug)]

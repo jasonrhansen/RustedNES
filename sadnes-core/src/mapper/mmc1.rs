@@ -1,4 +1,4 @@
-use cartridge::{Cartridge, PRG_ROM_BANK_SIZE};
+use cartridge::{Cartridge, Mirroring, PRG_ROM_BANK_SIZE};
 use mapper::Mapper;
 use memory::Memory;
 use ppu::Vram;
@@ -17,19 +17,14 @@ pub struct Mmc1 {
     regs: Regs,
 }
 
-enum Mirroring {
-    OneScreenLower,
-    OneScreenUpper,
-    Vertical,
-    Horizontal,
-}
-
+#[derive(Debug)]
 enum PrgRomMode {
     Switch32Kb,    // Switch 32 KB at $8000, ignoring low bit of bank number
     FixFirstBank,  // Fix first bank at $8000 and switch 16 KB bank at $C000
     FixLastBank,   // Fix last bank at $C000 and switch 16 KB bank at $8000
 }
 
+#[derive(Debug)]
 enum ChrRomMode {
     Switch8Kb,     // Switch 8 KB at a time
     Switch4Kb,     // Switch two separate 4 KB banks
@@ -44,15 +39,6 @@ impl Mmc1 {
             cartridge,
             shift: SHIFT_REGISTER_DEFAULT,
             regs: Regs::default(),
-        }
-    }
-
-    fn mirroring(&self) -> Mirroring {
-        match self.regs.control & 0x03 {
-            0 => Mirroring::OneScreenLower,
-            1 => Mirroring::OneScreenUpper,
-            2 => Mirroring::Vertical,
-            _ => Mirroring::Horizontal,
         }
     }
 
@@ -76,29 +62,40 @@ impl Mmc1 {
     fn write_register(&mut self, address: u16, shift: u8) {
         if address < 0xA000 {
             self.regs.control = shift;
+            self.cartridge.mirroring = match self.regs.control & 0x03 {
+                0 => Mirroring::OneScreenLower,
+                1 => Mirroring::OneScreenUpper,
+                2 => Mirroring::Vertical,
+                _ => Mirroring::Horizontal,
+            };
+            println!("CHR MODE: {:?}, PRG MODE: {:?}, MIRRORING: {:?}, PRG FIRST: 0x{:02}, PRG LAST: 0x{:02}",
+                     self.prg_rom_mode(), self.chr_rom_mode(), self.cartridge.mirroring,
+                     self.prg_rom_bank_first(), self.prg_rom_bank_last());
         } else if address < 0xC000 {
             self.regs.chr_bank_0 = shift;
-        } else if address <  0xE00 {
+        } else if address <  0xE000 {
             self.regs.chr_bank_1 = shift;
         } else {
             self.regs.prg_bank = shift;
+            println!("PRG bank: {}, PRG FIRST: 0x{:02x}, PRG LAST: 0x{:02x}", shift, self.prg_rom_bank_first(), self.prg_rom_bank_last());
         }
+
     }
 
     fn prg_rom_bank_first(&self) -> u8 {
         match self.prg_rom_mode() {
-            PrgRomMode::Switch32Kb => self.regs.prg_bank & 0x0E,
+            PrgRomMode::Switch32Kb => self.regs.prg_bank & 0xFE,
             PrgRomMode::FixFirstBank => 0,
-            PrgRomMode::FixLastBank => (self.regs.prg_bank & 0x0F),
+            PrgRomMode::FixLastBank => self.regs.prg_bank,
         }
     }
 
     fn prg_rom_bank_last(&self) -> u8 {
         match self.prg_rom_mode() {
-            PrgRomMode::Switch32Kb => (self.regs.prg_bank & 0x0E) | 0x01,
-            PrgRomMode::FixFirstBank => (self.regs.prg_bank & 0x0F),
+            PrgRomMode::Switch32Kb => (self.regs.prg_bank & 0xFE) | 0x01,
+            PrgRomMode::FixFirstBank => self.regs.prg_bank,
             PrgRomMode::FixLastBank => {
-                (self.cartridge.prg_rom.len() - PRG_ROM_BANK_SIZE as usize) as u8
+                ((self.cartridge.prg_rom.len() / PRG_ROM_BANK_SIZE as usize) - 1) as u8
             },
         }
     }
@@ -108,23 +105,8 @@ impl Mmc1 {
             (address as usize & (PRG_ROM_BANK_SIZE as usize - 1))
     }
 
-    fn mirror(&self, address: u16) -> u16 {
-        // 0x3000-0x3EFF are mirrors of 0x2000-0x2EFF
-        let address = address & 0x2FFF;
-
-        match self.mirroring() {
-            Mirroring::Horizontal => {
-                let address = address & 0x2BFF;
-                if address < 0x2800 {
-                    address
-                } else {
-                    address - 0x0400
-                }
-            },
-            Mirroring::Vertical => address & 0x27FF,
-            Mirroring::OneScreenLower => address & 0x23FF,
-            Mirroring::OneScreenUpper => (address & 0x27FF) | 0x0400,
-        }
+    fn mirror_address(&self, address: u16) -> u16 {
+        self.cartridge.mirroring.mirror_address(address)
     }
 }
 
@@ -132,8 +114,6 @@ impl Mapper for Mmc1 {
     fn prg_read_byte(&mut self, address: u16) -> u8 {
         if address < 0x6000 {
             0
-        } else if address < 0x8000 {
-            self.cartridge.prg_ram[(address & 0x1FFF) as usize]
         } else if address < 0xC000 {
             let rom_addr = Mmc1::prg_rom_address(self.prg_rom_bank_first(), address);
             self.cartridge.prg_rom[rom_addr as usize]
@@ -145,7 +125,7 @@ impl Mapper for Mmc1 {
 
     fn prg_write_byte(&mut self, address: u16, value: u8) {
         if address < 0x8000 {
-            self.cartridge.prg_ram[(address & 0x1FFF) as usize] = value;
+            return;
         } else {
             if (value & 0x80) == 0 {
                 // If a 1 has been shifted into bit 0, it's time to write to a register
@@ -170,17 +150,17 @@ impl Mapper for Mmc1 {
 
     fn ppu_read_byte(&mut self, vram: &mut Vram, address: u16) -> u8 {
         if address < 0x2000 {
-            self.cartridge.chr_rom[address as usize]
+            self.cartridge.prg_ram[address as usize]
         } else {
-            vram.read_byte(self.mirror(address) - 0x2000)
+            vram.read_byte(self.mirror_address(address) - 0x2000)
         }
     }
 
     fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8) {
         if address < 0x2000 {
-            self.cartridge.chr_rom[address as usize] = value
+            self.cartridge.prg_ram[address as usize] = value
         } else {
-            vram.write_byte(self.mirror(address) - 0x2000, value);
+            vram.write_byte(self.mirror_address(address) - 0x2000, value);
         }
     }
 }
