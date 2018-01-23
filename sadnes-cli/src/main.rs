@@ -21,6 +21,7 @@ mod cpal_driver;
 use std::fs::File;
 
 use sadnes_core::cartridge::*;
+use sadnes_core::audio_driver::*;
 
 use argparse::*;
 use emulator::*;
@@ -48,6 +49,8 @@ fn load_rom(filename: &str) -> Result<Cartridge, LoadError> {
 
 fn run_rom(rom: Cartridge, start_debugger: bool) {
     let audio_driver = CpalDriver::new(SAMPLE_RATE, 100).unwrap();
+
+    println!("audio sample rate: {}", audio_driver.sample_rate());
 
     let mut emulator = Emulator::new(rom, audio_driver);
 

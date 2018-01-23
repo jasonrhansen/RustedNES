@@ -119,7 +119,7 @@ impl Emulator {
                 Mode::Running => {
                     let mut start_debugger = false;
                     while self.emulated_cycles < target_cycles && !start_debugger {
-                        let (cycles, trigger_watchpoint) =
+                        let (_cycles, trigger_watchpoint) =
                             self.step(&mut video_frame_sink, &mut audio_frame_sink);
 
                         if trigger_watchpoint ||

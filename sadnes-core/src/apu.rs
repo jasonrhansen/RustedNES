@@ -29,8 +29,6 @@ pub struct Apu {
     triangle: Triangle,
     noise: Noise,
     dmc: Dmc,
-//    control: Control,
-//    status: Status,
     frame_counter: FrameCounter,
 }
 
@@ -177,15 +175,27 @@ impl Apu {
             self.pulse_1.step_timer();
             self.pulse_2.step_timer();
         }
+    }
 
+    fn read_status(&mut self) -> u8 {
+        self.frame_counter.interrupt_inhibit = false;
+
+        (if self.pulse_1.length_counter > 0 { 1 } else { 0 }) |
+        ((if self.pulse_2.length_counter > 0 { 1 } else { 0 }) << 1)
+        // TODO: Add remaining status bits
+    }
+
+    fn write_status(&mut self, value: u8) {
+        self.pulse_1.enable_flag = (value & 0x01) != 0;
+        self.pulse_2.enable_flag = (value & 0x02) != 0;
+        // TODO: Enable Triangle, Noise, and DMC
     }
 }
 
 impl Memory for Apu {
     fn read_byte(&mut self, address: u16) -> u8 {
         if address == 0x4015 {
-            // TODO: Read Control
-            0
+            self.read_status()
         } else {
             0
         }
@@ -201,6 +211,7 @@ impl Memory for Apu {
             0x4005 => self.pulse_2.write_sweep(value),
             0x4006 => self.pulse_2.write_timer_lo(value),
             0x4007 => self.pulse_2.write_timer_hi(value),
+            0x4015 => self.write_status(value),
             _ => (),
         }
     }
