@@ -12,3 +12,5 @@ minifb = "0.10.3"
 sadnes-core = { path = "../sadnes-core" }
 time = "0.1"
 liner = "0.4.3"
+cpal = "0.4.6"
+futures = "0.1.14"

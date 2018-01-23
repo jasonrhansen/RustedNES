@@ -4,6 +4,8 @@ use std::fmt::{Debug, Formatter};
 
 use memory::Memory;
 
+pub const CPU_FREQUENCY: u64 = 1789773;
+
 bitflags! {
     pub struct StatusFlags: u8 {
         const NONE              = 0;

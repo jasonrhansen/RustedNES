@@ -6,6 +6,8 @@ extern crate time;
 extern crate combine;
 extern crate minifb;
 extern crate liner;
+extern crate cpal;
+extern crate futures;
 
 extern crate sadnes_core;
 
@@ -14,6 +16,7 @@ mod video_frame_sink;
 mod argparse;
 mod command;
 mod emulator;
+mod cpal_driver;
 
 use std::fs::File;
 
@@ -21,6 +24,9 @@ use sadnes_core::cartridge::*;
 
 use argparse::*;
 use emulator::*;
+use cpal_driver::*;
+
+const SAMPLE_RATE: u32 = 44000;
 
 fn main() {
     let config = parse_args();
@@ -41,7 +47,9 @@ fn load_rom(filename: &str) -> Result<Cartridge, LoadError> {
 }
 
 fn run_rom(rom: Cartridge, start_debugger: bool) {
-    let mut emulator = Emulator::new(rom);
+    let audio_driver = CpalDriver::new(SAMPLE_RATE, 100).unwrap();
+
+    let mut emulator = Emulator::new(rom, audio_driver);
 
     emulator.run(start_debugger);
 }

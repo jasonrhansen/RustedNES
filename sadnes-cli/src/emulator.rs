@@ -13,6 +13,8 @@ use sadnes_core::ppu::{SCREEN_WIDTH, SCREEN_HEIGHT};
 use sadnes_core::sink::*;
 use sadnes_core::memory::Memory;
 use sadnes_core::input::Button;
+use sadnes_core::cpu::CPU_FREQUENCY;
+use sadnes_core::audio_driver::AudioDriver;
 
 use std::collections::{HashSet, HashMap};
 use std::thread;
@@ -20,7 +22,9 @@ use std::time;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::cmp::min;
 
-const CPU_CYCLE_TIME_NS: u64 = 559;
+const CPU_CYCLE_TIME_NS: u64 = (1e9 as f64 / CPU_FREQUENCY as f64) as u64 + 1;
+
+//const CPU_CYCLE_TIME_NS: u64 = 559;
 
 #[derive(PartialEq, Eq)]
 enum Mode {
@@ -43,12 +47,14 @@ pub struct Emulator {
     prompt_sender: Sender<String>,
     stdin_receiver: Receiver<String>,
 
+    audio_buffer_sink: Box<SinkRef<[AudioFrame]>>,
+
     start_time_ns: u64,
     emulated_cycles: u64,
 }
 
 impl Emulator {
-    pub fn new(cartridge: Cartridge) -> Emulator {
+    pub fn new<A: AudioDriver>(cartridge: Cartridge, audio_driver: A) -> Emulator {
         let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
         let _stdin_thread = thread::spawn(move || {
@@ -76,7 +82,7 @@ impl Emulator {
                                 }
             ).unwrap(),
 
-            nes: Nes::new(cartridge),
+            nes: Nes::new(cartridge, audio_driver.sample_rate()),
             mode: Mode::Running,
 
             breakpoints: HashSet::new(),
@@ -84,6 +90,8 @@ impl Emulator {
 
             prompt_sender,
             stdin_receiver,
+
+            audio_buffer_sink: audio_driver.sink(),
 
             cursor: 0,
             last_command: None,
@@ -143,9 +151,11 @@ impl Emulator {
                         self.start_debugger();
                     }
                 }
-            } else {
-                thread::sleep(time::Duration::from_millis(3));
             }
+
+            self.audio_buffer_sink.append(audio_frame_sink.as_slices().0);
+
+            thread::sleep(time::Duration::from_millis(3));
         }
     }
 

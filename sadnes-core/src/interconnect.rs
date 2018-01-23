@@ -21,11 +21,11 @@ pub struct Interconnect {
 }
 
 impl Interconnect {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: *mut Cpu) -> Self {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: *mut Cpu, audio_sample_rate: u64) -> Self {
         Interconnect {
             ram: Ram::new(),
             ppu: Ppu::new(mapper.clone()),
-            apu: Apu{},
+            apu: Apu::new(audio_sample_rate),
             input: Input::new(),
             mapper,
             cpu,
@@ -88,13 +88,12 @@ impl Memory for Interconnect {
 
 impl Interconnect {
     pub fn cycles(&mut self,
+                  cpu: &mut Cpu,
                   cycles: u32,
                   video_frame_sink: &mut Sink<VideoFrame>,
-                  audio_frame_sink: &mut Sink<AudioFrame>) -> Option<Interrupt> {
-        let interrupt = self.ppu.cycles(cycles, video_frame_sink);
-        self.apu.cycles(cycles, audio_frame_sink);
-
-        interrupt
+                  audio_frame_sink: &mut Sink<AudioFrame>) {
+        self.ppu.cycles(cpu, cycles, video_frame_sink);
+        self.apu.cycles(cpu, cycles, audio_frame_sink);
     }
 
     pub fn reset(&mut self) {

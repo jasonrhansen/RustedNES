@@ -18,3 +18,5 @@ pub mod disassembler;
 pub mod interconnect;
 pub mod nes;
 pub mod sink;
+pub mod time_source;
+pub mod audio_driver;

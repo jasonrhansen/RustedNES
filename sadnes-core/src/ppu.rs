@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use bit_reverse::ParallelReverse;
 
-use cpu::Interrupt;
+use cpu::{Cpu, Interrupt};
 use mapper::Mapper;
 use memory::Memory;
 use sink::*;
@@ -606,22 +606,17 @@ impl Ppu {
 
     // Run for the given number of cpu cycles
     pub fn cycles(&mut self,
+                  cpu: &mut Cpu,
                   cycles: u32,
-                  video_frame_sink: &mut Sink<VideoFrame>) -> Option<Interrupt> {
-        let mut interrupt = None;
+                  video_frame_sink: &mut Sink<VideoFrame>) {
         // 3 PPU cycles per CPU cycle
         for _ in 0..cycles * 3 {
-            if let Some(step_interrupt) = self.step(video_frame_sink) {
-                interrupt = Some(step_interrupt);
-            }
+            self.step(cpu, video_frame_sink);
         }
-
-        interrupt
     }
 
-    fn step(&mut self, video_frame_sink: &mut Sink<VideoFrame>) -> Option<Interrupt> {
+    fn step(&mut self, cpu: &mut Cpu, video_frame_sink: &mut Sink<VideoFrame>) {
         let scanline_cycle = self.scanline_cycle();
-        let mut interrupt = None;
 
         let on_visible_scanline =
             VISIBLE_START_SCANLINE <= self.scanline && self.scanline <= VISIBLE_END_SCANLINE;
@@ -630,9 +625,9 @@ impl Ppu {
 
         let on_fetch_scanline = self.scanline <= VISIBLE_END_SCANLINE;
         let on_fetch_cycle =
-                (on_visible_cycle ||
+                on_visible_cycle ||
                     // Pre-fetch tiles for the next scanline
-                    321 <= scanline_cycle && scanline_cycle <= 336);
+                    321 <= scanline_cycle && scanline_cycle <= 336;
 
 
         // Handle backgrounds
@@ -717,7 +712,7 @@ impl Ppu {
         if self.nmi_delay > 0 {
             self.nmi_delay -= 1;
             if self.nmi_delay == 0 && self.nmi_output && self.nmi_occurred {
-                interrupt = Some(Interrupt::Nmi);
+                cpu.request_interrupt(Interrupt::Nmi)
             }
         }
 
@@ -738,8 +733,6 @@ impl Ppu {
             self.scanline = PRE_RENDER_SCANLINE;
             self.frame += 1;
         }
-
-        interrupt
     }
 }
 

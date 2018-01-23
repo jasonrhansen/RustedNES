@@ -13,7 +13,7 @@ pub struct Nes {
 }
 
 impl Nes {
-    pub fn new(cartridge: Cartridge) -> Nes {
+    pub fn new(cartridge: Cartridge, audio_sample_rate: u64) -> Nes {
         let mapper = Rc::new(
             RefCell::new(
                 mapper::create_mapper(Box::new(cartridge))
@@ -22,7 +22,7 @@ impl Nes {
 
         let mut cpu = Cpu::new();
 
-        let interconnect = Interconnect::new(mapper, &mut cpu as *mut Cpu);
+        let interconnect = Interconnect::new(mapper, &mut cpu as *mut Cpu, audio_sample_rate);
 
         let mut nes = Nes {
             interconnect,
@@ -45,11 +45,7 @@ impl Nes {
         let (cpu_cycles, trigger_watchpoint) =
             self.cpu.step(&mut self.interconnect);
 
-        if let Some(interrupt) = self.interconnect.cycles(cpu_cycles,
-                                                          video_frame_sink,
-                                                          audio_frame_sink) {
-            self.cpu.request_interrupt(interrupt);
-        }
+        self.interconnect.cycles(&mut self.cpu, cpu_cycles, video_frame_sink, audio_frame_sink);
 
         (cpu_cycles, trigger_watchpoint)
     }
