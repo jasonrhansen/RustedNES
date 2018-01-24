@@ -75,7 +75,7 @@ impl Memory for Interconnect {
             self.ppu.write_byte(address, value);
         } else if address == OAMDMA_ADDRESS {
             self.handle_oam_dma(value);
-        } else if address < 0x4016 {
+        } else if address < 0x4016 || address == 0x4017 {
             self.apu.write_byte(address, value);
         } else if address < 0x4018 {
             self.input.write_byte(address, value);

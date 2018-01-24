@@ -27,7 +27,7 @@ use argparse::*;
 use emulator::*;
 use cpal_driver::*;
 
-const SAMPLE_RATE: u32 = 44000;
+const SAMPLE_RATE: u32 = 44100;
 
 fn main() {
     let config = parse_args();

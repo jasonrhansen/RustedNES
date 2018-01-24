@@ -11,10 +11,22 @@ static DUTY_CYCLE_TABLE: &'static [[u8; 8]] = &[
 ];
 
 static LENGTH_TABLE: &'static [u8] = &[
-    10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14,
-	12, 16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
+    10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
+	12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
 ];
 
+static TRIANGLE_TABLE: &'static [u8] = &[
+    15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0,
+     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+];
+
+static NOISE_TABLE: &'static [u16] = &[
+    4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068,
+];
+
+static DMC_TABLE: &'static [u8] = &[
+    214, 190, 170, 160, 143, 127, 113, 107, 95, 80, 71, 64, 53, 42, 36, 27,
+];
 
 pub struct Apu {
     cycles: u64,
@@ -66,11 +78,11 @@ impl Apu {
     }
 
     fn step(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut Sink<AudioFrame>) {
-        self.cycles += 1;
-
         self.step_timer();
         self.step_frame_counter(cpu);
         self.step_samples(audio_frame_sink);
+
+        self.cycles += 1;
     }
 
     fn step_samples(&mut self, audio_frame_sink: &mut Sink<AudioFrame>) {
@@ -106,21 +118,18 @@ impl Apu {
             FrameCounterMode::FourStep => {
                 self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 4;
                 match self.frame_counter.sequence_frame {
-                    0 => {
+                    0 | 2 => {
                         self.step_envelope_and_linear_counter();
                     },
                     1 => {
-                        self.step_length_counter();
-                        self.step_sweep();
                         self.step_envelope_and_linear_counter();
+                        self.step_sweep();
+                        self.step_length_counter();
                     },
-                    2 => {
-                        self.step_envelope_and_linear_counter();
-                    }
                     3 => {
-                        self.step_length_counter();
-                        self.step_sweep();
                         self.step_envelope_and_linear_counter();
+                        self.step_sweep();
+                        self.step_length_counter();
                         if !self.frame_counter.interrupt_inhibit {
                             cpu.request_interrupt(Interrupt::Irq);
                         }
@@ -131,22 +140,12 @@ impl Apu {
             FrameCounterMode::FiveStep => {
                 self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 5;
                 match self.frame_counter.sequence_frame {
-                    0 => {
-                        self.step_length_counter();
-                        self.step_sweep();
+                    0 | 2 => {
                         self.step_envelope_and_linear_counter();
-                    },
-                    1 => {
-                        self.step_envelope_and_linear_counter();
-                    },
-                    2 => {
-                        self.step_length_counter();
                         self.step_sweep();
-                        self.step_envelope_and_linear_counter();
-                    },
-                    3 => {
                         self.step_length_counter();
-                        self.step_sweep();
+                    },
+                    1 | 3 => {
                         self.step_envelope_and_linear_counter();
                     },
                     _ => (),
@@ -158,6 +157,8 @@ impl Apu {
     fn step_length_counter(&mut self) {
         self.pulse_1.step_length_counter();
         self.pulse_2.step_length_counter();
+        self.triangle.step_length_counter();
+        self.noise.step_length_counter();
     }
 
     fn step_sweep(&mut self) {
@@ -168,27 +169,76 @@ impl Apu {
     fn step_envelope_and_linear_counter(&mut self) {
         self.pulse_1.step_envelope();
         self.pulse_2.step_envelope();
+        self.triangle.step_linear_counter();
+        self.noise.step_envelope();
     }
 
     fn step_timer(&mut self) {
         if self.cycles % 2 == 0 {
             self.pulse_1.step_timer();
             self.pulse_2.step_timer();
+            self.noise.step_timer();
+            self.dmc.step_timer();
         }
+
+        self.triangle.step_timer();
     }
 
     fn read_status(&mut self) -> u8 {
         self.frame_counter.interrupt_inhibit = false;
 
-        (if self.pulse_1.length_counter > 0 { 1 } else { 0 }) |
-        ((if self.pulse_2.length_counter > 0 { 1 } else { 0 }) << 1)
+        let mut status = 0x00;
+
+        if self.pulse_1.length_counter > 0 {
+            status |= 0x01;
+        }
+
+        if self.pulse_2.length_counter > 0 {
+            status |= 0x02;
+        }
+
+        if self.triangle.length_counter > 0 {
+            status |= 0x04;
+        }
+
         // TODO: Add remaining status bits
+
+        status
     }
 
     fn write_status(&mut self, value: u8) {
         self.pulse_1.enable_flag = (value & 0x01) != 0;
+        if !self.pulse_1.enable_flag {
+            self.pulse_1.length_counter = 0;
+        }
+
         self.pulse_2.enable_flag = (value & 0x02) != 0;
-        // TODO: Enable Triangle, Noise, and DMC
+        if !self.pulse_2.enable_flag {
+            self.pulse_2.length_counter = 0;
+        }
+
+        self.triangle.enable_flag = (value & 0x04) != 0;
+        if !self.triangle.enable_flag {
+            self.triangle.length_counter = 0;
+        }
+
+        // TODO: Enable Noise, and DMC
+    }
+
+    fn write_frame_counter(&mut self, value: u8) {
+        self.frame_counter.mode = if value & 0x80 == 0 {
+            FrameCounterMode::FourStep
+        } else {
+            FrameCounterMode::FiveStep
+        };
+
+        self.frame_counter.interrupt_inhibit = (value & 0x40 != 0);
+
+        if self.frame_counter.mode == FrameCounterMode::FiveStep {
+            self.step_length_counter();
+            self.step_sweep();
+            self.step_envelope_and_linear_counter();
+        }
     }
 }
 
@@ -211,7 +261,14 @@ impl Memory for Apu {
             0x4005 => self.pulse_2.write_sweep(value),
             0x4006 => self.pulse_2.write_timer_lo(value),
             0x4007 => self.pulse_2.write_timer_hi(value),
+            0x4008 => self.triangle.write_linear_counter(value),
+            0x400A => self.triangle.write_timer_lo(value),
+            0x400B => self.triangle.write_length_counter_and_timer_hi(value),
+            0x400C => self.noise.write_control(value),
+            0x400E => self.noise.write_mode_and_timer_period(value),
+            0x400F => self.noise.write_length_counter_and_envelope_restart(value),
             0x4015 => self.write_status(value),
+            0x4017 => self.write_frame_counter(value),
             _ => (),
         }
     }
@@ -228,7 +285,7 @@ struct Envelope {
     loop_flag: bool,
     constant_volume_flag: bool,
     volume: u8,
-    divider: u8,
+    value: u8,
     period: u8,
 }
 
@@ -240,7 +297,7 @@ impl Envelope {
             loop_flag: false,
             constant_volume_flag: false,
             volume: 0,
-            divider: 0,
+            value: 0,
             period: 0,
         }
     }
@@ -249,17 +306,17 @@ impl Envelope {
         if self.start_flag {
             self.start_flag = false;
             self.volume = 15;
-            self.divider = self.period;
-        } else if self.divider == 0 {
+            self.value = self.period;
+        } else if self.value > 0 {
+            self.value -= 1;
+        } else {
             if self.volume > 0 {
                 self.volume -= 1;
             } else if self.loop_flag {
                 self.volume = 15;
             }
 
-            self.divider = self.period;
-        } else {
-            self.divider -= 1;
+            self.value = self.period;
         }
     }
 }
@@ -399,49 +456,181 @@ impl Pulse {
     }
 
     fn output(&self) -> u8 {
-        if !self.enable_flag {
-            return 0
-        } else if self.length_counter == 0 {
-            return 0
-        } else if DUTY_CYCLE_TABLE[self.duty_mode as usize][self.duty_cycle as usize] == 0 {
-            return 0
-        } else if self.timer_period < 8 || self.timer_period > 0x7FF {
-            return 0
-        }
-
-        if self.envelope.enable_flag {
-            return self.envelope.volume
+        if !self.enable_flag ||
+            self.length_counter == 0 ||
+            DUTY_CYCLE_TABLE[self.duty_mode as usize][self.duty_cycle as usize] == 0 ||
+            self.timer_period < 8 ||
+            self.timer_period > 0x7FF {
+            0
+        } else if self.envelope.enable_flag {
+            self.envelope.volume
         } else {
-            return self.constant_volume;
+            self.constant_volume
         }
     }
 }
 
 struct Triangle {
-
+    enable_flag: bool,
+    control_flag: bool,
+    timer_value: u16,
+    timer_period: u16,
+    length_counter_enable: bool,
+    length_counter: u8,
+    linear_counter_period: u8,
+    linear_counter_value: u8,
+    linear_counter_reload: bool,
+    duty_cycle: u8,
 }
 
 impl Triangle {
     fn new() -> Triangle {
-        Triangle {}
+        Triangle {
+            enable_flag: false,
+            control_flag: false,
+            timer_value: 0,
+            timer_period: 0,
+            length_counter_enable: false,
+            length_counter: 0,
+            linear_counter_period: 0,
+            linear_counter_value: 0,
+            linear_counter_reload: false,
+            duty_cycle: 0,
+        }
+    }
+
+    fn write_linear_counter(&mut self, value: u8) {
+        self.control_flag = (value & 0x80 != 0);
+        self.length_counter_enable = !self.control_flag;
+        self.linear_counter_period = value & 0x7F;
+    }
+
+    fn write_timer_lo(&mut self, value: u8) {
+        self.timer_period = (self.timer_period & 0xFF00) | (value as u16);
+    }
+
+    fn write_length_counter_and_timer_hi(&mut self, value: u8) {
+        self.length_counter = LENGTH_TABLE[(value>>3) as usize];
+        self.timer_period = (self.timer_period & 0x00FF) | (((value & 0x07) as u16) << 8);
+        self.timer_value = self.timer_period;
+        self.linear_counter_reload = true;
+    }
+
+    fn step_timer(&mut self) {
+        if self.timer_value == 0 {
+            self.timer_value = self.timer_period;
+            if self.length_counter > 0 && self.linear_counter_value > 0 {
+                self.duty_cycle = (self.duty_cycle + 1) % 32;
+            }
+        } else {
+            self.timer_value -= 1;
+        }
+    }
+
+    fn step_length_counter(&mut self) {
+        if self.length_counter_enable && self.length_counter > 0 {
+            self.length_counter -= 1;
+        }
+    }
+
+    fn step_linear_counter(&mut self) {
+        if self.linear_counter_reload {
+            self.linear_counter_value = self.linear_counter_period;
+        } else if self.linear_counter_value > 0 {
+            self.linear_counter_value -= 1;
+        }
+
+        if self.length_counter_enable {
+            self.linear_counter_reload = false;
+        }
     }
 
     fn output(&self) -> u8 {
-        0
+        if !self.enable_flag || self.length_counter == 0 || self.linear_counter_value == 0 {
+            0
+        } else {
+            TRIANGLE_TABLE[self.duty_cycle as usize]
+        }
     }
 }
 
 struct Noise {
-
+    enable_flag: bool,
+    mode: bool,
+    linear_feedback_shift: u16,
+    timer_value: u16,
+    timer_period: u16,
+    length_counter_enable: bool,
+    length_counter: u8,
+    envelope: Envelope,
+    constant_volume: u8,
 }
 
 impl Noise {
     fn new() -> Noise {
-        Noise {}
+        Noise {
+            enable_flag: false,
+            mode: false,
+            linear_feedback_shift: 0,
+            timer_value: 0,
+            timer_period: 0,
+            length_counter_enable: false,
+            length_counter: 0,
+            envelope: Envelope::new(),
+            constant_volume: 0,
+        }
+    }
+
+    fn write_control(&mut self, value: u8) {
+        self.length_counter_enable = (value & 0x20) == 0;
+        self.envelope.loop_flag = !self.length_counter_enable;
+        self.envelope.enable_flag = (value & 0x10) == 0;
+        self.constant_volume = value & 0x0F;
+        self.envelope.period = self.constant_volume;
+        self.envelope.start_flag = true;
+    }
+
+    fn write_mode_and_timer_period(&mut self, value: u8) {
+        self.mode = (value & 0x80) != 0;
+        self.timer_period = NOISE_TABLE[(value & 0x0F) as usize];
+    }
+
+    fn write_length_counter_and_envelope_restart(&mut self, value: u8) {
+        self.length_counter = LENGTH_TABLE[(value >> 3) as usize];
+        self.envelope.start_flag = true;
+    }
+
+    fn step_timer(&mut self) {
+        if self.timer_value == 0 {
+            self.timer_value = self.timer_period;
+            let shift = if self.mode { 6 } else { 1 };
+            let b1 = self.linear_feedback_shift & 0x0001;
+            let b2 = (self.linear_feedback_shift >> shift) & 0x0001;
+            self.linear_feedback_shift >>= 1;
+            self.linear_feedback_shift |= (b1 ^ b2) << 14;
+        } else {
+            self.timer_value -= 1;
+        }
+    }
+
+    fn step_envelope(&mut self) {
+        self.envelope.step();
+    }
+
+    fn step_length_counter(&mut self) {
+        if self.length_counter_enable && self.length_counter > 0 {
+            self.length_counter -= 1;
+        }
     }
 
     fn output(&self) -> u8 {
-        0
+        if !self.enable_flag || self.length_counter == 0 || self.linear_feedback_shift & 0x0001 == 1 {
+            0
+        } else if self.envelope.enable_flag {
+            self.envelope.volume
+        } else {
+            self.constant_volume
+        }
     }
 }
 
@@ -453,11 +642,15 @@ impl Dmc {
         Dmc {}
     }
 
+    fn step_timer(&mut self) {
+    }
+
     fn output(&self) -> u8 {
         0
     }
 }
 
+#[derive(Eq, PartialEq)]
 enum FrameCounterMode {
     FourStep,
     FiveStep,
