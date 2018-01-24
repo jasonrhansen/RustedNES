@@ -176,7 +176,7 @@ impl CpalDriver {
         });
 
         Ok(CpalDriver {
-            ring_buffer: ring_buffer,
+            ring_buffer,
             sample_rate,
 
             _voice: voice,

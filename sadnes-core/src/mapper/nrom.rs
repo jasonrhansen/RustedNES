@@ -1,4 +1,4 @@
-use cartridge::{Cartridge, Mirroring, PRG_ROM_BANK_SIZE};
+use cartridge::{Cartridge, PRG_ROM_BANK_SIZE};
 use mapper::Mapper;
 use memory::Memory;
 use ppu::Vram;

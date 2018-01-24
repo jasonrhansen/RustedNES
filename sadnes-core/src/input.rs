@@ -127,7 +127,7 @@ impl Memory for Input {
         }
     }
 
-    fn write_byte(&mut self, address: u16, value: u8) {
+    fn write_byte(&mut self, address: u16, _value: u8) {
         if address == 0x4016 {
             self.reset_strobe_states();
         }

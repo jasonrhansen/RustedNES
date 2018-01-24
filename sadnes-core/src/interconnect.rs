@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use apu::Apu;
-use cpu::{Cpu, Interrupt};
+use cpu::Cpu;
 use input::Input;
 use mapper::Mapper;
 use memory::{Memory, Ram};

@@ -9,10 +9,6 @@ impl VideoFrameSink {
         VideoFrameSink { frame: None }
     }
 
-    pub fn has_frame(&self) -> bool {
-        self.frame.is_some()
-    }
-
     pub fn into_frame(self) -> Option<VideoFrame> {
         self.frame
     }

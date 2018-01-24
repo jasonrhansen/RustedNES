@@ -279,7 +279,7 @@ impl Ppu {
         self.inc_ppu_addr();
     }
 
-    fn is_sprite_at_y_on_scanline(&mut self, y: u8) -> bool {
+    fn is_sprite_at_y_on_scanline(&self, y: u8) -> bool {
         if self.scanline < 0 {
             return false;
         }
@@ -484,7 +484,7 @@ impl Ppu {
         let sprite_pattern = sprite_pixel & 0x03;
 
         let color = if background_pattern == 0 && sprite_pattern == 0 {
-            self.color_from_palette_index(0x3F00)
+            self.color_from_palette_index(0x00)
         } else if background_pattern == 0 && sprite_pattern > 0 {
             self.color_from_palette_index(sprite_pixel)
         } else if background_pattern > 0 && sprite_pattern == 0 {
@@ -812,16 +812,6 @@ impl SpriteSize {
 struct PpuCtrl { val: u8 }
 
 impl PpuCtrl {
-    fn base_name_table_address(&self) -> u16 {
-        match self.val & 0x03 {
-            0 => 0x2000,
-            1 => 0x2400,
-            2 => 0x2800,
-            3 => 0x2C00,
-            _ => 0, // Unreachable
-        }
-    }
-
     fn vram_address_increment(&self) -> VramAddressIncrement {
         if (self.val & 0x04) == 0 {
             VramAddressIncrement::Add1Across
@@ -845,11 +835,6 @@ impl PpuCtrl {
         } else {
             SpriteSize::Size8x16
         }
-    }
-
-    // Generate an NMI at the start of the vertical blanking interval
-    fn generate_nmi_vblank(&self) -> bool {
-        (self.val & 0x80) != 0
     }
 }
 
@@ -924,11 +909,6 @@ impl DerefMut for PpuStatus {
     fn deref_mut(&mut self) -> &mut u8 {
         &mut self.bits
     }
-}
-
-enum PpuScrollAxis {
-    X,
-    Y,
 }
 
 struct PpuScroll {
