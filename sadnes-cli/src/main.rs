@@ -27,7 +27,7 @@ use argparse::*;
 use emulator::*;
 use cpal_driver::*;
 
-const SAMPLE_RATE: u32 = 44100;
+const AUDIO_SAMPLE_RATE: u32 = 44_100;
 
 fn main() {
     let config = parse_args();
@@ -48,11 +48,15 @@ fn load_rom(filename: &str) -> Result<Cartridge, LoadError> {
 }
 
 fn run_rom(rom: Cartridge, start_debugger: bool) {
-    let audio_driver = CpalDriver::new(SAMPLE_RATE, 100).unwrap();
+    let audio_driver = CpalDriver::new(AUDIO_SAMPLE_RATE, 100).unwrap();
 
     println!("audio sample rate: {}", audio_driver.sample_rate());
 
-    let mut emulator = Emulator::new(rom, audio_driver);
+    let time_source = audio_driver.time_source();
+
+    let mut emulator = Emulator::new(rom,
+                                     Box::new(audio_driver),
+                                     time_source);
 
     emulator.run(start_debugger);
 }

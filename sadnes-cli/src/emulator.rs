@@ -1,5 +1,4 @@
 use minifb::{WindowOptions, Window, Key, KeyRepeat, Scale};
-use time::precise_time_ns;
 
 use command::*;
 use audio_frame_sink::AudioFrameSink;
@@ -15,6 +14,7 @@ use sadnes_core::memory::Memory;
 use sadnes_core::input::Button;
 use sadnes_core::cpu::CPU_FREQUENCY;
 use sadnes_core::audio_driver::AudioDriver;
+use sadnes_core::time_source::TimeSource;
 
 use std::collections::{HashSet, HashMap};
 use std::thread;
@@ -23,8 +23,6 @@ use std::sync::mpsc::{channel, Sender, Receiver};
 use std::cmp::min;
 
 const CPU_CYCLE_TIME_NS: u64 = (1e9 as f64 / CPU_FREQUENCY as f64) as u64 + 1;
-
-//const CPU_CYCLE_TIME_NS: u64 = 559;
 
 #[derive(PartialEq, Eq)]
 enum Mode {
@@ -49,12 +47,14 @@ pub struct Emulator {
 
     audio_buffer_sink: Box<SinkRef<[AudioFrame]>>,
 
+    time_source: Box<TimeSource>,
     start_time_ns: u64,
+
     emulated_cycles: u64,
 }
 
 impl Emulator {
-    pub fn new<A: AudioDriver>(cartridge: Cartridge, audio_driver: A) -> Emulator {
+    pub fn new(cartridge: Cartridge, audio_driver: Box<AudioDriver>, time_source: Box<TimeSource>) -> Emulator {
         let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
         let _stdin_thread = thread::spawn(move || {
@@ -96,13 +96,15 @@ impl Emulator {
             cursor: 0,
             last_command: None,
 
+            time_source,
             start_time_ns: 0,
+
             emulated_cycles: 0,
         }
     }
 
     pub fn run(&mut self, start_debugger: bool) {
-        self.start_time_ns = precise_time_ns();
+        self.start_time_ns = self.time_source.time_ns();
 
         if start_debugger {
             self.start_debugger();
@@ -112,7 +114,7 @@ impl Emulator {
             let mut video_frame_sink = VideoFrameSink::new();
             let mut audio_frame_sink = AudioFrameSink::new();
 
-            let target_time_ns = precise_time_ns() - self.start_time_ns;
+            let target_time_ns = self.time_source.time_ns() - self.start_time_ns;
             let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
 
             match self.mode {
@@ -236,7 +238,7 @@ impl Emulator {
                     },
                     Command::Continue => {
                         self.mode = Mode::Running;
-                        self.start_time_ns = precise_time_ns() -
+                        self.start_time_ns = self.time_source.time_ns() -
                             (self.emulated_cycles * CPU_CYCLE_TIME_NS);
                     },
                     Command::Goto(address) => {
