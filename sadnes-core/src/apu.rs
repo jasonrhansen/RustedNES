@@ -31,7 +31,7 @@ static DMC_TABLE: &'static [u8] = &[
 pub struct Apu {
     cycles: u64,
 
-    sample_rate: u64,
+    cycles_per_sample: u64,
 
     pulse_table: [f32; 31],
     tnd_table: [f32; 203],
@@ -56,9 +56,11 @@ impl Apu {
             tnd_table[n] = 163.67 / (24329.0 / (n as f32) + 100.0);
         }
 
+        let cycles_per_sample = CPU_FREQUENCY / sample_rate;
+
         Apu {
             cycles: 0,
-            sample_rate,
+            cycles_per_sample,
             pulse_table,
             tnd_table,
             pulse_1: Pulse::new(SweepNegationType::OnesComplement),
@@ -86,7 +88,7 @@ impl Apu {
     }
 
     fn step_samples(&mut self, audio_frame_sink: &mut Sink<AudioFrame>) {
-        if self.cycles % self.sample_rate != 0 {
+        if self.cycles % self.cycles_per_sample != 0 {
            return;
         }
 
