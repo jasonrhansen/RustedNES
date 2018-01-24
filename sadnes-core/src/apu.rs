@@ -201,7 +201,13 @@ impl Apu {
             status |= 0x04;
         }
 
-        // TODO: Add remaining status bits
+        if self.noise.length_counter > 0 {
+            status |= 0x08;
+        }
+
+        if self.dmc.current_length > 0 {
+            status |= 0x10;
+        }
 
         status
     }
@@ -222,7 +228,17 @@ impl Apu {
             self.triangle.length_counter = 0;
         }
 
-        // TODO: Enable Noise, and DMC
+        self.noise.enable_flag = (value & 0x08) != 0;
+        if !self.noise.enable_flag {
+            self.noise.length_counter = 0;
+        }
+
+        self.dmc.enable_flag = (value & 0x10) != 0;
+        if !self.dmc.enable_flag {
+            self.dmc.current_length = 0;
+        } else if self.dmc.current_length == 0 {
+            self.dmc.restart();
+        }
     }
 
     fn write_frame_counter(&mut self, value: u8) {
@@ -232,7 +248,7 @@ impl Apu {
             FrameCounterMode::FiveStep
         };
 
-        self.frame_counter.interrupt_inhibit = (value & 0x40 != 0);
+        self.frame_counter.interrupt_inhibit = value & 0x40 != 0;
 
         if self.frame_counter.mode == FrameCounterMode::FiveStep {
             self.step_length_counter();
@@ -267,6 +283,10 @@ impl Memory for Apu {
             0x400C => self.noise.write_control(value),
             0x400E => self.noise.write_mode_and_timer_period(value),
             0x400F => self.noise.write_length_counter_and_envelope_restart(value),
+            0x4010 => self.dmc.write_control(value),
+            0x4011 => self.dmc.write_value(value),
+            0x4012 => self.dmc.write_sample_address(value),
+            0x4013 => self.dmc.write_sample_length(value),
             0x4015 => self.write_status(value),
             0x4017 => self.write_frame_counter(value),
             _ => (),
@@ -500,7 +520,7 @@ impl Triangle {
     }
 
     fn write_linear_counter(&mut self, value: u8) {
-        self.control_flag = (value & 0x80 != 0);
+        self.control_flag = value & 0x80 != 0;
         self.length_counter_enable = !self.control_flag;
         self.linear_counter_period = value & 0x7F;
     }
@@ -635,17 +655,83 @@ impl Noise {
 }
 
 struct Dmc {
+    enable_flag: bool,
+    loop_flag: bool,
+    irq_flag: bool,
+    value: u8,
+    sample_address: u16,
+    sample_length: u16,
+    current_address: u16,
+    current_length: u16,
+    shift_register: u8,
+    bit_count: u8,
+    tick_period: u8,
+    tick_value: u8,
 }
 
 impl Dmc {
     fn new() -> Dmc {
-        Dmc {}
+        Dmc {
+            enable_flag: false,
+            loop_flag: false,
+            irq_flag: false,
+            value: 0,
+            sample_address: 0,
+            sample_length: 0,
+            current_address: 0,
+            current_length: 0,
+            shift_register: 0,
+            bit_count: 0,
+            tick_period: 0,
+            tick_value: 0,
+        }
+    }
+
+    fn write_control(&mut self, value: u8) {
+        self.irq_flag = value & 0x80 != 0;
+        self.loop_flag = value & 0x40 != 0;
+        self.tick_period = DMC_TABLE[(value & 0x0F) as usize];
+    }
+
+    fn write_value(&mut self, value: u8) {
+        self.value = value & 0x7F;
+    }
+
+    fn write_sample_address(&mut self, value: u8) {
+        self.sample_address = 0xC000 | ((value as u16) << 6);
+    }
+
+    fn write_sample_length(&mut self, value: u8) {
+        self.sample_length = ((value as u16) << 4) | 0x0001;
+    }
+
+    fn restart(&mut self) {
+        self.current_address = self.sample_address;
+        self.current_length = self.sample_length;
     }
 
     fn step_timer(&mut self) {
+        if self.enable_flag {
+            self.step_reader();
+            if self.tick_value == 0 {
+                self.tick_value = self.tick_period;
+                self.step_shifter();
+            } else {
+                self.tick_value -= 1;
+            }
+        }
+    }
+
+    fn step_reader(&mut self) {
+        // TODO: Implement
+    }
+
+    fn step_shifter(&mut self) {
+        // TODO: Implement
     }
 
     fn output(&self) -> u8 {
+        // TODO: Implement
         0
     }
 }
