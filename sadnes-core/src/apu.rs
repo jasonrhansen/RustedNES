@@ -2,6 +2,7 @@ use memory::Memory;
 use sink::*;
 use cpu::{Cpu, Interrupt, CPU_FREQUENCY};
 
+use std::f32::consts::PI;
 
 static DUTY_CYCLE_TABLE: &'static [[u8; 8]] = &[
     [0, 1, 0, 0, 0, 0, 0, 0],
@@ -42,6 +43,8 @@ pub struct Apu {
     noise: Noise,
     dmc: Dmc,
     frame_counter: FrameCounter,
+
+    filter_chain: FilterChain,
 }
 
 impl Apu {
@@ -58,6 +61,20 @@ impl Apu {
 
         let cycles_per_sample = CPU_FREQUENCY / sample_rate;
 
+        let filter_chain = FilterChain::new()
+            .add(Box::new(
+                FirstOrderFilter::new_high_pass(
+                    sample_rate as f32,
+                    90.0)))
+            .add(Box::new(
+                FirstOrderFilter::new_high_pass(
+                    sample_rate as f32,
+                    440.0)))
+            .add(Box::new(
+                FirstOrderFilter::new_low_pass(
+                    sample_rate as f32,
+                    14000.0)));
+
         Apu {
             cycles: 0,
             cycles_per_sample,
@@ -69,6 +86,7 @@ impl Apu {
             noise: Noise::new(),
             dmc: Dmc::new(),
             frame_counter: FrameCounter::new(),
+            filter_chain,
         }
     }
 
@@ -105,7 +123,7 @@ impl Apu {
         let pulse_out = self.pulse_table[pulse1 as usize + pulse2 as usize];
         let tnd_out = self.tnd_table[3 * triangle as usize + 2 * noise as usize + dmc as usize];
 
-        pulse_out + tnd_out
+        self.filter_chain.step(pulse_out + tnd_out)
     }
 
     fn step_frame_counter(&mut self, cpu: &mut Cpu) {
@@ -763,3 +781,79 @@ impl FrameCounter {
         }
     }
 }
+
+trait Filter {
+    fn step(&mut self, x: f32) -> f32;
+}
+
+struct FirstOrderFilter {
+    b0: f32,
+    b1: f32,
+    a1: f32,
+    prev_x: f32,
+    prev_y: f32,
+}
+
+impl Filter for FirstOrderFilter {
+    fn step(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.b1 * self.prev_x - self.a1 * self.prev_y;
+        self.prev_x = x;
+        self.prev_y = y;
+        y
+    }
+}
+
+impl FirstOrderFilter {
+    fn new_low_pass(sample_rate: f32, cutoff_freq: f32) -> FirstOrderFilter {
+        let c = sample_rate / PI / cutoff_freq;
+        let a0i = 1.0 / (1.0 + c);
+
+        FirstOrderFilter {
+            b0: a0i,
+            b1: a0i,
+            a1: (1.0 - c) * a0i,
+            prev_x: 0.0,
+            prev_y: 0.0,
+        }
+    }
+
+    fn new_high_pass(sample_rate: f32, cutoff_freq: f32) -> FirstOrderFilter {
+        let c = sample_rate / PI / cutoff_freq;
+        let a0i = 1.0 / (1.0 + c);
+
+        FirstOrderFilter {
+            b0: c * a0i,
+            b1: -c * a0i,
+            a1: (1.0 - c) * a0i,
+            prev_x: 0.0,
+            prev_y: 0.0,
+        }
+    }
+}
+
+struct FilterChain {
+    filters: Vec<Box<Filter>>
+}
+
+impl FilterChain {
+    fn new() -> FilterChain {
+        FilterChain {
+            filters: Vec::new(),
+        }
+    }
+
+    fn add(mut self, filter: Box<Filter>) -> FilterChain {
+        self.filters.push(filter);
+        self
+    }
+
+    fn step(&mut self, x: f32) -> f32 {
+        let mut x = x;
+        for filter in self.filters.iter_mut() {
+           x = filter.step(x);
+        }
+
+        x
+    }
+}
+
