@@ -21,11 +21,11 @@ pub struct Interconnect {
 }
 
 impl Interconnect {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: *mut Cpu, audio_sample_rate: u64) -> Self {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: *mut Cpu) -> Self {
         Interconnect {
             ram: Ram::new(),
             ppu: Ppu::new(mapper.clone()),
-            apu: Apu::new(audio_sample_rate),
+            apu: Apu::new(),
             input: Input::new(),
             mapper,
             cpu,

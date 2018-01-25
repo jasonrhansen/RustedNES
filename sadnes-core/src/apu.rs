@@ -4,6 +4,9 @@ use cpu::{Cpu, Interrupt, CPU_FREQUENCY};
 
 use std::f32::consts::PI;
 
+pub const SAMPLE_RATE: u32 = 22_000;
+pub const CYCLES_PER_SAMPLE: u64 = CPU_FREQUENCY / (SAMPLE_RATE as u64);
+
 static DUTY_CYCLE_TABLE: &'static [[u8; 8]] = &[
     [0, 1, 0, 0, 0, 0, 0, 0],
     [0, 1, 1, 0, 0, 0, 0, 0],
@@ -32,8 +35,6 @@ static DMC_TABLE: &'static [u8] = &[
 pub struct Apu {
     cycles: u64,
 
-    cycles_per_sample: u64,
-
     pulse_table: [f32; 31],
     tnd_table: [f32; 203],
 
@@ -48,7 +49,7 @@ pub struct Apu {
 }
 
 impl Apu {
-    pub fn new(sample_rate: u64) -> Apu {
+    pub fn new() -> Apu {
         let mut pulse_table = [0f32; 31];
         for n in 0..31 {
             pulse_table[n] = 95.52 / (8128.0 / (n as f32) + 100.0);
@@ -59,25 +60,22 @@ impl Apu {
             tnd_table[n] = 163.67 / (24329.0 / (n as f32) + 100.0);
         }
 
-        let cycles_per_sample = CPU_FREQUENCY / sample_rate;
-
         let filter_chain = FilterChain::new()
             .add(Box::new(
                 FirstOrderFilter::new_high_pass(
-                    sample_rate as f32,
+                    SAMPLE_RATE as f32,
                     90.0)))
             .add(Box::new(
                 FirstOrderFilter::new_high_pass(
-                    sample_rate as f32,
+                    SAMPLE_RATE as f32,
                     440.0)))
             .add(Box::new(
                 FirstOrderFilter::new_low_pass(
-                    sample_rate as f32,
+                    SAMPLE_RATE as f32,
                     14000.0)));
 
         Apu {
             cycles: 0,
-            cycles_per_sample,
             pulse_table,
             tnd_table,
             pulse_1: Pulse::new(SweepNegationType::OnesComplement),
@@ -106,7 +104,7 @@ impl Apu {
     }
 
     fn step_samples(&mut self, audio_frame_sink: &mut Sink<AudioFrame>) {
-        if self.cycles % self.cycles_per_sample != 0 {
+        if self.cycles % CYCLES_PER_SAMPLE != 0 {
            return;
         }
 

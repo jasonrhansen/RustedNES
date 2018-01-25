@@ -13,7 +13,7 @@ pub struct Nes {
 }
 
 impl Nes {
-    pub fn new(cartridge: Cartridge, audio_sample_rate: u64) -> Nes {
+    pub fn new(cartridge: Cartridge) -> Nes {
         let mapper = Rc::new(
             RefCell::new(
                 mapper::create_mapper(Box::new(cartridge))
@@ -22,7 +22,7 @@ impl Nes {
 
         let mut cpu = Cpu::new();
 
-        let interconnect = Interconnect::new(mapper, &mut cpu as *mut Cpu, audio_sample_rate);
+        let interconnect = Interconnect::new(mapper, &mut cpu as *mut Cpu);
 
         let mut nes = Nes {
             interconnect,

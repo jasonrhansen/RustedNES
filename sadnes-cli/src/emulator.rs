@@ -13,7 +13,6 @@ use sadnes_core::sink::*;
 use sadnes_core::memory::Memory;
 use sadnes_core::input::Button;
 use sadnes_core::cpu::CPU_FREQUENCY;
-use sadnes_core::audio_driver::AudioDriver;
 use sadnes_core::time_source::TimeSource;
 
 use std::collections::{HashSet, HashMap};
@@ -54,7 +53,7 @@ pub struct Emulator {
 }
 
 impl Emulator {
-    pub fn new(cartridge: Cartridge, audio_driver: Box<AudioDriver>, time_source: Box<TimeSource>) -> Emulator {
+    pub fn new(cartridge: Cartridge, audio_buffer_sink: Box<SinkRef<[AudioFrame]>>, time_source: Box<TimeSource>) -> Emulator {
         let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
         let _stdin_thread = thread::spawn(move || {
@@ -82,7 +81,7 @@ impl Emulator {
                                 }
             ).unwrap(),
 
-            nes: Nes::new(cartridge, audio_driver.sample_rate()),
+            nes: Nes::new(cartridge),
             mode: Mode::Running,
 
             breakpoints: HashSet::new(),
@@ -91,7 +90,7 @@ impl Emulator {
             prompt_sender,
             stdin_receiver,
 
-            audio_buffer_sink: audio_driver.sink(),
+            audio_buffer_sink,
 
             cursor: 0,
             last_command: None,
