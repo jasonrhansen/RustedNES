@@ -340,7 +340,6 @@ struct Envelope {
     enable_flag: bool,
     start_flag: bool,
     loop_flag: bool,
-    constant_volume_flag: bool,
     volume: u8,
     value: u8,
     period: u8,
@@ -352,7 +351,6 @@ impl Envelope {
             enable_flag: false,
             start_flag: false,
             loop_flag: false,
-            constant_volume_flag: false,
             volume: 0,
             value: 0,
             period: 0,
@@ -435,7 +433,7 @@ impl Pulse {
         self.duty_cycle = value >> 6;
         self.length_counter_enable = (value & 0x20) == 0;
         self.envelope.loop_flag = !self.length_counter_enable;
-        self.envelope.constant_volume_flag = (value & 0x10)  == 0;
+        self.envelope.enable_flag = (value & 0x10) == 0;
         self.constant_volume = value & 0x0F;
         self.envelope.period = self.constant_volume;
         self.envelope.start_flag = true;
