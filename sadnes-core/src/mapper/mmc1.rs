@@ -3,7 +3,6 @@ use mapper::Mapper;
 use memory::Memory;
 use ppu::Vram;
 
-#[derive(Default)]
 struct Regs {
     control: u8,
     prg_bank: u8,
@@ -38,7 +37,12 @@ impl Mmc1 {
         Mmc1 {
             cartridge,
             shift: SHIFT_REGISTER_DEFAULT,
-            regs: Regs::default(),
+            regs: Regs {
+                control: 0x0C,
+                prg_bank: 0,
+                chr_bank_0: 0,
+                chr_bank_1: 0,
+            },
         }
     }
 
