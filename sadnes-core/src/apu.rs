@@ -4,8 +4,8 @@ use cpu::{Cpu, Interrupt, CPU_FREQUENCY};
 
 use std::f32::consts::PI;
 
-pub const SAMPLE_RATE: u32 = 22_000;
-pub const CYCLES_PER_SAMPLE: u64 = CPU_FREQUENCY / (SAMPLE_RATE as u64);
+pub const SAMPLE_RATE: u32 = 44_100;
+pub const CYCLES_PER_SAMPLE: f64 = (CPU_FREQUENCY as f64) / (SAMPLE_RATE as f64);
 
 static DUTY_CYCLE_TABLE: &'static [[u8; 8]] = &[
     [0, 1, 0, 0, 0, 0, 0, 0],
@@ -46,6 +46,8 @@ pub struct Apu {
     frame_counter: FrameCounter,
 
     filter_chain: FilterChain,
+
+    pub settings: Settings,
 }
 
 impl Apu {
@@ -85,6 +87,13 @@ impl Apu {
             dmc: Dmc::new(),
             frame_counter: FrameCounter::new(),
             filter_chain,
+            settings: Settings {
+                pulse_1_enabled: true,
+                pulse_2_enabled: true,
+                triangle_enabled: true,
+                noise_enabled: true,
+                dmc_enabled: true,
+            }
         }
     }
 
@@ -96,42 +105,44 @@ impl Apu {
     }
 
     fn step(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut Sink<AudioFrame>) {
-        self.step_timer();
-        self.step_frame_counter(cpu);
-        self.step_samples(audio_frame_sink);
-
+        let cycle_1 = self.cycles;
         self.cycles += 1;
-    }
+        let cycle_2 = self.cycles;
 
-    fn step_samples(&mut self, audio_frame_sink: &mut Sink<AudioFrame>) {
-        if self.cycles % CYCLES_PER_SAMPLE != 0 {
-           return;
+        self.step_timer();
+
+        let f1 = ((cycle_1 as f64) / FrameCounter::RATE) as u64;
+        let f2 = ((cycle_2 as f64) / FrameCounter::RATE) as u64;
+        if f1 != f2 {
+            self.step_frame_counter(cpu);
         }
 
-        audio_frame_sink.append(self.generate_sample());
+        let s1 = ((cycle_1 as f64) / CYCLES_PER_SAMPLE) as u64;
+        let s2 = ((cycle_2 as f64) / CYCLES_PER_SAMPLE) as u64;
+        if s1 != s2 {
+            audio_frame_sink.append(self.generate_sample());
+        }
     }
 
     fn generate_sample(&mut self) -> f32 {
-        let pulse1 = self.pulse_1.output();
-        let pulse2 = self.pulse_2.output();
-        let triangle = self.triangle.output();
-        let noise = self.noise.output();
-        let dmc = self.dmc.output();
+        let pulse_1 = if self.settings.pulse_1_enabled { self.pulse_1.output() } else { 0 };
+        let pulse_2 = if self.settings.pulse_2_enabled { self.pulse_2.output() } else { 0 };
+        let triangle = if self.settings.triangle_enabled { self.triangle.output() } else { 0 };
+        let noise = if self.settings.noise_enabled { self.noise.output() } else { 0 };
+        let dmc = if self.settings.dmc_enabled { self.dmc.output() } else { 0 };
 
-        let pulse_out = self.pulse_table[pulse1 as usize + pulse2 as usize];
+        let pulse_out = self.pulse_table[pulse_1 as usize + pulse_2 as usize];
         let tnd_out = self.tnd_table[3 * triangle as usize + 2 * noise as usize + dmc as usize];
 
         self.filter_chain.step(pulse_out + tnd_out)
     }
 
     fn step_frame_counter(&mut self, cpu: &mut Cpu) {
-        let frame = ((self.cycles as f64) / FrameCounter::RATE) as u64;
-        if frame == self.frame_counter.frame {
-            return;
-        }
-
-        self.frame_counter.frame = frame;
-
+        // Four Step  Five Step    Function
+        // ---------  -----------  -----------------------------
+        // - - - f    - - - - -    IRQ (if bit 6 is clear)
+        // - l - l    l - l - -    Length counter and sweep
+        // e e e e    e e e e -    Envelope and linear counter
         match self.frame_counter.mode {
             FrameCounterMode::FourStep => {
                 self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 4;
@@ -312,6 +323,14 @@ impl Memory for Apu {
     }
 }
 
+pub struct Settings {
+    pub pulse_1_enabled: bool,
+    pub pulse_2_enabled: bool,
+    pub triangle_enabled: bool,
+    pub noise_enabled: bool,
+    pub dmc_enabled: bool,
+}
+
 enum SweepNegationType {
     OnesComplement,
     TwosComplement,
@@ -348,13 +367,13 @@ impl Envelope {
         } else if self.value > 0 {
             self.value -= 1;
         } else {
+            self.value = self.period;
+
             if self.volume > 0 {
                 self.volume -= 1;
             } else if self.loop_flag {
                 self.volume = 15;
             }
-
-            self.value = self.period;
         }
     }
 }
@@ -442,7 +461,7 @@ impl Pulse {
     }
 
     fn step_length_counter(&mut self) {
-        if self.length_counter > 0 {
+        if self.length_counter_enable && self.length_counter > 0 {
             self.length_counter -= 1;
         }
     }
@@ -468,12 +487,12 @@ impl Pulse {
         let delta = self.timer_period >> self.sweep.shift_count;
         if self.sweep.negate_flag {
             match self.negation_type {
+                SweepNegationType::OnesComplement => {
+                    self.timer_period -= (delta + 1);
+                }
                 SweepNegationType::TwosComplement => {
                     self.timer_period -= delta;
                 },
-                SweepNegationType::OnesComplement => {
-                    self.timer_period += !delta;
-                }
             }
         } else {
             self.timer_period += delta;
@@ -595,7 +614,7 @@ impl Triangle {
 struct Noise {
     enable_flag: bool,
     mode: bool,
-    linear_feedback_shift: u16,
+    shift_register: u16,
     timer_value: u16,
     timer_period: u16,
     length_counter_enable: bool,
@@ -609,7 +628,7 @@ impl Noise {
         Noise {
             enable_flag: false,
             mode: false,
-            linear_feedback_shift: 0,
+            shift_register: 1,
             timer_value: 0,
             timer_period: 0,
             length_counter_enable: false,
@@ -642,10 +661,10 @@ impl Noise {
         if self.timer_value == 0 {
             self.timer_value = self.timer_period;
             let shift = if self.mode { 6 } else { 1 };
-            let b1 = self.linear_feedback_shift & 0x0001;
-            let b2 = (self.linear_feedback_shift >> shift) & 0x0001;
-            self.linear_feedback_shift >>= 1;
-            self.linear_feedback_shift |= (b1 ^ b2) << 14;
+            let b1 = self.shift_register & 0x0001;
+            let b2 = (self.shift_register >> shift) & 0x0001;
+            self.shift_register >>= 1;
+            self.shift_register |= (b1 ^ b2) << 14;
         } else {
             self.timer_value -= 1;
         }
@@ -662,7 +681,7 @@ impl Noise {
     }
 
     fn output(&self) -> u8 {
-        if !self.enable_flag || self.length_counter == 0 || self.linear_feedback_shift & 0x0001 == 1 {
+        if !self.enable_flag || self.length_counter == 0 || self.shift_register & 0x0001 == 1 {
             0
         } else if self.envelope.enable_flag {
             self.envelope.volume
@@ -761,7 +780,6 @@ enum FrameCounterMode {
 }
 
 struct FrameCounter {
-    frame: u64,
     sequence_frame: u8,
     mode: FrameCounterMode,
     interrupt_inhibit: bool,
@@ -772,7 +790,6 @@ impl FrameCounter {
 
     fn new() -> FrameCounter {
         FrameCounter {
-            frame: 0,
             sequence_frame: 0,
             mode: FrameCounterMode::FourStep,
             interrupt_inhibit: false,

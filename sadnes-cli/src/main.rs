@@ -11,12 +11,12 @@ extern crate futures;
 
 extern crate sadnes_core;
 
-mod audio_frame_sink;
 mod video_frame_sink;
 mod argparse;
 mod command;
 mod emulator;
 mod cpal_driver;
+mod system_time_source;
 
 use std::fs::File;
 
@@ -26,6 +26,7 @@ use sadnes_core::apu::SAMPLE_RATE;
 use argparse::*;
 use emulator::*;
 use cpal_driver::*;
+use system_time_source::*;
 
 
 fn main() {
@@ -51,7 +52,7 @@ fn run_rom(rom: Cartridge, start_debugger: bool) {
 
     println!("output sample rate: {}", audio_driver.output_sample_rate);
 
-    let time_source = audio_driver.time_source();
+    let time_source = Box::new(SystemTimeSource{});
 
     let mut emulator = Emulator::new(rom, audio_driver.sink(), time_source);
 

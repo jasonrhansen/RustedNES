@@ -1,7 +1,6 @@
 use minifb::{WindowOptions, Window, Key, KeyRepeat, Scale};
 
 use command::*;
-use audio_frame_sink::AudioFrameSink;
 use video_frame_sink::VideoFrameSink;
 use liner;
 
@@ -44,7 +43,7 @@ pub struct Emulator {
     prompt_sender: Sender<String>,
     stdin_receiver: Receiver<String>,
 
-    audio_buffer_sink: Box<SinkRef<[AudioFrame]>>,
+    audio_frame_sink: Box<Sink<AudioFrame>>,
 
     time_source: Box<TimeSource>,
     start_time_ns: u64,
@@ -53,7 +52,7 @@ pub struct Emulator {
 }
 
 impl Emulator {
-    pub fn new(cartridge: Cartridge, audio_buffer_sink: Box<SinkRef<[AudioFrame]>>, time_source: Box<TimeSource>) -> Emulator {
+    pub fn new(cartridge: Cartridge, audio_frame_sink: Box<Sink<AudioFrame>>, time_source: Box<TimeSource>) -> Emulator {
         let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
         let _stdin_thread = thread::spawn(move || {
@@ -90,7 +89,7 @@ impl Emulator {
             prompt_sender,
             stdin_receiver,
 
-            audio_buffer_sink,
+            audio_frame_sink,
 
             cursor: 0,
             last_command: None,
@@ -111,7 +110,6 @@ impl Emulator {
 
         while self.window.is_open() && !self.window.is_key_down(Key::Escape) {
             let mut video_frame_sink = VideoFrameSink::new();
-            let mut audio_frame_sink = AudioFrameSink::new();
 
             let target_time_ns = self.time_source.time_ns() - self.start_time_ns;
             let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
@@ -121,7 +119,7 @@ impl Emulator {
                     let mut start_debugger = false;
                     while self.emulated_cycles < target_cycles && !start_debugger {
                         let (_cycles, trigger_watchpoint) =
-                            self.step(&mut video_frame_sink, &mut audio_frame_sink);
+                            self.step(&mut video_frame_sink);
 
                         if trigger_watchpoint ||
                             (self.breakpoints.len() != 0 &&
@@ -135,7 +133,7 @@ impl Emulator {
                     }
                 },
                 Mode::Debugging => {
-                    if self.run_debugger_commands(&mut video_frame_sink, &mut audio_frame_sink) {
+                    if self.run_debugger_commands(&mut video_frame_sink) {
                         break;
                     }
 
@@ -151,20 +149,37 @@ impl Emulator {
                     if self.window.is_key_pressed(Key::F12, KeyRepeat::No) {
                         self.start_debugger();
                     }
+
+                    if self.window.is_key_pressed(Key::P, KeyRepeat::No) {
+                        let settings = &mut self.nes.interconnect.apu.settings;
+                        settings.pulse_1_enabled = !settings.pulse_1_enabled;
+                    }
+
+                    if self.window.is_key_pressed(Key::LeftBracket, KeyRepeat::No) {
+                        let settings = &mut self.nes.interconnect.apu.settings;
+                        settings.pulse_2_enabled = !settings.pulse_2_enabled;
+                    }
+
+                    if self.window.is_key_pressed(Key::T, KeyRepeat::No) {
+                        let settings = &mut self.nes.interconnect.apu.settings;
+                        settings.triangle_enabled = !settings.triangle_enabled;
+                    }
+
+                    if self.window.is_key_pressed(Key::N, KeyRepeat::No) {
+                        let settings = &mut self.nes.interconnect.apu.settings;
+                        settings.noise_enabled = !settings.noise_enabled;
+                    }
                 }
             }
-
-            self.audio_buffer_sink.append(audio_frame_sink.as_slices().0);
 
             thread::sleep(time::Duration::from_millis(3));
         }
     }
 
     fn step(&mut self,
-            video_frame_sink: &mut Sink<VideoFrame>,
-            audio_frame_sink: &mut Sink<AudioFrame>) -> (u32, bool) {
+            video_frame_sink: &mut Sink<VideoFrame>) -> (u32, bool) {
         let (cycles, trigger_watchpoint) =
-            self.nes.step(video_frame_sink, audio_frame_sink);
+            self.nes.step(video_frame_sink, self.audio_frame_sink.as_mut());
 
         self.emulated_cycles += cycles as u64;
 
@@ -203,9 +218,7 @@ impl Emulator {
         self.print_cursor();
     }
 
-    fn run_debugger_commands(&mut self,
-                             video_frame_sink: &mut Sink<VideoFrame>,
-                             audio_frame_sink: &mut Sink<AudioFrame>) -> bool {
+    fn run_debugger_commands(&mut self, video_frame_sink: &mut Sink<VideoFrame>) -> bool {
         while let Ok(command_string) = self.stdin_receiver.try_recv() {
             let command =
                 match (command_string.parse(), self.last_command.clone()) {
@@ -229,7 +242,7 @@ impl Emulator {
                     },
                     Command::Step(count) => {
                         for _ in 0..count {
-                            self.nes.step(video_frame_sink, audio_frame_sink);
+                            self.nes.step(video_frame_sink, self.audio_frame_sink.as_mut());
                             self.cursor = self.nes.cpu.regs().pc;
                             print!("0x{:04x}  ", self.cursor);
                             self.disassemble_instruction();
