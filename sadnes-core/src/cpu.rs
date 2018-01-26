@@ -771,10 +771,9 @@ impl Cpu {
 
     fn brk<M: Memory>(&mut self, mem: &mut M) {
         let pc = self.regs.pc;
-        let status = self.regs.status | StatusFlags::BREAK_COMMAND | StatusFlags::EXPANSION;
         self.push_word(mem, pc);
-        self.push_byte(mem, status.bits());
-        self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
+        self.php(mem);
+        self.sei();
         self.regs.pc = mem.read_word(BRK_VECTOR);
     }
 
