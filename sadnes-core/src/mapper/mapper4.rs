@@ -208,6 +208,7 @@ impl Mapper4 {
     fn handle_scanline(&mut self, cpu: &mut Cpu) {
         if self.irq_counter == 0 || self.irq_reload {
             self.irq_counter = self.irq_counter_reload_value;
+            self.irq_reload = false;
         } else {
             self.irq_counter -= 1;
 
