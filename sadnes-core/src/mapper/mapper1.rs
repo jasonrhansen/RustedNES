@@ -94,15 +94,30 @@ impl Mapper1 {
         match self.prg_rom_mode() {
             PrgRomMode::Switch32Kb => (self.regs.prg_bank & 0xFE) | 0x01,
             PrgRomMode::FixFirstBank => self.regs.prg_bank,
-            PrgRomMode::FixLastBank => {
-                ((self.cartridge.prg_rom.len() / PRG_ROM_BANK_SIZE as usize) - 1) as u8
-            },
+            PrgRomMode::FixLastBank =>  self.cartridge.prg_rom_num_banks - 1,
         }
     }
 
     fn prg_rom_address(bank: u8, address: u16) -> usize {
         (bank as usize * PRG_ROM_BANK_SIZE as usize) |
             (address as usize & (PRG_ROM_BANK_SIZE as usize - 1))
+    }
+
+    fn chr_address(&self, address: u16) -> usize {
+        match self.chr_rom_mode() {
+            ChrRomMode::Switch4Kb => {
+                let bank = if address < 1000 {
+                    self.regs.chr_bank_0
+                } else {
+                    self.regs.chr_bank_1
+                };
+                (bank as usize * 0x1000) | (address as usize & 0x0FFF)
+            },
+            ChrRomMode::Switch8Kb => {
+                let bank = self.regs.chr_bank_0;
+                (bank as usize * 0x2000) | (address as usize & 0x1FFF)
+            }
+        }
     }
 
     fn mirror_address(&self, address: u16) -> u16 {
@@ -152,7 +167,8 @@ impl Mapper for Mapper1 {
 
     fn ppu_read_byte(&mut self, vram: &mut Vram, address: u16) -> u8 {
         if address < 0x2000 {
-            self.cartridge.chr[address as usize]
+            let chr_addr = self.chr_address(address);
+            self.cartridge.chr[chr_addr as usize]
         } else {
             vram.read_byte(self.mirror_address(address) - 0x2000)
         }
@@ -160,7 +176,8 @@ impl Mapper for Mapper1 {
 
     fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8) {
         if address < 0x2000 {
-            self.cartridge.chr[address as usize] = value
+            let chr_addr = self.chr_address(address);
+            self.cartridge.chr[chr_addr as usize] = value
         } else {
             vram.write_byte(self.mirror_address(address) - 0x2000, value);
         }
