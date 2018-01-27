@@ -10,7 +10,7 @@ struct Regs {
     chr_bank_1: u8,
 }
 
-pub struct Mmc1 {
+pub struct Mapper1 {
     cartridge: Box<Cartridge>,
     shift: u8,
     regs: Regs,
@@ -32,9 +32,9 @@ enum ChrRomMode {
 // Put a 1 in bit 4 so we can detect when we've shifted enough to write to a register
 const SHIFT_REGISTER_DEFAULT: u8 = 0x10;
 
-impl Mmc1 {
+impl Mapper1 {
     pub fn new(cartridge: Box<Cartridge>) -> Self {
-        Mmc1 {
+        Mapper1 {
             cartridge,
             shift: SHIFT_REGISTER_DEFAULT,
             regs: Regs {
@@ -110,17 +110,17 @@ impl Mmc1 {
     }
 }
 
-impl Mapper for Mmc1 {
+impl Mapper for Mapper1 {
     fn prg_read_byte(&mut self, address: u16) -> u8 {
         if address < 0x6000 {
             0
         } else if address < 0x8000 {
             self.cartridge.prg_ram[(address - 0x6000) as usize]
         } else if address < 0xC000 {
-            let rom_addr = Mmc1::prg_rom_address(self.prg_rom_bank_first(), address);
+            let rom_addr = Mapper1::prg_rom_address(self.prg_rom_bank_first(), address);
             self.cartridge.prg_rom[rom_addr as usize]
         } else {
-            let rom_addr = Mmc1::prg_rom_address(self.prg_rom_bank_last(), address);
+            let rom_addr = Mapper1::prg_rom_address(self.prg_rom_bank_last(), address);
             self.cartridge.prg_rom[rom_addr as usize]
         }
     }

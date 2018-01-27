@@ -13,7 +13,7 @@ pub const PRG_ROM_BANK_SIZE: u16 = 16 * 1024;
 pub const CHR_ROM_BANK_SIZE: u16 = 8 * 1024;
 pub const PRG_RAM_BANK_SIZE: u16 = 8 * 1024;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mirroring {
     Horizontal,
     Vertical,
@@ -77,7 +77,9 @@ pub struct Cartridge {
     pub mapper: u16,
     pub sub_mapper: u8,
     pub mirroring: Mirroring,
+    pub prg_rom_num_banks: u8,
     pub prg_rom: Vec<u8>,
+    pub chr_num_banks: u8,
     pub chr: Vec<u8>,
     pub prg_ram: Vec<u8>,
     pub is_battery_backed: bool,
@@ -103,11 +105,11 @@ impl Cartridge {
             return Err(LoadError::new("magic constant in header is incorrect"));
         }
 
-        let num_prg_banks = r.read_u8()?;
-        let num_chr_banks = r.read_u8()?;
+        let prg_rom_num_banks = r.read_u8()?;
+        let mut chr_num_banks = r.read_u8()?;
 
-        let prg_rom_size = num_prg_banks as usize * PRG_ROM_BANK_SIZE as usize;
-        let chr_rom_size = num_chr_banks as usize * CHR_ROM_BANK_SIZE as usize;
+        let prg_rom_size = prg_rom_num_banks as usize * PRG_ROM_BANK_SIZE as usize;
+        let chr_rom_size = chr_num_banks as usize * CHR_ROM_BANK_SIZE as usize;
 
         let flags6 = r.read_u8()?;
         let flags7 = r.read_u8()?;
@@ -146,7 +148,8 @@ impl Cartridge {
         r.read_exact(&mut chr[..])?;
 
         // Add CHR bank if not in file
-        if num_chr_banks == 0 {
+        if chr_num_banks == 0 {
+            chr_num_banks = 1;
             chr = vec![0u8; CHR_ROM_BANK_SIZE as usize];
         }
 
@@ -156,7 +159,9 @@ impl Cartridge {
             mapper,
             sub_mapper,
             mirroring,
+            prg_rom_num_banks,
             prg_rom,
+            chr_num_banks,
             chr,
             prg_ram,
             is_battery_backed,

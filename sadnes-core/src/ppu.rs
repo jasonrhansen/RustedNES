@@ -17,7 +17,7 @@ const CYCLES_PER_SCANLINE: u64 = 341;
 
 const PRE_RENDER_SCANLINE: i16 = -1;
 const VISIBLE_START_SCANLINE: i16 = 0;
-const VISIBLE_END_SCANLINE: i16 = 239;
+pub const VISIBLE_END_SCANLINE: i16 = 239;
 const POST_RENDER_SCANLINE: i16 = 240;
 const VBLANK_START_SCANLINE: i16 = 241;
 const VBLANK_END_SCANLINE: i16 = 260;
@@ -68,7 +68,7 @@ pub struct Ppu {
     // Sprites to draw on current scanline
     sprites: [Option<Sprite>; 8],
 
-    scanline: i16,
+    pub scanline: i16,
 
     // The cycle that the current scanline started at
     scanline_start_cycle: u64,
@@ -342,7 +342,7 @@ impl Ppu {
         }
     }
 
-    fn rendering_enabled(&self) -> bool {
+    pub fn rendering_enabled(&self) -> bool {
         self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND) ||
             self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES)
     }
@@ -600,22 +600,11 @@ impl Ppu {
         self.nmi_change();
     }
 
-    fn scanline_cycle(&self) -> u64 {
+    pub fn scanline_cycle(&self) -> u64 {
         self.cycles - self.scanline_start_cycle
     }
 
-    // Run for the given number of cpu cycles
-    pub fn cycles(&mut self,
-                  cpu: &mut Cpu,
-                  cycles: u32,
-                  video_frame_sink: &mut Sink<VideoFrame>) {
-        // 3 PPU cycles per CPU cycle
-        for _ in 0..cycles * 3 {
-            self.step(cpu, video_frame_sink);
-        }
-    }
-
-    fn step(&mut self, cpu: &mut Cpu, video_frame_sink: &mut Sink<VideoFrame>) {
+    pub fn step(&mut self, cpu: &mut Cpu, video_frame_sink: &mut Sink<VideoFrame>) {
         let scanline_cycle = self.scanline_cycle();
 
         let on_visible_scanline =

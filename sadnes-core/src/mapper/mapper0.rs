@@ -3,13 +3,13 @@ use mapper::Mapper;
 use memory::Memory;
 use ppu::Vram;
 
-pub struct Nrom {
+pub struct Mapper0 {
     cartridge: Box<Cartridge>,
 }
 
-impl Nrom {
+impl Mapper0 {
     pub fn new(cartridge: Box<Cartridge>) -> Self {
-        Nrom {
+        Mapper0 {
             cartridge,
         }
     }
@@ -19,7 +19,7 @@ impl Nrom {
     }
 }
 
-impl Mapper for Nrom {
+impl Mapper for Mapper0 {
     fn prg_read_byte(&mut self, address: u16) -> u8 {
         if address < 0x6000 {
             0

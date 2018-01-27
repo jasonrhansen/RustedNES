@@ -92,7 +92,15 @@ impl Interconnect {
                   cycles: u32,
                   video_frame_sink: &mut Sink<VideoFrame>,
                   audio_frame_sink: &mut Sink<AudioFrame>) {
-        self.ppu.cycles(cpu, cycles, video_frame_sink);
+
+
+        // 3 PPU cycles per CPU cycle
+        for _ in 0..cycles * 3 {
+            self.ppu.step(cpu, video_frame_sink);
+            let mut mapper = self.mapper.borrow_mut();
+            mapper.step(cpu, &self.ppu);
+        }
+
         self.apu.cycles(cpu, cycles, audio_frame_sink);
     }
 
