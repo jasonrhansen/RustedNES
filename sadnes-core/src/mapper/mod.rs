@@ -1,9 +1,11 @@
 mod mapper0;
 mod mapper1;
+mod mapper2;
 mod mapper4;
 
 use self::mapper0::Mapper0;
 use self::mapper1::Mapper1;
+use self::mapper2::Mapper2;
 use self::mapper4::Mapper4;
 use super::ppu::Vram;
 use super::cartridge::Cartridge;
@@ -22,6 +24,7 @@ pub fn create_mapper(cartridge: Box<Cartridge>) -> Box<Mapper> {
     match cartridge.mapper {
         0 => Box::new(Mapper0::new(cartridge)),
         1 => Box::new(Mapper1::new(cartridge)),
+        2 => Box::new(Mapper2::new(cartridge)),
         4 => Box::new(Mapper4::new(cartridge)),
         _ => panic!("Unsupported mapper number: {}", cartridge.mapper)
     }
