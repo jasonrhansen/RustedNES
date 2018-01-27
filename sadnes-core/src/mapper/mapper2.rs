@@ -19,7 +19,7 @@ impl Mapper2 {
     }
 
     fn prg_rom_address(bank: u8, address: u16) -> usize {
-        (bank as usize *  PRG_ROM_BANK_SIZE as usize) |
+        (bank as usize * PRG_ROM_BANK_SIZE as usize) |
             (address as usize & (PRG_ROM_BANK_SIZE as usize - 1))
     }
 
