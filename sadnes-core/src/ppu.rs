@@ -65,9 +65,6 @@ pub struct Ppu {
     // Object Attribute Memory
     oam: Oam,
 
-    // Sprites to draw on current scanline
-    sprites: [Option<Sprite>; 8],
-
     pub scanline: i16,
 
     // The cycle that the current scanline started at
@@ -99,8 +96,11 @@ pub struct Ppu {
     // Registers used during rendering to hold sprite data
     sprite_pattern_shifts_lo: [u8; 8],
     sprite_pattern_shifts_hi: [u8; 8],
-    sprite_attribute_latches: [u8; 8],
+    sprite_attribute_latches: [SpriteAttributes; 8],
     sprite_x_counters: [u8; 8],
+    num_sprites: u8,
+    sprite_0_on_scanline: bool,
+    eval_sprite_0_on_scanline: bool,
 
     nmi_occurred: bool,
     nmi_output: bool,
@@ -117,7 +117,6 @@ impl Ppu {
             ppu_data_read_buffer: 0,
             mem: MemMap::new(mapper),
             oam: Oam::new(),
-            sprites: Default::default(),
             scanline: 0,
             scanline_start_cycle: 0,
             frame: 0,
@@ -133,8 +132,11 @@ impl Ppu {
             background_palette_shift_hi: 0,
             sprite_pattern_shifts_lo: [0; 8],
             sprite_pattern_shifts_hi: [0; 8],
-            sprite_attribute_latches: [0; 8],
+            sprite_attribute_latches: [SpriteAttributes(0); 8],
             sprite_x_counters: [0; 8],
+            num_sprites: 0,
+            sprite_0_on_scanline: false,
+            eval_sprite_0_on_scanline: false,
             nmi_occurred: false,
             nmi_output: false,
             nmi_previous: false,
@@ -155,17 +157,10 @@ impl Ppu {
         // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242002_read
         self.regs.w = WriteToggle::FirstWrite;
 
-
-        let mut status = *self.regs.ppu_status | (self.ppu_gen_latch & 0x1F);
-
-        if self.nmi_occurred {
-            status |= 1 << 7;
-        }
+        let vblank = if self.nmi_occurred { 0x80 } else { 0x00 };
+        let status = vblank | (*self.regs.ppu_status & 0x60) | (self.ppu_gen_latch & 0x1F);
 
         self.nmi_occurred = false;
-        self.nmi_change();
-//        self.regs.ppu_status.set(PpuStatus::VBLANK_STARTED, false);
-
 
         status
     }
@@ -199,8 +194,7 @@ impl Ppu {
         self.regs.t = (self.regs.t & 0xF3FF) | ((value as u16 & 0x03) << 10);
         *self.regs.ppu_ctrl = value;
 
-        self.nmi_output = (value>>7) & 0x01 == 0x01;
-        self.nmi_change();
+        self.nmi_output = value & 0x80 != 0;
     }
 
     fn write_ppu_scroll(&mut self, value: u8) {
@@ -211,17 +205,13 @@ impl Ppu {
                     (((value as u16) >> 3) & 0x01F);
                 self.regs.x = value & 0x07;
                 self.regs.w = WriteToggle::SecondWrite;
-
-                self.regs.ppu_scroll.position_x = value;
             },
             WriteToggle::SecondWrite => {
                 // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242005_second_write_.28w_is_1.29
                 self.regs.t = (self.regs.t & 0x0C1F) |
-                    ((value as u16 & 0x07) << 12) |
-                    ((value as u16 & 0xF8) << 2);
+                    (((value & 0x07) as u16) << 12) |
+                    (((value & 0xF8) as u16) << 2);
                 self.regs.w = WriteToggle::FirstWrite;
-
-                self.regs.ppu_scroll.position_y = value;
             },
         }
     }
@@ -291,54 +281,49 @@ impl Ppu {
         y <= scanline && scanline < y + height
     }
 
-    fn evaluate_sprites_for_scanline(&mut self) {
-        let mut count = 0;
+    fn sprite_evaluation_init(&mut self) {
+        self.oam.secondary_write_index = 0;
+        self.oam.n = 0;
+        self.oam.m = 0;
+        self.sprite_0_on_scanline = self.eval_sprite_0_on_scanline;
+        self.eval_sprite_0_on_scanline = false;
+    }
 
-        let mut n = 0;
-
-        while n < 64 {
-            let index = 4 * n;
-            let y = self.oam[index];
-
-            if self.is_sprite_at_y_on_scanline(y) {
-                self.sprites[count] =
-                    Some(Sprite::from_oam_bytes(&self.oam[index..index+4]));
-                count += 1;
-            }
-
-            n += 1;
-
-            if count >= 8 {
-                break;
-            }
+    fn sprite_evaluation_read_byte(&mut self) {
+        let index = (self.oam.n * Oam::BYTES_PER_SPRITE) + self.oam.m;
+        if index < self.oam.primary.len() {
+            self.oam.last_read_byte = self.oam.primary[index];
         }
+    }
 
-        let mut m = 0;
-
-        // Implement sprite overflow, including hardware bug
-        // where m gets incremented when it doesn't make sense
-        while n < 64 {
-            let index = 4 * n + m;
-            let y = self.oam[index];
-
-            if self.is_sprite_at_y_on_scanline(y) {
-                self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, true);
-                m += 3;
+    fn sprite_evaluation_write_byte(&mut self) {
+        if self.oam.n < Oam::PRIMARY_MAX_SPRITES {
+            if self.oam.secondary_write_index < Oam::SECONDARY_SIZE {
+                self.oam.secondary[self.oam.secondary_write_index] = self.oam.last_read_byte;
+                if self.oam.m == 0 && !self.is_sprite_at_y_on_scanline(self.oam.last_read_byte) {
+                    self.oam.n += 1;
+                } else {
+                    if self.oam.n == 0 && self.oam.m == 0 {
+                        self.eval_sprite_0_on_scanline = true;
+                    }
+                    self.oam.secondary_write_index += 1;
+                    self.oam.m += 1;
+                }
             } else {
-                n += 1;
-                m += 1;
+                let y = self.oam.last_read_byte;
+                if self.is_sprite_at_y_on_scanline(y) {
+                    self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, true);
+                    self.oam.m += 1;
+                } else {
+                    self.oam.n += 1;
+                    self.oam.m += 1;
+                }
             }
 
-            if m > 3 {
-                m = 0;
-                n += 1;
+            if self.oam.m == 4 {
+                self.oam.m = 0;
+                self.oam.n += 1;
             }
-        }
-
-        // Clear any remaining sprites if there were less than 8 on scanline
-        while count < 8 {
-            self.sprites[count] = None;
-            count += 1;
         }
     }
 
@@ -407,53 +392,50 @@ impl Ppu {
     }
 
     fn fetch_sprite_tile(&mut self, sprite_index: usize) {
-        if let Some(ref sprite) = self.sprites[sprite_index] {
-            let mut row = self.scanline as u16 - sprite.y as u16;
-            let size = self.regs.ppu_ctrl.sprite_size();
-            let pattern_addr = match size {
-                SpriteSize::Size8x8 => {
-                    if sprite.flip_vertically() {
-                        row = 7 - row;
-                    }
+        let index = sprite_index * Oam::BYTES_PER_SPRITE;
+        let sprite = Sprite::from_oam_bytes(&self.oam.secondary[index..(index + Oam::BYTES_PER_SPRITE)]);
 
-                    (sprite.tile_index as u16) * 16 +
-                        self.regs.ppu_ctrl.sprite_pattern_table_address() + row
-                },
-                SpriteSize::Size8x16 => {
-                    if sprite.flip_vertically() {
-                        row = 15 - row;
-                    }
-
-                    let table: u16 = if sprite.tile_index & 0x01 == 0 { 0x0000 } else { 0x1000 };
-                    let mut tile_index = sprite.tile_index & 0xFE;
-                    if row > 7 {
-                        // Jump to second tile
-                        tile_index += 1;
-                        row -= 8;
-                    }
-
-                    table + (tile_index as u16) * 16 + row
+        let mut row = self.scanline as u16 - sprite.y as u16;
+        let size = self.regs.ppu_ctrl.sprite_size();
+        let pattern_addr = match size {
+            SpriteSize::Size8x8 => {
+                if sprite.flip_vertically() {
+                    row = 7 - row;
                 }
-            };
 
-            let mut pattern_lo = self.mem.read_byte(pattern_addr);
-            let mut pattern_hi = self.mem.read_byte(pattern_addr + 8);
+                (sprite.tile_index as u16) * 16 +
+                    self.regs.ppu_ctrl.sprite_pattern_table_address() + row
+            },
+            SpriteSize::Size8x16 => {
+                if sprite.flip_vertically() {
+                    row = 15 - row;
+                }
 
-            if sprite.flip_horizontally() {
-                pattern_lo = pattern_lo.swap_bits();
-                pattern_hi = pattern_hi.swap_bits();
+                let table: u16 = if sprite.tile_index & 0x01 == 0 { 0x0000 } else { 0x1000 };
+                let mut tile_index = sprite.tile_index & 0xFE;
+                if row > 7 {
+                    // Jump to second tile
+                    tile_index += 1;
+                    row -= 8;
+                }
+
+                table + (tile_index as u16) * 16 + row
             }
+        };
 
-            self.sprite_pattern_shifts_lo[sprite_index] = pattern_lo;
-            self.sprite_pattern_shifts_hi[sprite_index] = pattern_hi;
-            self.sprite_attribute_latches[sprite_index] = sprite.attributes;
-            self.sprite_x_counters[sprite_index] = sprite.x;
-        } else {
-            self.sprite_pattern_shifts_lo[sprite_index] = 0;
-            self.sprite_pattern_shifts_hi[sprite_index] = 0;
-            self.sprite_attribute_latches[sprite_index] = 0;
-            self.sprite_x_counters[sprite_index] = 0;
+        let mut pattern_lo = self.mem.read_byte(pattern_addr);
+        let mut pattern_hi = self.mem.read_byte(pattern_addr + 8);
+
+        if sprite.flip_horizontally() {
+            pattern_lo = pattern_lo.swap_bits();
+            pattern_hi = pattern_hi.swap_bits();
         }
+
+        self.sprite_pattern_shifts_lo[sprite_index] = pattern_lo;
+        self.sprite_pattern_shifts_hi[sprite_index] = pattern_hi;
+        self.sprite_attribute_latches[sprite_index] = sprite.attributes;
+        self.sprite_x_counters[sprite_index] = sprite.x;
+        self.num_sprites = sprite_index as u8 + 1;
     }
 
     fn update_sprite_rendering_registers(&mut self) {
@@ -491,17 +473,13 @@ impl Ppu {
             self.color_from_palette_index(background_pixel)
         } else {
             // Sprite 0 hit is not detected at x=255
-            if sprite_index == 0 && x != 255 {
+            if self.sprite_0_on_scanline && sprite_index == 0 && x != 255 {
                 self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, true);
             }
 
-            let priority = if let Some(ref sprite) = self.sprites[sprite_index] {
-                sprite.priority()
-            } else {
-                SpritePriority::BehindBackground
-            };
+            let attrs = self.sprite_attribute_latches[sprite_index];
 
-            match priority {
+            match attrs.priority() {
                 SpritePriority::InFrontOfBackground =>
                     self.color_from_palette_index(sprite_pixel),
                 SpritePriority::BehindBackground =>
@@ -534,17 +512,15 @@ impl Ppu {
             return (0, 0);
         }
 
-        for i in 0..8 {
-            if let Some(ref sprite) = self.sprites[i] {
-                if self.sprite_x_counters[i] == 0 {
-                    let pixel =
-                        ((self.sprite_pattern_shifts_lo[i] as u8 >> 7) & 0x01) |
-                            ((self.sprite_pattern_shifts_hi[i] as u8 >> 6) & 0x02) |
-                            ((sprite.palette() << 2) & 0x1C);
+        for i in 0..self.num_sprites as usize {
+            if self.sprite_x_counters[i] == 0 && self.sprite_attribute_latches[i].0 != 0xFF {
+                let pixel =
+                    ((self.sprite_pattern_shifts_lo[i] as u8 >> 7) & 0x01) |
+                        ((self.sprite_pattern_shifts_hi[i] as u8 >> 6) & 0x02) |
+                        ((self.sprite_attribute_latches[i].palette() << 2) & 0x1C);
 
-                    if pixel & 0x03 != 0 {
-                        return (pixel, i);
-                    }
+                if pixel & 0x03 != 0 {
+                    return (pixel, i);
                 }
             }
         }
@@ -580,24 +556,12 @@ impl Ppu {
         }
     }
 
-
-    fn nmi_change(&mut self) {
-        let nmi = self.nmi_output && self.nmi_occurred;
-        if nmi && !self.nmi_previous {
-            self.nmi_delay = 15;
-        }
-
-        self.nmi_previous = nmi;
-    }
-
     fn set_vblank(&mut self) {
         self.nmi_occurred = true;
-        self.nmi_change();
     }
 
     fn clear_vblank(&mut self) {
         self.nmi_occurred = false;
-        self.nmi_change();
     }
 
     pub fn scanline_cycle(&self) -> u64 {
@@ -637,12 +601,6 @@ impl Ppu {
                 }
             }
 
-            if self.scanline == PRE_RENDER_SCANLINE &&
-                280 <= scanline_cycle && scanline_cycle <= 304 {
-                // Copy bits related to vertical position from t to v
-                self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
-            }
-
             if on_fetch_scanline {
                 if on_fetch_cycle &&
                     scanline_cycle % 8 == 0 {
@@ -657,6 +615,12 @@ impl Ppu {
                     self.regs.v = (self.regs.v & !0x041F) | (self.regs.t & 0x041F);
                 }
             }
+
+            if self.scanline == PRE_RENDER_SCANLINE &&
+                280 <= scanline_cycle && scanline_cycle <= 304 {
+                // Copy bits related to vertical position from t to v
+                self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
+            }
         }
 
         // Handle sprites
@@ -666,11 +630,29 @@ impl Ppu {
                     self.update_sprite_rendering_registers();
                 }
 
-                if scanline_cycle == 257 {
-                    self.evaluate_sprites_for_scanline();
-                    for i in 0..8 {
-                        self.fetch_sprite_tile(i);
-                    }
+                match scanline_cycle {
+                    1...64 => {
+                        if scanline_cycle == 1 {
+                            self.sprite_evaluation_init();
+                        }
+                        if scanline_cycle % 2 == 0 {
+                            self.oam.secondary[((scanline_cycle / 2) - 1) as usize] = 0xFF;
+                        }
+
+                    },
+                    65...256 => {
+                        if scanline_cycle % 2 == 1 {
+                            self.sprite_evaluation_read_byte();
+                        } else {
+                            self.sprite_evaluation_write_byte();
+                        }
+                    },
+                    257...320 => {
+                        if scanline_cycle % 8 == 0 {
+                            self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
+                        }
+                    },
+                    _ => (),
                 }
             }
         }
@@ -693,17 +675,14 @@ impl Ppu {
             VBLANK_START_SCANLINE => {
                 if scanline_cycle == 1 {
                     self.set_vblank();
+                    if self.nmi_output && self.nmi_occurred {
+                        cpu.request_interrupt(Interrupt::Nmi);
+                    }
                 }
             },
             _ => (),
         }
 
-        if self.nmi_delay > 0 {
-            self.nmi_delay -= 1;
-            if self.nmi_delay == 0 && self.nmi_output && self.nmi_occurred {
-                cpu.request_interrupt(Interrupt::Nmi)
-            }
-        }
 
         self.cycles += 1;
 
@@ -900,20 +879,6 @@ impl DerefMut for PpuStatus {
     }
 }
 
-struct PpuScroll {
-    position_x: u8,
-    position_y: u8,
-}
-
-impl Default for PpuScroll {
-    fn default() -> PpuScroll {
-        PpuScroll {
-            position_x: 0,
-            position_y: 0,
-        }
-    }
-}
-
 enum WriteToggle {
     FirstWrite,
     SecondWrite,
@@ -925,15 +890,12 @@ struct Regs {
     ppu_mask: PpuMask,          // 0x2001
     ppu_status: PpuStatus,      // 0x2002
     oam_addr: u8,               // 0x2003
-    ppu_scroll: PpuScroll,      // 0x2005
 
-    // Internal registers
+    // Internal registers (for scrolling)
     v: u16,                     // Current VRAM address (15 bits)
     t: u16,                     // Temporary VRAM address (15 bits)
     x: u8,                      // Fine X scroll (3 bits)
     w: WriteToggle,             // First of second write toggle
-
-
 }
 
 impl Regs {
@@ -943,7 +905,6 @@ impl Regs {
             ppu_mask: PpuMask::NONE,
             ppu_status: PpuStatus::NONE,
             oam_addr: 0,
-            ppu_scroll: PpuScroll::default(),
             v: 0,
             t: 0,
             x: 0,
@@ -956,16 +917,31 @@ impl Regs {
 // OAM (Object Attribute Memory) is internal memory inside the PPU that contains
 // a display list of up to 64 sprites, where each sprite's information occupies 4 bytes
 struct Oam {
-    bytes: [u8; Oam::SIZE],
+    primary: [u8; Oam::PRIMARY_SIZE],
+    secondary: [u8; Oam::SECONDARY_SIZE],
+
+    // Used during sprite evaluation
+    last_read_byte: u8,
+    secondary_write_index: usize,
+    n: usize,
+    m: usize,
 }
 
 impl Oam {
-    // 64 sprites, each sprite uses 4 bytes
-    const SIZE: usize = 64 * 4;
+    const BYTES_PER_SPRITE: usize = 4;
+    const PRIMARY_MAX_SPRITES: usize = 64;
+    const PRIMARY_SIZE: usize = Oam::PRIMARY_MAX_SPRITES * Oam::BYTES_PER_SPRITE;
+    const SECONDARY_MAX_SPRITES: usize = 8;
+    const SECONDARY_SIZE: usize = Oam::SECONDARY_MAX_SPRITES * Oam::BYTES_PER_SPRITE;
 
     fn new() -> Oam {
         Oam {
-           bytes: [0u8; Oam::SIZE],
+            primary: [0u8; Oam::PRIMARY_SIZE],
+            secondary: [0u8; Oam::SECONDARY_SIZE],
+            last_read_byte: 0,
+            secondary_write_index: 0,
+            n: 0,
+            m: 0,
         }
     }
 }
@@ -981,16 +957,16 @@ impl Memory for Oam {
 }
 
 impl Deref for Oam {
-    type Target = [u8; Oam::SIZE];
+    type Target = [u8; Oam::PRIMARY_SIZE];
 
     fn deref(&self) -> &Self::Target {
-        &self.bytes
+        &self.primary
     }
 }
 
 impl DerefMut for Oam {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.bytes
+        &mut self.primary
     }
 }
 
@@ -1130,10 +1106,36 @@ enum SpritePriority {
     BehindBackground,
 }
 
+#[derive(Clone, Copy)]
+struct SpriteAttributes(u8);
+
+impl SpriteAttributes {
+    fn palette(&self) -> u8 {
+        (self.0 & 0x03) | 0x04
+    }
+
+    fn priority(&self) -> SpritePriority {
+        if self.0 & 0x20 == 0 {
+            SpritePriority::InFrontOfBackground
+        } else {
+            SpritePriority::BehindBackground
+        }
+    }
+
+    fn flip_horizontally(&self) -> bool {
+        self.0 & 0x40 == 0x40
+    }
+
+    fn flip_vertically(&self) -> bool {
+        self.0 & 0x80 == 0x80
+    }
+}
+
+#[derive(Clone, Copy)]
 struct Sprite {
     y: u8,
     tile_index: u8,
-    attributes: u8,
+    attributes: SpriteAttributes,
     x: u8,
 }
 
@@ -1142,29 +1144,17 @@ impl Sprite {
         Sprite {
             y: oam_bytes[0],
             tile_index: oam_bytes[1],
-            attributes: oam_bytes[2],
+            attributes: SpriteAttributes(oam_bytes[2]),
             x: oam_bytes[3],
         }
     }
 
-    fn palette(&self) -> u8 {
-        (self.attributes & 0x03) | 0x04
-    }
-
-    fn priority(&self) -> SpritePriority {
-        if self.attributes & 0x20 == 0 {
-            SpritePriority::InFrontOfBackground
-        } else {
-            SpritePriority::BehindBackground
-        }
-    }
-
     fn flip_horizontally(&self) -> bool {
-        self.attributes & 0x40 == 0x40
+        self.attributes.flip_horizontally()
     }
 
     fn flip_vertically(&self) -> bool {
-        self.attributes & 0x80 == 0x80
+        self.attributes.flip_vertically()
     }
 }
 
@@ -1173,7 +1163,7 @@ impl Default for Sprite {
         Sprite {
             y: 0,
             tile_index: 0,
-            attributes: 0,
+            attributes: SpriteAttributes(0),
             x: 0,
         }
     }
