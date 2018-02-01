@@ -106,7 +106,7 @@ impl Mapper1 {
     fn chr_address(&self, address: u16) -> usize {
         match self.chr_rom_mode() {
             ChrRomMode::Switch4Kb => {
-                let bank = if address < 1000 {
+                let bank = if address < 0x1000 {
                     self.regs.chr_bank_0
                 } else {
                     self.regs.chr_bank_1
