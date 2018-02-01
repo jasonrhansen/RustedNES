@@ -98,14 +98,10 @@ pub struct Ppu {
     sprite_pattern_shifts_hi: [u8; 8],
     sprite_attribute_latches: [SpriteAttributes; 8],
     sprite_x_counters: [u8; 8],
-    num_sprites: u8,
     sprite_0_on_scanline: bool,
-    eval_sprite_0_on_scanline: bool,
 
     nmi_occurred: bool,
     nmi_output: bool,
-    nmi_previous: bool,
-    nmi_delay: u8,
 }
 
 impl Ppu {
@@ -134,13 +130,9 @@ impl Ppu {
             sprite_pattern_shifts_hi: [0; 8],
             sprite_attribute_latches: [SpriteAttributes(0); 8],
             sprite_x_counters: [0; 8],
-            num_sprites: 0,
             sprite_0_on_scanline: false,
-            eval_sprite_0_on_scanline: false,
             nmi_occurred: false,
             nmi_output: false,
-            nmi_previous: false,
-            nmi_delay: 0,
         }
     }
 
@@ -285,8 +277,8 @@ impl Ppu {
         self.oam.secondary_write_index = 0;
         self.oam.n = 0;
         self.oam.m = 0;
-        self.sprite_0_on_scanline = self.eval_sprite_0_on_scanline;
-        self.eval_sprite_0_on_scanline = false;
+        self.sprite_0_on_scanline = self.oam.sprite_0_found;
+        self.oam.sprite_0_found = false;
     }
 
     fn sprite_evaluation_read_byte(&mut self) {
@@ -304,7 +296,7 @@ impl Ppu {
                     self.oam.n += 1;
                 } else {
                     if self.oam.n == 0 && self.oam.m == 0 {
-                        self.eval_sprite_0_on_scanline = true;
+                        self.oam.sprite_0_found = true;
                     }
                     self.oam.secondary_write_index += 1;
                     self.oam.m += 1;
@@ -435,7 +427,6 @@ impl Ppu {
         self.sprite_pattern_shifts_hi[sprite_index] = pattern_hi;
         self.sprite_attribute_latches[sprite_index] = sprite.attributes;
         self.sprite_x_counters[sprite_index] = sprite.x;
-        self.num_sprites = sprite_index as u8 + 1;
     }
 
     fn update_sprite_rendering_registers(&mut self) {
@@ -512,7 +503,7 @@ impl Ppu {
             return (0, 0);
         }
 
-        for i in 0..self.num_sprites as usize {
+        for i in 0..8 {
             if self.sprite_x_counters[i] == 0 && self.sprite_attribute_latches[i].0 != 0xFF {
                 let pixel =
                     ((self.sprite_pattern_shifts_lo[i] as u8 >> 7) & 0x01) |
@@ -638,7 +629,6 @@ impl Ppu {
                         if scanline_cycle % 2 == 0 {
                             self.oam.secondary[((scanline_cycle / 2) - 1) as usize] = 0xFF;
                         }
-
                     },
                     65...256 => {
                         if scanline_cycle % 2 == 1 {
@@ -923,6 +913,7 @@ struct Oam {
     // Used during sprite evaluation
     last_read_byte: u8,
     secondary_write_index: usize,
+    sprite_0_found: bool,
     n: usize,
     m: usize,
 }
@@ -940,6 +931,7 @@ impl Oam {
             secondary: [0u8; Oam::SECONDARY_SIZE],
             last_read_byte: 0,
             secondary_write_index: 0,
+            sprite_0_found: false,
             n: 0,
             m: 0,
         }
