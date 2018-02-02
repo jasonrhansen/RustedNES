@@ -24,6 +24,7 @@ pub enum Mirroring {
 
 impl Mirroring {
     pub fn mirror_address(&self, address: u16) -> u16 {
+        let address = address & 0x2FFF;
         match *self {
             Mirroring::Horizontal => {
                 let address = address & 0x2BFF;
