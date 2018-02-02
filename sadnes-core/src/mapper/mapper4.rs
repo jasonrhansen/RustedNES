@@ -4,7 +4,6 @@ use memory::Memory;
 use ppu::{self, Ppu, Vram};
 use cpu::{Cpu, Interrupt};
 
-
 pub struct Mapper4 {
     cartridge: Box<Cartridge>,
 
@@ -18,6 +17,9 @@ pub struct Mapper4 {
     irq_reload: bool,
     irq_counter: u8,
     irq_counter_reload_value: u8,
+
+    prg_rom_bank_offsets: [usize; 4],
+    chr_bank_offsets: [usize; 8],
 }
 
 #[derive(Debug)]
@@ -34,7 +36,7 @@ enum ChrA12Inversion {
 
 impl Mapper4 {
     pub fn new(cartridge: Box<Cartridge>) -> Self {
-        Mapper4 {
+        let mut m = Mapper4 {
             cartridge,
             next_bank_register: 0,
             bank_registers: [0, 0, 0, 0 , 0, 0, 0, 1],
@@ -44,12 +46,15 @@ impl Mapper4 {
             irq_reload: false,
             irq_counter: 0,
             irq_counter_reload_value: 0,
-        }
+            prg_rom_bank_offsets: [0; 4],
+            chr_bank_offsets: [0; 8],
+        };
+        m.update_banks();
+        m
     }
 
     fn write_bank_select(&mut self, value: u8) {
         self.next_bank_register = value & 0x07;
-
         self.prg_rom_mode = if value & 0x40 == 0 {
             PrgRomMode::Zero
         } else {
@@ -65,6 +70,7 @@ impl Mapper4 {
 
     fn write_bank_data(&mut self, value: u8) {
         self.bank_registers[self.next_bank_register as usize] = value;
+        self.update_banks();
     }
 
     fn write_mirroring(&mut self, value: u8) {
@@ -85,124 +91,57 @@ impl Mapper4 {
         self.irq_counter_reload_value = value;
     }
 
-    fn chr_address(bank: u8, address: u16) -> usize {
-        (bank as usize * 0x0400) | (address as usize & 0x03FF)
+    fn prg_bank_address(&self, bank: u8) -> usize {
+        let bank = bank % ((self.cartridge.prg_rom.len() / 0x2000) as u8);
+        bank as usize * 0x2000
     }
 
-    fn prg_rom_address(bank: u8, address: u16) -> usize {
-        (bank as usize * 0x2000 as usize) | (address as usize & 0x1FFF)
+    fn chr_bank_address(&self, bank: u8) -> usize {
+        let bank = bank % ((self.cartridge.chr.len() / 0x0400) as u8);
+        bank as usize * 0x0400
+    }
+
+    fn update_banks(&mut self) {
+        self.prg_rom_bank_offsets[1] = self.prg_bank_address(self.bank_registers[7] & 0x3F);
+        self.prg_rom_bank_offsets[3] = self.prg_bank_address(self.cartridge.prg_rom_num_banks * 2 - 1);
+
+        match self.prg_rom_mode {
+            PrgRomMode::Zero => {
+                self.prg_rom_bank_offsets[0] = self.prg_bank_address(self.bank_registers[6] & 0x3F);
+                self.prg_rom_bank_offsets[2] =  self.prg_bank_address(self.cartridge.prg_rom_num_banks * 2 - 2);
+            },
+            PrgRomMode::One => {
+                self.prg_rom_bank_offsets[0] =  self.prg_bank_address(self.cartridge.prg_rom_num_banks * 2 - 2);
+                self.prg_rom_bank_offsets[2] = self.prg_bank_address(self.bank_registers[6] & 0x3F);
+            },
+        }
+
+        match self.chr_a12_inversion {
+            ChrA12Inversion::Zero => {
+                self.chr_bank_offsets[0] = self.chr_bank_address(self.bank_registers[0] & 0xFE);
+                self.chr_bank_offsets[1] = self.chr_bank_address(self.bank_registers[0] | 0x01);
+                self.chr_bank_offsets[2] = self.chr_bank_address(self.bank_registers[1] & 0xFE);
+                self.chr_bank_offsets[3] = self.chr_bank_address(self.bank_registers[1] | 0x01);
+                self.chr_bank_offsets[4] = self.chr_bank_address(self.bank_registers[2]);
+                self.chr_bank_offsets[5] = self.chr_bank_address(self.bank_registers[3]);
+                self.chr_bank_offsets[6] = self.chr_bank_address(self.bank_registers[4]);
+                self.chr_bank_offsets[7] = self.chr_bank_address(self.bank_registers[5]);
+            },
+            ChrA12Inversion::One => {
+                self.chr_bank_offsets[0] = self.chr_bank_address(self.bank_registers[2]);
+                self.chr_bank_offsets[1] = self.chr_bank_address(self.bank_registers[3]);
+                self.chr_bank_offsets[2] = self.chr_bank_address(self.bank_registers[4]);
+                self.chr_bank_offsets[3] = self.chr_bank_address(self.bank_registers[5]);
+                self.chr_bank_offsets[4] = self.chr_bank_address(self.bank_registers[0] & 0xFE);
+                self.chr_bank_offsets[5] = self.chr_bank_address(self.bank_registers[0] | 0x01);
+                self.chr_bank_offsets[6] = self.chr_bank_address(self.bank_registers[1] & 0xFE);
+                self.chr_bank_offsets[7] = self.chr_bank_address(self.bank_registers[1] | 0x01);
+            },
+        }
     }
 
     fn mirror_address(&self, address: u16) -> u16 {
         self.cartridge.mirroring.mirror_address(address)
-    }
-
-    fn read_chr(&mut self, address: u16) -> u8 {
-        let bank = if address < 0x0400 {
-            match self.chr_a12_inversion {
-                ChrA12Inversion::Zero => {
-                    self.bank_registers[0] & 0xFE
-                },
-                ChrA12Inversion::One => {
-                    self.bank_registers[2]
-                },
-            }
-        } else if address < 0x0800 {
-            match self.chr_a12_inversion {
-                ChrA12Inversion::Zero => {
-                    self.bank_registers[0] | 0x01
-                },
-                ChrA12Inversion::One => {
-                    self.bank_registers[3]
-                },
-            }
-        } else if address < 0x0C00 {
-            match self.chr_a12_inversion {
-                ChrA12Inversion::Zero => {
-                    self.bank_registers[1] & 0xFE
-                },
-                ChrA12Inversion::One => {
-                    self.bank_registers[4]
-                },
-            }
-        } else if address < 0x1000 {
-            match self.chr_a12_inversion {
-                ChrA12Inversion::Zero => {
-                    self.bank_registers[1] | 0x01
-                },
-                ChrA12Inversion::One => {
-                    self.bank_registers[5]
-                },
-            }
-        } else if address < 0x1400 {
-            match self.chr_a12_inversion {
-                ChrA12Inversion::Zero => {
-                    self.bank_registers[2]
-                },
-                ChrA12Inversion::One => {
-                    self.bank_registers[0] & 0xFE
-                },
-            }
-        } else if address < 0x1800 {
-            match self.chr_a12_inversion {
-                ChrA12Inversion::Zero => {
-                    self.bank_registers[3]
-                },
-                ChrA12Inversion::One => {
-                    self.bank_registers[0] | 0x01
-                },
-            }
-        } else if address < 0x1C00 {
-            match self.chr_a12_inversion {
-                ChrA12Inversion::Zero => {
-                    self.bank_registers[4]
-                },
-                ChrA12Inversion::One => {
-                    self.bank_registers[1] & 0xFE
-                },
-            }
-        } else {
-            match self.chr_a12_inversion {
-                ChrA12Inversion::Zero => {
-                    self.bank_registers[5]
-                },
-                ChrA12Inversion::One => {
-                    self.bank_registers[1] | 0x01
-                },
-            }
-        };
-
-        let chr_addr = Mapper4::chr_address(bank, address);
-        self.cartridge.chr[chr_addr as usize]
-    }
-
-    fn read_prg_rom(&mut self, address: u16) -> u8 {
-        let bank = if address < 0xA000 {
-            match self.prg_rom_mode {
-                PrgRomMode::Zero => {
-                    self.bank_registers[6]
-                },
-                PrgRomMode::One => {
-                    self.cartridge.prg_rom_num_banks * 2 - 2
-                },
-            }
-        } else if address < 0xC000 {
-            self.bank_registers[7]
-        } else if address < 0xE000 {
-            match self.prg_rom_mode {
-                PrgRomMode::Zero => {
-                    self.cartridge.prg_rom_num_banks * 2 - 2
-                },
-                PrgRomMode::One => {
-                    self.bank_registers[6]
-                },
-            }
-        } else {
-            self.cartridge.prg_rom_num_banks * 2 - 1
-        };
-
-        let rom_addr = Mapper4::prg_rom_address(bank, address);
-        self.cartridge.prg_rom[rom_addr as usize]
     }
 
     fn handle_scanline(&mut self, cpu: &mut Cpu) {
@@ -216,6 +155,16 @@ impl Mapper4 {
                 cpu.request_interrupt(Interrupt::Irq);
             }
         }
+    }
+
+    fn read_prg_rom(&self, address: u16) -> u8 {
+        let addr = self.prg_rom_bank_offsets[(address as usize - 0x8000) / 0x2000] | (address as usize & 0x1FFF);
+        self.cartridge.prg_rom[addr]
+    }
+
+    fn read_chr(&self, address: u16) -> u8 {
+        let addr = self.chr_bank_offsets[(address as usize) / 0x0400] | (address as usize & 0x03FF);
+        self.cartridge.chr[addr]
     }
 }
 
@@ -231,7 +180,8 @@ impl Mapper for Mapper4 {
     }
 
     fn prg_write_byte(&mut self, address: u16, value: u8) {
-        if 0x6000 <= address && address < 0x8000 {
+        if address < 0x6000 {
+        } else if address < 0x8000 {
             self.cartridge.prg_ram[(address - 0x6000) as usize] = value
         } else if address < 0xA000 {
             if address & 0x01 == 0 {
