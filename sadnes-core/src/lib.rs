@@ -5,6 +5,9 @@ extern crate byteorder;
 extern crate bit_reverse;
 
 #[macro_use]
+extern crate lazy_static;
+
+#[macro_use]
 mod opcode;
 
 pub mod cartridge;
@@ -19,3 +22,4 @@ pub mod interconnect;
 pub mod nes;
 pub mod sink;
 pub mod time_source;
+pub mod save_state;

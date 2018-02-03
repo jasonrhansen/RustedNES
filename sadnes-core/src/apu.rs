@@ -32,11 +32,26 @@ static DMC_TABLE: &'static [u8] = &[
     214, 190, 170, 160, 143, 127, 113, 107, 95, 80, 71, 64, 53, 42, 36, 27,
 ];
 
+lazy_static! {
+    static ref PULSE_TABLE: [f32; 31] = {
+        let mut pulse_table = [0f32; 31];
+        for n in 0..31 {
+            pulse_table[n] = (95.52 / (8128.0 / (n as f64) + 100.0)) as f32;
+        }
+        pulse_table
+    };
+
+    static ref TND_TABLE: [f32; 203] = {
+        let mut tnd_table = [0f32; 203];
+        for n in 0..203 {
+            tnd_table[n] = (163.67 / (24329.0 / (n as f64) + 100.0)) as f32;
+        }
+        tnd_table
+    };
+}
+
 pub struct Apu {
     cycles: u64,
-
-    pulse_table: [f32; 31],
-    tnd_table: [f32; 203],
 
     pulse_1: Pulse,
     pulse_2: Pulse,
@@ -52,16 +67,6 @@ pub struct Apu {
 
 impl Apu {
     pub fn new() -> Apu {
-        let mut pulse_table = [0f32; 31];
-        for n in 0..31 {
-            pulse_table[n] = 95.52 / (8128.0 / (n as f32) + 100.0);
-        }
-
-        let mut tnd_table = [0f32; 203];
-        for n in 0..203 {
-            tnd_table[n] = 163.67 / (24329.0 / (n as f32) + 100.0);
-        }
-
         let filter_chain = FilterChain::new()
             .add(Box::new(
                 FirstOrderFilter::new_high_pass(
@@ -78,8 +83,6 @@ impl Apu {
 
         Apu {
             cycles: 0,
-            pulse_table,
-            tnd_table,
             pulse_1: Pulse::new(SweepNegationType::OnesComplement),
             pulse_2: Pulse::new(SweepNegationType::TwosComplement),
             triangle: Triangle::new(),
@@ -131,8 +134,8 @@ impl Apu {
         let noise = if self.settings.noise_enabled { self.noise.output() } else { 0 };
         let dmc = if self.settings.dmc_enabled { self.dmc.output() } else { 0 };
 
-        let pulse_out = self.pulse_table[pulse_1 as usize + pulse_2 as usize];
-        let tnd_out = self.tnd_table[3 * triangle as usize + 2 * noise as usize + dmc as usize];
+        let pulse_out = PULSE_TABLE[pulse_1 as usize + pulse_2 as usize];
+        let tnd_out = TND_TABLE[3 * triangle as usize + 2 * noise as usize + dmc as usize];
 
         self.filter_chain.step(pulse_out + tnd_out)
     }
