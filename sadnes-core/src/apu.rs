@@ -145,7 +145,6 @@ impl Apu {
         // e e e e    e e e e -    Envelope and linear counter
         match self.frame_counter.mode {
             FrameCounterMode::FourStep => {
-                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 4;
                 match self.frame_counter.sequence_frame {
                     0 | 2 => {
                         self.step_envelope_and_linear_counter();
@@ -159,15 +158,15 @@ impl Apu {
                         self.step_envelope_and_linear_counter();
                         self.step_sweep();
                         self.step_length_counter();
-                        if !self.frame_counter.interrupt_inhibit {
+                        if self.frame_counter.interrupt_enable {
                             cpu.request_interrupt(Interrupt::Irq);
                         }
                     },
                     _ => (),
                 }
+                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 4;
             },
             FrameCounterMode::FiveStep => {
-                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 5;
                 match self.frame_counter.sequence_frame {
                     0 | 2 => {
                         self.step_envelope_and_linear_counter();
@@ -179,6 +178,7 @@ impl Apu {
                     },
                     _ => (),
                 }
+                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 5;
             }
         }
     }
@@ -214,8 +214,6 @@ impl Apu {
     }
 
     fn read_status(&mut self) -> u8 {
-        self.frame_counter.interrupt_inhibit = false;
-
         let mut status = 0x00;
 
         if self.pulse_1.length_counter > 0 {
@@ -277,7 +275,7 @@ impl Apu {
             FrameCounterMode::FiveStep
         };
 
-        self.frame_counter.interrupt_inhibit = value & 0x40 != 0;
+        self.frame_counter.interrupt_enable = value & 0x40 == 0;
 
         if self.frame_counter.mode == FrameCounterMode::FiveStep {
             self.step_length_counter();
@@ -780,7 +778,7 @@ enum FrameCounterMode {
 struct FrameCounter {
     sequence_frame: u8,
     mode: FrameCounterMode,
-    interrupt_inhibit: bool,
+    interrupt_enable: bool,
 }
 
 impl FrameCounter {
@@ -790,7 +788,7 @@ impl FrameCounter {
         FrameCounter {
             sequence_frame: 0,
             mode: FrameCounterMode::FourStep,
-            interrupt_inhibit: false,
+            interrupt_enable: false,
         }
     }
 }
