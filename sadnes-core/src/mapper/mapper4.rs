@@ -14,7 +14,6 @@ pub struct Mapper4 {
     chr_a12_inversion: ChrA12Inversion,
 
     irq_enable: bool,
-    irq_reload: bool,
     irq_counter: u8,
     irq_counter_reload_value: u8,
 
@@ -43,7 +42,6 @@ impl Mapper4 {
             prg_rom_mode: PrgRomMode::Zero,
             chr_a12_inversion: ChrA12Inversion::Zero,
             irq_enable: false,
-            irq_reload: false,
             irq_counter: 0,
             irq_counter_reload_value: 0,
             prg_rom_bank_offsets: [0; 4],
@@ -66,6 +64,7 @@ impl Mapper4 {
         } else {
             ChrA12Inversion::One
         };
+        self.update_banks();
     }
 
     fn write_bank_data(&mut self, value: u8) {
@@ -145,9 +144,8 @@ impl Mapper4 {
     }
 
     fn handle_scanline(&mut self, cpu: &mut Cpu) {
-        if self.irq_counter == 0 || self.irq_reload {
+        if self.irq_counter == 0 {
             self.irq_counter = self.irq_counter_reload_value;
-            self.irq_reload = false;
         } else {
             self.irq_counter -= 1;
 
@@ -162,9 +160,17 @@ impl Mapper4 {
         self.cartridge.prg_rom[addr]
     }
 
+    fn chr_address(&self, address: u16) -> usize {
+        self.chr_bank_offsets[(address as usize) / 0x0400] | (address as usize & 0x03FF)
+    }
+
     fn read_chr(&self, address: u16) -> u8 {
-        let addr = self.chr_bank_offsets[(address as usize) / 0x0400] | (address as usize & 0x03FF);
-        self.cartridge.chr[addr]
+        self.cartridge.chr[self.chr_address(address)]
+    }
+
+    fn write_chr(&mut self, address: u16, value: u8) {
+        let addr = self.chr_address(address);
+        self.cartridge.chr[addr] = value;
     }
 }
 
@@ -199,7 +205,7 @@ impl Mapper for Mapper4 {
             if address & 0x01 == 0 {
                 self.write_irq_latch(value);
             } else {
-                self.irq_reload = true;
+                self.irq_counter = 0;
             }
         } else {
             if address & 0x01 == 0 {
@@ -219,13 +225,15 @@ impl Mapper for Mapper4 {
     }
 
     fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8) {
-        if address >= 0x2000 {
+        if address < 0x2000 {
+            self.write_chr(address, value);
+        } else {
             vram.write_byte(self.mirror_address(address) - 0x2000, value);
         }
     }
 
     fn step(&mut self, cpu: &mut Cpu, ppu: &Ppu) {
-        if ppu.rendering_enabled() && ppu.scanline <= ppu::VISIBLE_END_SCANLINE && ppu.scanline_cycle() == 260 {
+        if ppu.rendering_enabled() && ppu.scanline <= ppu::VISIBLE_END_SCANLINE && ppu.scanline_cycle() == 280 {
             self.handle_scanline(cpu);
         }
     }
