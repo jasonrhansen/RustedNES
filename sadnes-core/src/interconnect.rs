@@ -25,7 +25,7 @@ impl Interconnect {
         Interconnect {
             ram: Ram::new(),
             ppu: Ppu::new(mapper.clone()),
-            apu: Apu::new(),
+            apu: Apu::new(mapper.clone()),
             input: Input::new(),
             mapper,
             cpu,

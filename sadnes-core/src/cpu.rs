@@ -124,6 +124,7 @@ fn mem_pages_same(m1: u16, m2: u16) -> bool {
 
 pub struct Cpu {
     pub cycles: u64,
+    stall_cycles: u8,
     regs: Regs,
     interrupt: Option<Interrupt>,
 
@@ -135,6 +136,7 @@ impl Cpu {
     pub fn new() -> Cpu {
         let cpu = Cpu {
             cycles: 0,
+            stall_cycles: 0,
             regs: Regs::new(),
             interrupt: None,
             watchpoints: HashSet::new(),
@@ -142,6 +144,10 @@ impl Cpu {
         };
 
         cpu
+    }
+
+    pub fn stall(&mut self, cycles: u8) {
+        self.stall_cycles += cycles;
     }
 
     pub fn regs(&self) -> Regs {
@@ -156,6 +162,11 @@ impl Cpu {
     }
 
     pub fn step<M: Memory>(&mut self, mem: &mut M) -> (u32, bool) {
+        if self.stall_cycles > 0 {
+            self.stall_cycles -= 1;
+            return (1, false);
+	    }
+
         self.trigger_watchpoint = false;
         let cycles = self.cycles;
 

@@ -1,7 +1,10 @@
+use mapper::Mapper;
 use memory::Memory;
 use sink::*;
 use cpu::{Cpu, Interrupt, CPU_FREQUENCY};
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::f32::consts::PI;
 
 pub const SAMPLE_RATE: u32 = 44_100;
@@ -62,11 +65,13 @@ pub struct Apu {
 
     filter_chain: FilterChain,
 
+    mapper: Rc<RefCell<Box<Mapper>>>,
+
     pub settings: Settings,
 }
 
 impl Apu {
-    pub fn new() -> Apu {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Apu {
         let filter_chain = FilterChain::new()
             .add(Box::new(
                 FirstOrderFilter::new_high_pass(
@@ -90,6 +95,7 @@ impl Apu {
             dmc: Dmc::new(),
             frame_counter: FrameCounter::new(),
             filter_chain,
+            mapper,
             settings: Settings {
                 pulse_1_enabled: true,
                 pulse_2_enabled: true,
@@ -112,7 +118,7 @@ impl Apu {
         self.cycles += 1;
         let cycle_2 = self.cycles;
 
-        self.step_timer();
+        self.step_timer(cpu);
 
         let f1 = ((cycle_1 as f64) / FrameCounter::RATE) as u64;
         let f2 = ((cycle_2 as f64) / FrameCounter::RATE) as u64;
@@ -205,12 +211,12 @@ impl Apu {
         self.noise.step_envelope();
     }
 
-    fn step_timer(&mut self) {
+    fn step_timer(&mut self, cpu: &mut Cpu) {
         if self.cycles % 2 == 0 {
             self.pulse_1.step_timer();
             self.pulse_2.step_timer();
             self.noise.step_timer();
-            self.dmc.step_timer();
+            self.dmc.step_timer(cpu, self.mapper.clone());
         }
 
         self.triangle.step_timer();
@@ -746,9 +752,12 @@ impl Dmc {
         self.current_length = self.sample_length;
     }
 
-    fn step_timer(&mut self) {
+    fn step_timer(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<Box<Mapper>>>) {
         if self.enable_flag {
-            self.step_reader();
+            if self.irq_flag {
+                cpu.request_interrupt(Interrupt::Irq);
+            }
+            self.step_reader(cpu, mapper);
             if self.tick_value == 0 {
                 self.tick_value = self.tick_period;
                 self.step_shifter();
@@ -758,17 +767,44 @@ impl Dmc {
         }
     }
 
-    fn step_reader(&mut self) {
-        // TODO: Implement
+    fn step_reader(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<Box<Mapper>>>) {
+        if self.current_length > 0 && self.bit_count == 0 {
+            cpu.stall(4);
+            let mut mapper = mapper.borrow_mut();
+            self.shift_register = mapper.prg_read_byte(self.current_address);
+            self.bit_count = 8;
+            self.current_address += 1;
+            if self.current_address == 0 {
+                self.current_address = 0x8000;
+            }
+            self.current_length -= 1;
+            if self.current_length == 0 && self.loop_flag {
+                self.restart();
+            }
+        }
     }
 
     fn step_shifter(&mut self) {
-        // TODO: Implement
+        if self.bit_count == 0 {
+            return;
+        }
+
+        if self.shift_register & 0x01 != 0 {
+            if self.value < 126 {
+                self.value += 2;
+            }
+        } else {
+            if self.value > 1 {
+                self.value -= 2;
+            }
+        }
+
+        self.shift_register >>= 1;
+        self.bit_count -= 1;
     }
 
     fn output(&self) -> u8 {
-        // TODO: Implement
-        0
+        self.value
     }
 }
 
