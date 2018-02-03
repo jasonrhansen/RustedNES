@@ -637,13 +637,14 @@ impl Ppu {
                             self.sprite_evaluation_write_byte();
                         }
                     },
-                    257...320 => {
-                        if scanline_cycle % 8 == 0 {
-                            self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
-                        }
-                    },
                     _ => (),
                 }
+            }
+        }
+
+        if on_visible_scanline && 257 <= scanline_cycle && scanline_cycle <= 320 {
+            if scanline_cycle % 8 == 0 {
+                self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
             }
         }
 
