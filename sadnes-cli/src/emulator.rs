@@ -172,7 +172,7 @@ impl Emulator {
                 }
             }
 
-            thread::sleep(time::Duration::from_millis(3));
+            thread::sleep(time::Duration::from_millis(10));
         }
     }
 
