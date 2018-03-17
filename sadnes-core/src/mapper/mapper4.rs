@@ -91,13 +91,13 @@ impl Mapper4 {
     }
 
     fn prg_bank_address(&self, bank: u8) -> usize {
-        let bank = bank % ((self.cartridge.prg_rom.len() / 0x2000) as u8);
-        bank as usize * 0x2000
+        let bank = (bank as usize) % (self.cartridge.prg_rom.len() / 0x2000);
+        bank * 0x2000
     }
 
     fn chr_bank_address(&self, bank: u8) -> usize {
-        let bank = bank % ((self.cartridge.chr.len() / 0x0400) as u8);
-        bank as usize * 0x0400
+        let bank = (bank as usize) % (self.cartridge.chr.len() / 0x0400);
+        bank * 0x0400
     }
 
     fn update_banks(&mut self) {
