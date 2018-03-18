@@ -65,7 +65,7 @@ impl Mapper1 {
 
     fn write_register(&mut self, address: u16, shift: u8) {
         if address < 0xA000 {
-            self.regs.control = shift;
+            self.regs.control = shift & 0x1F;
             self.cartridge.mirroring = match self.regs.control & 0x03 {
                 0 => Mirroring::OneScreenLower,
                 1 => Mirroring::OneScreenUpper,
@@ -73,11 +73,11 @@ impl Mapper1 {
                 _ => Mirroring::Horizontal,
             };
         } else if address < 0xC000 {
-            self.regs.chr_bank_0 = shift;
+            self.regs.chr_bank_0 = shift & 0x1F;
         } else if address <  0xE000 {
-            self.regs.chr_bank_1 = shift;
+            self.regs.chr_bank_1 = shift & 0x1F;
         } else {
-            self.regs.prg_bank = shift;
+            self.regs.prg_bank = shift & 0x0F;
         }
 
     }
@@ -98,7 +98,7 @@ impl Mapper1 {
         }
     }
 
-    fn prg_rom_address(bank: u8, address: u16) -> usize {
+    fn prg_rom_address(&self, bank: u8, address: u16) -> usize {
         (bank as usize * PRG_ROM_BANK_SIZE as usize) |
             (address as usize & (PRG_ROM_BANK_SIZE as usize - 1))
     }
@@ -132,16 +132,18 @@ impl Mapper for Mapper1 {
         } else if address < 0x8000 {
             self.cartridge.prg_ram[(address - 0x6000) as usize]
         } else if address < 0xC000 {
-            let rom_addr = Mapper1::prg_rom_address(self.prg_rom_bank_first(), address);
+            let rom_addr = self.prg_rom_address(self.prg_rom_bank_first(), address);
             self.cartridge.prg_rom[rom_addr as usize]
         } else {
-            let rom_addr = Mapper1::prg_rom_address(self.prg_rom_bank_last(), address);
+            let rom_addr = self.prg_rom_address(self.prg_rom_bank_last(), address);
             self.cartridge.prg_rom[rom_addr as usize]
         }
     }
 
     fn prg_write_byte(&mut self, address: u16, value: u8) {
-        if 0x6000 <= address && address < 0x8000 {
+        if address < 0x6000 {
+            // Do nothing
+        } else if address < 0x8000 {
             self.cartridge.prg_ram[(address - 0x6000) as usize] = value
         } else {
             if (value & 0x80) == 0 {
