@@ -50,7 +50,7 @@ impl Mapper for Mapper2 {
 
     fn prg_write_byte(&mut self, address: u16, value: u8) {
         if address >= 0x8000 {
-            self.switchable_bank = value;
+            self.switchable_bank = ((value as usize) % (self.cartridge.prg_rom_num_banks) as usize) as u8;
         }
     }
 
