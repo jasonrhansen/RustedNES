@@ -1066,6 +1066,8 @@ impl MemMap {
 
 impl Memory for MemMap {
     fn read_byte(&mut self, address: u16) -> u8 {
+        let address = address & 0x3FFF;
+
         if address < PaletteRam::START_ADDRESS {
             let mut mapper = self.mapper.borrow_mut();
             mapper.ppu_read_byte(&mut self.vram, address)
