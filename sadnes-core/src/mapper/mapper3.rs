@@ -1,4 +1,4 @@
-use cartridge::{Cartridge, PRG_ROM_BANK_SIZE};
+use cartridge::Cartridge;
 use mapper::Mapper;
 use memory::Memory;
 use ppu::{self, Ppu, Vram};
@@ -18,13 +18,14 @@ impl Mapper3 {
         }
     }
 
-    fn chr_address(bank: u8, address: u16) -> usize {
+    fn chr_address(&self, bank: u8, address: u16) -> usize {
+        let bank = (bank as usize) % (self.cartridge.prg_rom.len() / 0x2000);
         (bank as usize * 0x2000 as usize) | (address as usize & 0x1FFF)
     }
 
     fn read_chr(&mut self, address: u16) -> u8 {
-        let rom_addr = Mapper3::chr_address(self.chr_bank, address);
-        self.cartridge.prg_rom[rom_addr as usize]
+        let rom_addr = self.chr_address(self.chr_bank, address);
+        self.cartridge.chr[rom_addr as usize]
     }
 
     fn mirror_address(&self, address: u16) -> u16 {
@@ -34,10 +35,10 @@ impl Mapper3 {
 
 impl Mapper for Mapper3 {
     fn prg_read_byte(&mut self, address: u16) -> u8 {
-        if address < 0x6000 {
+        if address < 0x8000 {
             0
         } else {
-            self.cartridge.prg_rom[address as usize]
+            self.cartridge.prg_rom[(address - 0x8000) as usize]
         }
     }
 
