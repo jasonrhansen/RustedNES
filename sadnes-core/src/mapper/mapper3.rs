@@ -19,7 +19,6 @@ impl Mapper3 {
     }
 
     fn chr_address(&self, bank: u8, address: u16) -> usize {
-        let bank = (bank as usize) % (self.cartridge.prg_rom.len() / 0x2000);
         (bank as usize * 0x2000 as usize) | (address as usize & 0x1FFF)
     }
 
@@ -44,7 +43,7 @@ impl Mapper for Mapper3 {
 
     fn prg_write_byte(&mut self, address: u16, value: u8) {
         if address >= 0x8000 {
-            self.chr_bank = value;
+            self.chr_bank = ((value as usize) % (self.cartridge.prg_rom.len() / 0x2000)) as u8;
         }
     }
 
