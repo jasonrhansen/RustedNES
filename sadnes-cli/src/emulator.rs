@@ -6,7 +6,6 @@ use sadnes_core::cpu::CPU_FREQUENCY;
 use sadnes_core::disassembler::Disassembler;
 use sadnes_core::input::Button;
 use sadnes_core::memory::Memory;
-use sadnes_core::nes;
 use sadnes_core::nes::Nes;
 use sadnes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use sadnes_core::sink::*;
