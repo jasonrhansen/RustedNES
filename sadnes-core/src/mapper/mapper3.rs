@@ -1,13 +1,18 @@
 use cartridge::Cartridge;
 use mapper::Mapper;
 use memory::Memory;
-use ppu::{self, Ppu, Vram};
-use cpu::{Cpu, Interrupt};
+use ppu::Vram;
 
+use serde_json;
 
 pub struct Mapper3 {
     cartridge: Box<Cartridge>,
     chr_bank: u8,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct State {
+    pub chr_bank: u8,
 }
 
 impl Mapper3 {
@@ -58,6 +63,20 @@ impl Mapper for Mapper3 {
     fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8) {
         if address >= 0x2000 {
             vram.write_byte(self.mirror_address(address) - 0x2000, value);
+        }
+    }
+
+    fn get_state(&self) -> String {
+        let state = State {
+            chr_bank: self.chr_bank,
+        };
+
+        serde_json::to_string(&state).unwrap_or("".into())
+    }
+
+    fn apply_state(&mut self, state: &String) {
+        if let Ok(ref state) = serde_json::from_str::<State>(&state) {
+            self.chr_bank = state.chr_bank;
         }
     }
 }

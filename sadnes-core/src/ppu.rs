@@ -104,8 +104,37 @@ pub struct Ppu {
     nmi_output: bool,
 }
 
-impl Ppu {
 
+#[derive(Deserialize, Serialize)]
+pub struct State {
+    pub cycles: u64,
+    pub regs: Regs,
+    pub ppu_data_read_buffer: u8,
+    pub vram: Vram,
+    pub palette_ram: PaletteRam,
+    pub oam: Oam,
+    pub scanline: i16,
+    pub scanline_start_cycle: u64,
+    pub frame: u64,
+    pub ppu_gen_latch: u8,
+    pub name_table_byte: u8,
+    pub attribute_table_byte: u8,
+    pub tile_bitmap_byte_lo: u8,
+    pub tile_bitmap_byte_hi: u8,
+    pub background_pattern_shift_lo: u16,
+    pub background_pattern_shift_hi: u16,
+    pub background_palette_shift_lo: u16,
+    pub background_palette_shift_hi: u16,
+    pub sprite_pattern_shifts_lo: [u8; 8],
+    pub sprite_pattern_shifts_hi: [u8; 8],
+    pub sprite_attribute_latches: [SpriteAttributes; 8],
+    pub sprite_x_counters: [u8; 8],
+    pub sprite_0_on_scanline: bool,
+    pub nmi_occurred: bool,
+    pub nmi_output: bool,
+}
+
+impl Ppu {
     pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Ppu {
         Ppu {
             cycles: 0,
@@ -134,6 +163,64 @@ impl Ppu {
             nmi_occurred: false,
             nmi_output: false,
         }
+    }
+
+    pub fn get_state(&self) -> State {
+        State {
+            cycles: self.cycles,
+            regs: self.regs,
+            ppu_data_read_buffer: self.ppu_data_read_buffer,
+            vram: self.mem.vram.clone(),
+            palette_ram: self.mem.palette_ram.clone(),
+            oam: self.oam.clone(),
+            scanline: self.scanline,
+            scanline_start_cycle: self.scanline_start_cycle,
+            frame: self.frame,
+            ppu_gen_latch: self.ppu_gen_latch,
+            name_table_byte: self.name_table_byte,
+            attribute_table_byte: self.attribute_table_byte,
+            tile_bitmap_byte_lo: self.tile_bitmap_byte_lo,
+            tile_bitmap_byte_hi: self.tile_bitmap_byte_hi,
+            background_pattern_shift_lo: self.background_pattern_shift_lo,
+            background_pattern_shift_hi: self.background_pattern_shift_hi,
+            background_palette_shift_lo: self.background_palette_shift_lo,
+            background_palette_shift_hi: self.background_palette_shift_hi,
+            sprite_pattern_shifts_lo: self.sprite_pattern_shifts_lo,
+            sprite_pattern_shifts_hi: self.sprite_pattern_shifts_hi,
+            sprite_attribute_latches: self.sprite_attribute_latches,
+            sprite_x_counters: self.sprite_x_counters,
+            sprite_0_on_scanline: self.sprite_0_on_scanline,
+            nmi_occurred: self.nmi_occurred,
+            nmi_output: self.nmi_output,
+        }
+    }
+
+    pub fn apply_state(&mut self, state: &State) {
+        self.cycles = state.cycles;
+        self.regs = state.regs;
+        self.ppu_data_read_buffer = state.ppu_data_read_buffer;
+        self.mem.vram = state.vram.clone();
+        self.mem.palette_ram = state.palette_ram.clone();
+        self.oam = state.oam.clone();
+        self.scanline = state.scanline;
+        self.scanline_start_cycle = state.scanline_start_cycle;
+        self.frame = state.frame;
+        self.ppu_gen_latch = state.ppu_gen_latch;
+        self.name_table_byte = state.name_table_byte;
+        self.attribute_table_byte = state.attribute_table_byte;
+        self.tile_bitmap_byte_lo = state.tile_bitmap_byte_lo;
+        self.tile_bitmap_byte_hi = state.tile_bitmap_byte_hi;
+        self.background_pattern_shift_lo = state.background_pattern_shift_lo;
+        self.background_pattern_shift_hi = state.background_pattern_shift_hi;
+        self.background_palette_shift_lo = state.background_palette_shift_lo;
+        self.background_palette_shift_hi = state.background_palette_shift_hi;
+        self.sprite_pattern_shifts_lo = state.sprite_pattern_shifts_lo;
+        self.sprite_pattern_shifts_hi = state.sprite_pattern_shifts_hi;
+        self.sprite_attribute_latches = state.sprite_attribute_latches;
+        self.sprite_x_counters = state.sprite_x_counters;
+        self.sprite_0_on_scanline = state.sprite_0_on_scanline;
+        self.nmi_occurred = state.nmi_occurred;
+        self.nmi_output = state.nmi_output;
     }
 
     pub fn reset(&mut self) {
@@ -768,6 +855,7 @@ impl SpriteSize {
     }
 }
 
+#[derive(Copy, Clone, Deserialize, Serialize)]
 struct PpuCtrl { val: u8 }
 
 impl PpuCtrl {
@@ -812,6 +900,7 @@ impl DerefMut for PpuCtrl {
 }
 
 bitflags! {
+    #[derive(Deserialize, Serialize)]
     struct PpuMask: u8 {
         const NONE                   = 0;
 
@@ -849,6 +938,7 @@ impl DerefMut for PpuMask {
 }
 
 bitflags! {
+    #[derive(Deserialize, Serialize)]
     struct PpuStatus: u8 {
         const NONE            = 0;
         const SPRITE_OVERFLOW = 1 << 5;
@@ -870,12 +960,14 @@ impl DerefMut for PpuStatus {
     }
 }
 
+#[derive(Copy, Clone, Deserialize, Serialize)]
 enum WriteToggle {
     FirstWrite,
     SecondWrite,
 }
 
-struct Regs {
+#[derive(Copy, Clone, Deserialize, Serialize)]
+pub struct Regs {
     // Registers mapped from CPU address space
     ppu_ctrl: PpuCtrl,          // 0x2000
     ppu_mask: PpuMask,          // 0x2001
@@ -907,9 +999,10 @@ impl Regs {
 
 // OAM (Object Attribute Memory) is internal memory inside the PPU that contains
 // a display list of up to 64 sprites, where each sprite's information occupies 4 bytes
-struct Oam {
-    primary: [u8; Oam::PRIMARY_SIZE],
-    secondary: [u8; Oam::SECONDARY_SIZE],
+#[derive(Clone, Deserialize, Serialize)]
+pub struct Oam {
+    primary: Vec<u8>,
+    secondary: Vec<u8>,
 
     // Used during sprite evaluation
     last_read_byte: u8,
@@ -928,8 +1021,8 @@ impl Oam {
 
     fn new() -> Oam {
         Oam {
-            primary: [0u8; Oam::PRIMARY_SIZE],
-            secondary: [0u8; Oam::SECONDARY_SIZE],
+            primary: vec![0u8; Oam::PRIMARY_SIZE],
+            secondary: vec![0u8; Oam::SECONDARY_SIZE],
             last_read_byte: 0,
             secondary_write_index: 0,
             sprite_0_found: false,
@@ -950,7 +1043,7 @@ impl Memory for Oam {
 }
 
 impl Deref for Oam {
-    type Target = [u8; Oam::PRIMARY_SIZE];
+    type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
         &self.primary
@@ -964,14 +1057,15 @@ impl DerefMut for Oam {
 }
 
 // 2KB internal dedicated Video RAM
-pub struct Vram { bytes: [u8; Vram::SIZE] }
+#[derive(Clone, Deserialize, Serialize)]
+pub struct Vram { bytes: Vec<u8>, }
 
 impl Vram {
     const SIZE: usize = 0x0800;
 
     fn new() -> Vram {
         Vram {
-            bytes: [0u8; Vram::SIZE],
+            bytes: vec![0u8; Vram::SIZE],
         }
     }
 }
@@ -987,7 +1081,7 @@ impl Memory for Vram {
 }
 
 impl Deref for Vram {
-    type Target = [u8; Vram::SIZE];
+    type Target = Vec<u8>;
 
     fn deref(&self) -> &Self::Target {
         &self.bytes
@@ -1000,6 +1094,7 @@ impl DerefMut for Vram {
     }
 }
 
+#[derive(Clone, Deserialize, Serialize)]
 pub struct PaletteRam { bytes: [u8; PaletteRam::SIZE] }
 
 impl PaletteRam {
@@ -1101,8 +1196,8 @@ enum SpritePriority {
     BehindBackground,
 }
 
-#[derive(Clone, Copy)]
-struct SpriteAttributes(u8);
+#[derive(Clone, Copy, Deserialize, Serialize)]
+pub struct SpriteAttributes(u8);
 
 impl SpriteAttributes {
     fn palette(&self) -> u8 {

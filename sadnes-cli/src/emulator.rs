@@ -1,24 +1,23 @@
-use minifb::{WindowOptions, Window, Key, KeyRepeat, Scale};
-
 use command::*;
-use video_frame_sink::VideoFrameSink;
 use liner;
-
+use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
 use sadnes_core::cartridge::Cartridge;
-use sadnes_core::disassembler::Disassembler;
-use sadnes_core::nes::Nes;
-use sadnes_core::ppu::{SCREEN_WIDTH, SCREEN_HEIGHT};
-use sadnes_core::sink::*;
-use sadnes_core::memory::Memory;
-use sadnes_core::input::Button;
 use sadnes_core::cpu::CPU_FREQUENCY;
+use sadnes_core::disassembler::Disassembler;
+use sadnes_core::input::Button;
+use sadnes_core::memory::Memory;
+use sadnes_core::nes;
+use sadnes_core::nes::Nes;
+use sadnes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use sadnes_core::sink::*;
 use sadnes_core::time_source::TimeSource;
-
-use std::collections::{HashSet, HashMap};
+use serde_json;
+use std::cmp::min;
+use std::collections::{HashMap, HashSet};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time;
-use std::sync::mpsc::{channel, Sender, Receiver};
-use std::cmp::min;
+use video_frame_sink::VideoFrameSink;
 
 const CPU_CYCLE_TIME_NS: u64 = (1e9 as f64 / CPU_FREQUENCY as f64) as u64 + 1;
 
@@ -49,6 +48,8 @@ pub struct Emulator {
     start_time_ns: u64,
 
     emulated_cycles: u64,
+
+    serialized: Option<String>,
 }
 
 impl Emulator {
@@ -98,6 +99,8 @@ impl Emulator {
             start_time_ns: 0,
 
             emulated_cycles: 0,
+
+            serialized: None,
         }
     }
 
@@ -168,6 +171,18 @@ impl Emulator {
                     if self.window.is_key_pressed(Key::N, KeyRepeat::No) {
                         let settings = &mut self.nes.interconnect.apu.settings;
                         settings.noise_enabled = !settings.noise_enabled;
+                    }
+
+                    if self.window.is_key_pressed(Key::Key1, KeyRepeat::No) {
+                        self.serialized = serde_json::to_string(&self.nes.get_state()).ok();
+                    }
+
+                    if self.window.is_key_pressed(Key::F1, KeyRepeat::No) {
+                        if let Some(ref s) = self.serialized {
+                            if let Ok(ref d) = serde_json::from_str(&s) {
+                                self.nes.apply_state(&d);
+                            }
+                        }
                     }
                 }
             }

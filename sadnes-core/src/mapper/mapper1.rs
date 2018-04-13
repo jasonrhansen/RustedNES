@@ -3,12 +3,7 @@ use mapper::Mapper;
 use memory::Memory;
 use ppu::Vram;
 
-struct Regs {
-    control: u8,
-    prg_bank: u8,
-    chr_bank_0: u8,
-    chr_bank_1: u8,
-}
+use serde_json;
 
 pub struct Mapper1 {
     cartridge: Box<Cartridge>,
@@ -16,17 +11,33 @@ pub struct Mapper1 {
     regs: Regs,
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Deserialize, Serialize)]
+pub struct Regs {
+    control: u8,
+    prg_bank: u8,
+    chr_bank_0: u8,
+    chr_bank_1: u8,
+}
+
+
+#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
 enum PrgRomMode {
     Switch32Kb,    // Switch 32 KB at $8000, ignoring low bit of bank number
     FixFirstBank,  // Fix first bank at $8000 and switch 16 KB bank at $C000
     FixLastBank,   // Fix last bank at $C000 and switch 16 KB bank at $8000
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
 enum ChrRomMode {
     Switch8Kb,     // Switch 8 KB at a time
     Switch4Kb,     // Switch two separate 4 KB banks
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct State {
+    pub mirroring: Mirroring,
+    pub shift: u8,
+    pub regs: Regs,
 }
 
 // Put a 1 in bit 4 so we can detect when we've shifted enough to write to a register
@@ -182,6 +193,24 @@ impl Mapper for Mapper1 {
             self.cartridge.chr[chr_addr as usize] = value
         } else {
             vram.write_byte(self.mirror_address(address) - 0x2000, value);
+        }
+    }
+
+    fn get_state(&self) -> String {
+        let state = State {
+            mirroring: self.cartridge.mirroring,
+            shift: self.shift,
+            regs: self.regs,
+        };
+
+        serde_json::to_string(&state).unwrap_or("".into())
+    }
+
+    fn apply_state(&mut self, state: &String) {
+        if let Ok(ref state) = serde_json::from_str::<State>(&state) {
+            self.cartridge.mirroring = state.mirroring;
+            self.shift = state.shift;
+            self.regs = state.regs;
         }
     }
 }

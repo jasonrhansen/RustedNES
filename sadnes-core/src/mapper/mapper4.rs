@@ -1,8 +1,10 @@
-use cartridge::{Cartridge, Mirroring, CHR_ROM_BANK_SIZE, PRG_ROM_BANK_SIZE};
+use cartridge::{Cartridge, Mirroring};
 use mapper::Mapper;
 use memory::Memory;
 use ppu::{self, Ppu, Vram};
 use cpu::{Cpu, Interrupt};
+
+use serde_json;
 
 pub struct Mapper4 {
     cartridge: Box<Cartridge>,
@@ -21,16 +23,30 @@ pub struct Mapper4 {
     chr_bank_offsets: [usize; 8],
 }
 
-#[derive(Debug)]
-enum PrgRomMode {
+#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+pub enum PrgRomMode {
     Zero,       // $8000-$9FFF swappable, $C000-$DFFF fixed to second-last bank
     One,        // $C000-$DFFF swappable, $8000-$9FFF fixed to second-last bank
 }
 
-#[derive(Debug)]
-enum ChrA12Inversion {
+#[derive(Debug, Copy, Clone, Deserialize, Serialize)]
+pub enum ChrA12Inversion {
     Zero,       // Two 2 KB banks at $0000-$0FFF, four 1 KB banks at $1000-$1FFF
     One,        // Two 2 KB banks at $1000-$1FFF, four 1 KB banks at $0000-$0FFF
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct State {
+    pub mirroring: Mirroring,
+    pub next_bank_register: u8,
+    pub bank_registers: [u8; 8],
+    pub prg_rom_mode: PrgRomMode,
+    pub chr_a12_inversion: ChrA12Inversion,
+    pub irq_enable: bool,
+    pub irq_counter: u8,
+    pub irq_counter_reload_value: u8,
+    pub prg_rom_bank_offsets: [usize; 4],
+    pub chr_bank_offsets: [usize; 8],
 }
 
 impl Mapper4 {
@@ -235,6 +251,38 @@ impl Mapper for Mapper4 {
     fn step(&mut self, cpu: &mut Cpu, ppu: &Ppu) {
         if ppu.rendering_enabled() && ppu.scanline <= ppu::VISIBLE_END_SCANLINE && ppu.scanline_cycle() == 280 {
             self.handle_scanline(cpu);
+        }
+    }
+
+    fn get_state(&self) -> String {
+        let state = State {
+            mirroring: self.cartridge.mirroring,
+            next_bank_register: self.next_bank_register,
+            bank_registers: self.bank_registers,
+            prg_rom_mode: self.prg_rom_mode,
+            chr_a12_inversion: self.chr_a12_inversion,
+            irq_enable: self.irq_enable,
+            irq_counter: self.irq_counter,
+            irq_counter_reload_value: self.irq_counter_reload_value,
+            prg_rom_bank_offsets: self.prg_rom_bank_offsets,
+            chr_bank_offsets: self.chr_bank_offsets,
+        };
+
+        serde_json::to_string(&state).unwrap_or("".into())
+    }
+
+    fn apply_state(&mut self, state: &String) {
+        if let Ok(ref state) = serde_json::from_str::<State>(&state) {
+            self.cartridge.mirroring = state.mirroring;
+            self.next_bank_register = state.next_bank_register;
+            self.bank_registers = state.bank_registers;
+            self.prg_rom_mode = state.prg_rom_mode;
+            self.chr_a12_inversion = state.chr_a12_inversion;
+            self.irq_enable = state.irq_enable;
+            self.irq_counter = state.irq_counter;
+            self.irq_counter_reload_value = state.irq_counter_reload_value;
+            self.prg_rom_bank_offsets = state.prg_rom_bank_offsets;
+            self.chr_bank_offsets = state.chr_bank_offsets;
         }
     }
 }

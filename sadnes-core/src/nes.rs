@@ -1,15 +1,23 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use interconnect;
 use interconnect::Interconnect;
 use mapper;
 use cartridge::Cartridge;
+use cpu;
 use cpu::Cpu;
 use sink::*;
 
 pub struct Nes {
     pub interconnect: Interconnect,
     pub cpu: Cpu,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct State {
+    pub interconnect: interconnect::State,
+    pub cpu: cpu::State,
 }
 
 impl Nes {
@@ -32,6 +40,18 @@ impl Nes {
         nes.reset();
 
         nes
+    }
+
+    pub fn get_state(&self) -> State {
+        State {
+            interconnect: self.interconnect.get_state(),
+            cpu: self.cpu.get_state(),
+        }
+    }
+
+    pub fn apply_state(&mut self, state: &State) {
+        self.interconnect.apply_state(&state.interconnect);
+        self.cpu.apply_state(&state.cpu);
     }
 
     pub fn reset(&mut self) {

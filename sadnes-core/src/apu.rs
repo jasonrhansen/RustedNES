@@ -70,6 +70,17 @@ pub struct Apu {
     pub settings: Settings,
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct State {
+    pub cycles: u64,
+    pub pulse_1: Pulse,
+    pub pulse_2: Pulse,
+    pub triangle: Triangle,
+    pub noise: Noise,
+    pub dmc: Dmc,
+    pub frame_counter: FrameCounter,
+}
+
 impl Apu {
     pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Apu {
         let filter_chain = FilterChain::new()
@@ -104,6 +115,28 @@ impl Apu {
                 dmc_enabled: true,
             }
         }
+    }
+
+    pub fn get_state(&self) -> State {
+        State {
+            cycles: self.cycles,
+            pulse_1: self.pulse_1.clone(),
+            pulse_2: self.pulse_2.clone(),
+            triangle: self.triangle.clone(),
+            noise: self.noise.clone(),
+            dmc: self.dmc.clone(),
+            frame_counter: self.frame_counter,
+        }
+    }
+
+    pub fn apply_state(&mut self, state: &State) {
+        self.cycles = state.cycles;
+        self.pulse_1 = state.pulse_1.clone();
+        self.pulse_2 = state.pulse_2.clone();
+        self.triangle = state.triangle.clone();
+        self.noise = state.noise.clone();
+        self.dmc = state.dmc.clone();
+        self.frame_counter = state.frame_counter;
     }
 
     // Run for the given number of cpu cycles
@@ -338,11 +371,13 @@ pub struct Settings {
     pub dmc_enabled: bool,
 }
 
+#[derive(Copy, Clone, Deserialize, Serialize)]
 enum SweepNegationType {
     OnesComplement,
     TwosComplement,
 }
 
+#[derive(Copy, Clone, Deserialize, Serialize)]
 struct Envelope {
     enable_flag: bool,
     start_flag: bool,
@@ -383,6 +418,7 @@ impl Envelope {
     }
 }
 
+#[derive(Copy, Clone, Deserialize, Serialize)]
 struct Sweep {
     enable_flag: bool,
     negate_flag: bool,
@@ -405,7 +441,8 @@ impl Sweep {
     }
 }
 
-struct Pulse {
+#[derive(Clone, Deserialize, Serialize)]
+pub struct Pulse {
     enable_flag: bool,
     negation_type: SweepNegationType,
     timer_value: u16,
@@ -493,7 +530,7 @@ impl Pulse {
         if self.sweep.negate_flag {
             match self.negation_type {
                 SweepNegationType::OnesComplement => {
-                    self.timer_period -= (delta + 1);
+                    self.timer_period -= delta + 1;
                 }
                 SweepNegationType::TwosComplement => {
                     self.timer_period -= delta;
@@ -532,7 +569,8 @@ impl Pulse {
     }
 }
 
-struct Triangle {
+#[derive(Clone, Deserialize, Serialize)]
+pub struct Triangle {
     enable_flag: bool,
     control_flag: bool,
     timer_value: u16,
@@ -616,7 +654,8 @@ impl Triangle {
     }
 }
 
-struct Noise {
+#[derive(Clone, Deserialize, Serialize)]
+pub struct Noise {
     enable_flag: bool,
     mode: bool,
     shift_register: u16,
@@ -696,7 +735,8 @@ impl Noise {
     }
 }
 
-struct Dmc {
+#[derive(Clone, Deserialize, Serialize)]
+pub struct Dmc {
     enable_flag: bool,
     loop_flag: bool,
     irq_flag: bool,
@@ -808,13 +848,14 @@ impl Dmc {
     }
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Clone, Copy, Deserialize, Serialize)]
 enum FrameCounterMode {
     FourStep,
     FiveStep,
 }
 
-struct FrameCounter {
+#[derive(Clone, Copy, Deserialize, Serialize)]
+pub struct FrameCounter {
     sequence_frame: u8,
     mode: FrameCounterMode,
     interrupt_enable: bool,

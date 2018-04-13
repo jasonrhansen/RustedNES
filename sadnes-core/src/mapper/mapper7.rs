@@ -1,13 +1,19 @@
 use cartridge::{Cartridge, Mirroring};
 use mapper::Mapper;
 use memory::Memory;
-use ppu::{self, Ppu, Vram};
-use cpu::{Cpu, Interrupt};
+use ppu::Vram;
 
+use serde_json;
 
 pub struct Mapper7 {
     cartridge: Box<Cartridge>,
     prg_rom_bank: u8,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct State {
+    pub mirroring: Mirroring,
+    pub prg_rom_bank: u8,
 }
 
 impl Mapper7 {
@@ -65,6 +71,22 @@ impl Mapper for Mapper7 {
             self.cartridge.chr[address as usize] = value;
         } else {
             vram.write_byte(self.mirror_address(address) - 0x2000, value);
+        }
+    }
+
+    fn get_state(&self) -> String {
+        let state = State {
+            mirroring: self.cartridge.mirroring,
+            prg_rom_bank: self.prg_rom_bank,
+        };
+
+        serde_json::to_string(&state).unwrap_or("".into())
+    }
+
+    fn apply_state(&mut self, state: &String) {
+        if let Ok(ref state) = serde_json::from_str::<State>(&state) {
+            self.cartridge.mirroring = state.mirroring;
+            self.prg_rom_bank = state.prg_rom_bank;
         }
     }
 }

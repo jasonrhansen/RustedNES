@@ -13,7 +13,7 @@ pub const PRG_ROM_BANK_SIZE: u16 = 16 * 1024;
 pub const CHR_ROM_BANK_SIZE: u16 = 8 * 1024;
 pub const PRG_RAM_BANK_SIZE: u16 = 8 * 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Mirroring {
     Horizontal,
     Vertical,

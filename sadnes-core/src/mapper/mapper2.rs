@@ -1,13 +1,18 @@
 use cartridge::{Cartridge, PRG_ROM_BANK_SIZE};
 use mapper::Mapper;
 use memory::Memory;
-use ppu::{self, Ppu, Vram};
-use cpu::{Cpu, Interrupt};
+use ppu::Vram;
 
+use serde_json;
 
 pub struct Mapper2 {
     cartridge: Box<Cartridge>,
     switchable_bank: u8,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct State {
+    pub switchable_bank: u8,
 }
 
 impl Mapper2 {
@@ -67,6 +72,20 @@ impl Mapper for Mapper2 {
             self.cartridge.chr[address as usize] = value;
         } else {
             vram.write_byte(self.mirror_address(address) - 0x2000, value);
+        }
+    }
+
+    fn get_state(&self) -> String {
+        let state = State {
+            switchable_bank: self.switchable_bank,
+        };
+
+        serde_json::to_string(&state).unwrap_or("".into())
+    }
+
+    fn apply_state(&mut self, state: &String) {
+        if let Ok(ref state) = serde_json::from_str::<State>(&state) {
+            self.switchable_bank = state.switchable_bank;
         }
     }
 }

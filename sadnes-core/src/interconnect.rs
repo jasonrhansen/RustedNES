@@ -1,11 +1,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use apu;
 use apu::Apu;
 use cpu::Cpu;
+use input;
 use input::Input;
 use mapper::Mapper;
 use memory::{Memory, Ram};
+use ppu;
 use ppu::{Ppu, OAMDATA_ADDRESS};
 use sink::*;
 
@@ -20,6 +23,15 @@ pub struct Interconnect {
     pub cpu: *mut Cpu,
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct State {
+    pub ram: Vec<u8>,
+    pub ppu: ppu::State,
+    pub apu: apu::State,
+    pub input: input::State,
+    pub mapper: String,
+}
+
 impl Interconnect {
     pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: *mut Cpu) -> Self {
         Interconnect {
@@ -30,6 +42,26 @@ impl Interconnect {
             mapper,
             cpu,
         }
+    }
+
+    pub fn get_state(&self) -> State {
+        let mapper = self.mapper.borrow();
+        State {
+            ram: self.ram.to_vec(),
+            ppu: self.ppu.get_state(),
+            apu: self.apu.get_state(),
+            input: self.input.get_state(),
+            mapper: mapper.get_state(),
+        }
+    }
+
+    pub fn apply_state(&mut self, state: &State) {
+        self.ram.copy_from_slice(&state.ram);
+        self.ppu.apply_state(&state.ppu);
+        self.apu.apply_state(&state.apu);
+        self.input.apply_state(&state.input);
+        let mut mapper = self.mapper.borrow_mut();
+        mapper.apply_state(&state.mapper);
     }
 
     fn handle_oam_dma(&mut self, addr_hi: u8) {

@@ -52,4 +52,10 @@ impl Mapper for Mapper0 {
             vram.write_byte(self.mirror_address(address) - 0x2000, value);
         }
     }
+
+    fn get_state(&self) -> String {
+        "".into()
+    }
+
+    fn apply_state(&mut self, _state: &String) {}
 }

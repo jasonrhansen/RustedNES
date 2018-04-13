@@ -1,6 +1,6 @@
 use memory::Memory;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Deserialize, Serialize)]
 pub enum Button {
     A,
     B,
@@ -12,6 +12,7 @@ pub enum Button {
     Right,
 }
 
+#[derive(Copy, Clone, Deserialize, Serialize)]
 pub struct GamePad {
     a_pressed: bool,
     b_pressed: bool,
@@ -74,6 +75,7 @@ impl GamePad {
     }
 }
 
+#[derive(Copy, Clone, Deserialize, Serialize)]
 struct StrobeState {
     button: Button,
 }
@@ -102,12 +104,30 @@ pub struct Input {
     pub game_pad_2: GamePad,
 }
 
+#[derive(Copy, Clone, Deserialize, Serialize)]
+pub struct State {
+    pub game_pad_1: GamePad,
+    pub game_pad_2: GamePad,
+}
+
 impl Input {
     pub fn new() -> Input {
         Input {
             game_pad_1: GamePad::new(),
             game_pad_2: GamePad::new(),
         }
+    }
+
+    pub fn get_state(&self) -> State {
+        State {
+            game_pad_1: self.game_pad_1,
+            game_pad_2: self.game_pad_2,
+        }
+    }
+
+    pub fn apply_state(&mut self, state: &State) {
+        self.game_pad_1 = state.game_pad_1;
+        self.game_pad_2 = state.game_pad_2;
     }
 
     fn reset_strobe_states(&mut self) {

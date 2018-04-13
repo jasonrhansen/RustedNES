@@ -1,15 +1,23 @@
 #[macro_use]
 extern crate clap;
-
-extern crate time;
-
 extern crate combine;
-extern crate minifb;
-extern crate liner;
 extern crate cpal;
 extern crate futures;
-
+extern crate liner;
+extern crate minifb;
 extern crate sadnes_core;
+extern crate serde;
+extern crate serde_json;
+extern crate time;
+
+use argparse::*;
+use cpal_driver::*;
+use emulator::*;
+use null_audio_sink::*;
+use sadnes_core::apu::SAMPLE_RATE;
+use sadnes_core::cartridge::*;
+use std::fs::File;
+use system_time_source::*;
 
 mod video_frame_sink;
 mod argparse;
@@ -18,17 +26,6 @@ mod emulator;
 mod cpal_driver;
 mod system_time_source;
 mod null_audio_sink;
-
-use std::fs::File;
-
-use sadnes_core::cartridge::*;
-use sadnes_core::apu::SAMPLE_RATE;
-
-use argparse::*;
-use emulator::*;
-use cpal_driver::*;
-use system_time_source::*;
-use null_audio_sink::*;
 
 
 fn main() {

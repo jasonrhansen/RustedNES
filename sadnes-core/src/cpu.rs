@@ -7,6 +7,7 @@ use memory::Memory;
 pub const CPU_FREQUENCY: u64 = 1_789_773;
 
 bitflags! {
+    #[derive(Deserialize, Serialize)]
     pub struct StatusFlags: u8 {
         const NONE              = 0;
         const CARRY             = 1 << 0;
@@ -35,7 +36,7 @@ impl fmt::Display for StatusFlags {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
 pub enum Interrupt {
     Nmi,        // NMI (Non-Maskable Interrupt)
     Irq,
@@ -67,7 +68,7 @@ static OPCODE_CYCLES: &'static [u8] = &[
     2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
 ];
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Deserialize, Serialize)]
 pub struct Regs {
     pub pc: u16,
     pub a: u8,
@@ -132,6 +133,14 @@ pub struct Cpu {
     trigger_watchpoint: bool,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub struct State {
+    pub cycles: u64,
+    pub stall_cycles: u8,
+    pub regs: Regs,
+    pub interrupt: Option<Interrupt>,
+}
+
 impl Cpu {
     pub fn new() -> Cpu {
         let cpu = Cpu {
@@ -144,6 +153,22 @@ impl Cpu {
         };
 
         cpu
+    }
+
+    pub fn get_state(&self) -> State {
+        State {
+            cycles: self.cycles,
+            stall_cycles: self.stall_cycles,
+            regs: self.regs,
+            interrupt: self.interrupt,
+        }
+    }
+
+    pub fn apply_state(&mut self, state: &State) {
+        self.cycles = state.cycles;
+        self.stall_cycles = state.stall_cycles;
+        self.regs = state.regs;
+        self.interrupt = state.interrupt;
     }
 
     pub fn stall(&mut self, cycles: u8) {

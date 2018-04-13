@@ -10,6 +10,12 @@ extern crate lazy_static;
 #[macro_use]
 mod opcode;
 
+#[macro_use]
+extern crate serde_derive;
+
+extern crate serde;
+extern crate serde_json;
+
 pub mod cartridge;
 pub mod mapper;
 pub mod memory;
