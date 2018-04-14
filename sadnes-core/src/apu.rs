@@ -117,6 +117,16 @@ impl Apu {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.cycles = 0;
+        self.pulse_1 = Pulse::new(SweepNegationType::OnesComplement);
+        self.pulse_2 = Pulse::new(SweepNegationType::TwosComplement);
+        self.triangle = Triangle::new();
+        self.noise = Noise::new();
+        self.dmc = Dmc::new();
+        self.frame_counter = FrameCounter::new();
+    }
+
     pub fn get_state(&self) -> State {
         State {
             cycles: self.cycles,

@@ -75,6 +75,10 @@ impl Mapper for Mapper2 {
         }
     }
 
+    fn reset(&mut self) {
+        self.switchable_bank = 0;
+    }
+
     fn get_state(&self) -> String {
         let state = State {
             switchable_bank: self.switchable_bank,

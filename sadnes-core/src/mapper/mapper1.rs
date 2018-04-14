@@ -19,6 +19,17 @@ pub struct Regs {
     chr_bank_1: u8,
 }
 
+impl Regs {
+    fn new() -> Regs {
+        Regs {
+            control: 0x0C,
+            prg_bank: 0,
+            chr_bank_0: 0,
+            chr_bank_1: 0,
+        }
+    }
+}
+
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize)]
 enum PrgRomMode {
@@ -48,12 +59,7 @@ impl Mapper1 {
         Mapper1 {
             cartridge,
             shift: SHIFT_REGISTER_DEFAULT,
-            regs: Regs {
-                control: 0x0C,
-                prg_bank: 0,
-                chr_bank_0: 0,
-                chr_bank_1: 0,
-            },
+            regs: Regs::new(),
         }
     }
 
@@ -194,6 +200,11 @@ impl Mapper for Mapper1 {
         } else {
             vram.write_byte(self.mirror_address(address) - 0x2000, value);
         }
+    }
+
+    fn reset(&mut self) {
+        self.shift = SHIFT_REGISTER_DEFAULT;
+        self.regs = Regs::new();
     }
 
     fn get_state(&self) -> String {

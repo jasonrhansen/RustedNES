@@ -254,6 +254,19 @@ impl Mapper for Mapper4 {
         }
     }
 
+    fn reset(&mut self) {
+        self.cartridge.mirroring = self.cartridge.default_mirroring;
+        self.next_bank_register = 0;
+        self.bank_registers = [0, 0, 0, 0 , 0, 0, 0, 1];
+        self.prg_rom_mode = PrgRomMode::Zero;
+        self.chr_a12_inversion = ChrA12Inversion::Zero;
+        self.irq_enable = false;
+        self.irq_counter = 0;
+        self.irq_counter_reload_value = 0;
+        self.prg_rom_bank_offsets = [0; 4];
+        self.chr_bank_offsets = [0; 8];
+    }
+
     fn get_state(&self) -> String {
         let state = State {
             mirroring: self.cartridge.mirroring,

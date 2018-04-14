@@ -66,6 +66,10 @@ impl Mapper for Mapper3 {
         }
     }
 
+    fn reset(&mut self) {
+        self.chr_bank = 0;
+    }
+
     fn get_state(&self) -> String {
         let state = State {
             chr_bank: self.chr_bank,

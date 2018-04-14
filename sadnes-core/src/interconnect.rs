@@ -137,6 +137,11 @@ impl Interconnect {
     }
 
     pub fn reset(&mut self) {
+        self.ram = Ram::new();
         self.ppu.reset();
+        self.apu.reset();
+        self.input = Input::new();
+        let mut mapper = self.mapper.borrow_mut();
+        mapper.reset();
     }
 }

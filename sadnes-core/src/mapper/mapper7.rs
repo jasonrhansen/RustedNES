@@ -74,6 +74,11 @@ impl Mapper for Mapper7 {
         }
     }
 
+    fn reset(&mut self) {
+        self.cartridge.mirroring = self.cartridge.default_mirroring;
+        self.prg_rom_bank = 0;
+    }
+
     fn get_state(&self) -> String {
         let state = State {
             mirroring: self.cartridge.mirroring,
