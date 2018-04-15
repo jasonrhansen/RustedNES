@@ -87,6 +87,13 @@ pub struct Cartridge {
     pub is_battery_backed: bool,
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct State {
+    pub mirroring: Mirroring,
+    pub chr: Vec<u8>,
+    pub prg_ram: Vec<u8>,
+}
+
 impl Debug for Cartridge {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         writeln!(f, "mapper: {}", self.mapper)?;
@@ -169,5 +176,19 @@ impl Cartridge {
             prg_ram,
             is_battery_backed,
         })
+    }
+
+    pub fn get_state(&self) -> State {
+        State {
+            mirroring: self.mirroring,
+            chr: self.chr.clone(),
+            prg_ram: self.prg_ram.clone(),
+        }
+    }
+
+    pub fn apply_state(&mut self, state: &State) {
+        self.mirroring = state.mirroring;
+        self.chr = state.chr.clone();
+        self.prg_ram = state.prg_ram.clone();
     }
 }

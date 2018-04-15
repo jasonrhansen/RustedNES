@@ -1,3 +1,4 @@
+use cartridge;
 use cartridge::{Cartridge, PRG_ROM_BANK_SIZE};
 use mapper::Mapper;
 use memory::Memory;
@@ -12,6 +13,7 @@ pub struct Mapper2 {
 
 #[derive(Deserialize, Serialize)]
 pub struct State {
+    pub cartridge: cartridge::State,
     pub switchable_bank: u8,
 }
 
@@ -81,6 +83,7 @@ impl Mapper for Mapper2 {
 
     fn get_state(&self) -> String {
         let state = State {
+            cartridge: self.cartridge.get_state(),
             switchable_bank: self.switchable_bank,
         };
 
@@ -89,6 +92,7 @@ impl Mapper for Mapper2 {
 
     fn apply_state(&mut self, state: &String) {
         if let Ok(ref state) = serde_json::from_str::<State>(&state) {
+            self.cartridge.apply_state(&state.cartridge);
             self.switchable_bank = state.switchable_bank;
         }
     }

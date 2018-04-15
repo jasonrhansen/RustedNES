@@ -1,3 +1,4 @@
+use cartridge;
 use cartridge::{Cartridge, Mirroring};
 use mapper::Mapper;
 use memory::Memory;
@@ -22,7 +23,7 @@ pub struct Mapper9 {
 
 #[derive(Deserialize, Serialize)]
 pub struct State {
-    pub mirroring: Mirroring,
+    pub cartridge: cartridge::State,
     pub latch_0: u8,
     pub latch_1: u8,
     pub prg_rom_switchable_bank: u8,
@@ -156,7 +157,7 @@ impl Mapper for Mapper9 {
 
     fn get_state(&self) -> String {
         let state = State {
-            mirroring: self.cartridge.mirroring,
+            cartridge: self.cartridge.get_state(),
             latch_0: self.latch_0,
             latch_1: self.latch_1,
             prg_rom_switchable_bank: self.prg_rom_switchable_bank,
@@ -174,7 +175,7 @@ impl Mapper for Mapper9 {
 
     fn apply_state(&mut self, state: &String) {
         if let Ok(ref state) = serde_json::from_str::<State>(&state) {
-            self.cartridge.mirroring = state.mirroring;
+            self.cartridge.apply_state(&state.cartridge);
             self.latch_0 = state.latch_0;
             self.latch_1 = state.latch_1;
             self.prg_rom_switchable_bank = state.prg_rom_switchable_bank;

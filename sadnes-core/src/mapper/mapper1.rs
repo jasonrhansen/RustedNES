@@ -1,3 +1,4 @@
+use cartridge;
 use cartridge::{Cartridge, Mirroring, PRG_ROM_BANK_SIZE};
 use mapper::Mapper;
 use memory::Memory;
@@ -46,7 +47,7 @@ enum ChrRomMode {
 
 #[derive(Deserialize, Serialize)]
 pub struct State {
-    pub mirroring: Mirroring,
+    pub cartridge: cartridge::State,
     pub shift: u8,
     pub regs: Regs,
 }
@@ -209,7 +210,7 @@ impl Mapper for Mapper1 {
 
     fn get_state(&self) -> String {
         let state = State {
-            mirroring: self.cartridge.mirroring,
+            cartridge: self.cartridge.get_state(),
             shift: self.shift,
             regs: self.regs,
         };
@@ -219,7 +220,7 @@ impl Mapper for Mapper1 {
 
     fn apply_state(&mut self, state: &String) {
         if let Ok(ref state) = serde_json::from_str::<State>(&state) {
-            self.cartridge.mirroring = state.mirroring;
+            self.cartridge.apply_state(&state.cartridge);
             self.shift = state.shift;
             self.regs = state.regs;
         }

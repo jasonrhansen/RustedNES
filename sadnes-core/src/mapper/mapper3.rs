@@ -1,3 +1,4 @@
+use cartridge;
 use cartridge::Cartridge;
 use mapper::Mapper;
 use memory::Memory;
@@ -12,6 +13,7 @@ pub struct Mapper3 {
 
 #[derive(Deserialize, Serialize)]
 pub struct State {
+    pub cartridge: cartridge::State,
     pub chr_bank: u8,
 }
 
@@ -72,6 +74,7 @@ impl Mapper for Mapper3 {
 
     fn get_state(&self) -> String {
         let state = State {
+            cartridge: self.cartridge.get_state(),
             chr_bank: self.chr_bank,
         };
 
@@ -80,6 +83,7 @@ impl Mapper for Mapper3 {
 
     fn apply_state(&mut self, state: &String) {
         if let Ok(ref state) = serde_json::from_str::<State>(&state) {
+            self.cartridge.apply_state(&state.cartridge);
             self.chr_bank = state.chr_bank;
         }
     }

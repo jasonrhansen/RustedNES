@@ -1,7 +1,10 @@
+use cartridge;
 use cartridge::{Cartridge, PRG_ROM_BANK_SIZE};
 use mapper::Mapper;
 use memory::Memory;
 use ppu::Vram;
+
+use serde_json;
 
 pub struct Mapper0 {
     cartridge: Box<Cartridge>,
@@ -17,6 +20,11 @@ impl Mapper0 {
     fn mirror_address(&self, address: u16) -> u16 {
         self.cartridge.mirroring.mirror_address(address)
     }
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct State {
+    pub cartridge: cartridge::State,
 }
 
 impl Mapper for Mapper0 {
@@ -54,8 +62,16 @@ impl Mapper for Mapper0 {
     }
 
     fn get_state(&self) -> String {
-        "".into()
+        let state = State {
+            cartridge: self.cartridge.get_state(),
+        };
+
+        serde_json::to_string(&state).unwrap_or("".into())
     }
 
-    fn apply_state(&mut self, _state: &String) {}
+    fn apply_state(&mut self, state: &String) {
+        if let Ok(ref state) = serde_json::from_str::<State>(&state) {
+            self.cartridge.apply_state(&state.cartridge);
+        }
+    }
 }

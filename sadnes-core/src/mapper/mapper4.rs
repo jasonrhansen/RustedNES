@@ -1,3 +1,4 @@
+use cartridge;
 use cartridge::{Cartridge, Mirroring};
 use mapper::Mapper;
 use memory::Memory;
@@ -37,7 +38,7 @@ pub enum ChrA12Inversion {
 
 #[derive(Deserialize, Serialize)]
 pub struct State {
-    pub mirroring: Mirroring,
+    pub cartridge: cartridge::State,
     pub next_bank_register: u8,
     pub bank_registers: [u8; 8],
     pub prg_rom_mode: PrgRomMode,
@@ -269,7 +270,7 @@ impl Mapper for Mapper4 {
 
     fn get_state(&self) -> String {
         let state = State {
-            mirroring: self.cartridge.mirroring,
+            cartridge: self.cartridge.get_state(),
             next_bank_register: self.next_bank_register,
             bank_registers: self.bank_registers,
             prg_rom_mode: self.prg_rom_mode,
@@ -286,7 +287,7 @@ impl Mapper for Mapper4 {
 
     fn apply_state(&mut self, state: &String) {
         if let Ok(ref state) = serde_json::from_str::<State>(&state) {
-            self.cartridge.mirroring = state.mirroring;
+            self.cartridge.apply_state(&state.cartridge);
             self.next_bank_register = state.next_bank_register;
             self.bank_registers = state.bank_registers;
             self.prg_rom_mode = state.prg_rom_mode;
