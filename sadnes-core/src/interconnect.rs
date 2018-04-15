@@ -12,6 +12,8 @@ use ppu;
 use ppu::{Ppu, OAMDATA_ADDRESS};
 use sink::*;
 
+use serde_bytes;
+
 const OAMDMA_ADDRESS: u16 = 0x4014;
 
 pub struct Interconnect {
@@ -25,6 +27,7 @@ pub struct Interconnect {
 
 #[derive(Deserialize, Serialize)]
 pub struct State {
+    #[serde(with = "serde_bytes")]
     pub ram: Vec<u8>,
     pub ppu: ppu::State,
     pub apu: apu::State,

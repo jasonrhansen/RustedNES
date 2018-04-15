@@ -4,6 +4,7 @@ use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
 use bit_reverse::ParallelReverse;
+use serde_bytes;
 
 use cpu::{Cpu, Interrupt};
 use mapper::Mapper;
@@ -1001,7 +1002,9 @@ impl Regs {
 // a display list of up to 64 sprites, where each sprite's information occupies 4 bytes
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Oam {
+    #[serde(with = "serde_bytes")]
     primary: Vec<u8>,
+    #[serde(with = "serde_bytes")]
     secondary: Vec<u8>,
 
     // Used during sprite evaluation
@@ -1058,7 +1061,10 @@ impl DerefMut for Oam {
 
 // 2KB internal dedicated Video RAM
 #[derive(Clone, Deserialize, Serialize)]
-pub struct Vram { bytes: Vec<u8>, }
+pub struct Vram {
+    #[serde(with = "serde_bytes")]
+    bytes: Vec<u8>,
+}
 
 impl Vram {
     const SIZE: usize = 0x0800;

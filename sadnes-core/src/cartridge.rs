@@ -6,6 +6,8 @@ use std::io;
 use std::io::{Read, Seek, SeekFrom};
 use byteorder::{ReadBytesExt, BigEndian};
 
+use serde_bytes;
+
 // ROM must begin with this constant ("NES" followed by MS-DOS end-of-file)
 const MAGIC_CONSTANT: u32 = 0x4e45531a;
 
@@ -90,7 +92,9 @@ pub struct Cartridge {
 #[derive(Deserialize, Serialize)]
 pub struct State {
     pub mirroring: Mirroring,
+    #[serde(with = "serde_bytes")]
     pub chr: Vec<u8>,
+    #[serde(with = "serde_bytes")]
     pub prg_ram: Vec<u8>,
 }
 
