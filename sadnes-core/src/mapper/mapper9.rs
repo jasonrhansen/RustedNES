@@ -1,10 +1,9 @@
 use cartridge;
 use cartridge::{Cartridge, Mirroring};
+use mapper;
 use mapper::Mapper;
 use memory::Memory;
 use ppu::Vram;
-
-use serde_json;
 
 pub struct Mapper9 {
     cartridge: Box<Cartridge>,
@@ -169,37 +168,40 @@ impl Mapper for Mapper9 {
         self.chr_fe_1000_bank = 0;
     }
 
-    fn get_state(&self) -> Vec<u8> {
-        let state = State {
-            cartridge: self.cartridge.get_state(),
-            latch_0: self.latch_0,
-            latch_1: self.latch_1,
-            prg_rom_switchable_bank: self.prg_rom_switchable_bank,
-            prg_rom_fixed_bank_1: self.prg_rom_fixed_bank_1,
-            prg_rom_fixed_bank_2: self.prg_rom_fixed_bank_2,
-            prg_rom_fixed_bank_3: self.prg_rom_fixed_bank_3,
-            chr_fd_0000_bank: self.chr_fd_0000_bank,
-            chr_fe_0000_bank: self.chr_fe_0000_bank,
-            chr_fd_1000_bank: self.chr_fd_1000_bank,
-            chr_fe_1000_bank: self.chr_fe_1000_bank,
-        };
-
-        serde_json::to_vec(&state).unwrap_or(vec![])
+    fn get_state(&self) -> mapper::State {
+        mapper::State::State9(
+            State {
+                cartridge: self.cartridge.get_state(),
+                latch_0: self.latch_0,
+                latch_1: self.latch_1,
+                prg_rom_switchable_bank: self.prg_rom_switchable_bank,
+                prg_rom_fixed_bank_1: self.prg_rom_fixed_bank_1,
+                prg_rom_fixed_bank_2: self.prg_rom_fixed_bank_2,
+                prg_rom_fixed_bank_3: self.prg_rom_fixed_bank_3,
+                chr_fd_0000_bank: self.chr_fd_0000_bank,
+                chr_fe_0000_bank: self.chr_fe_0000_bank,
+                chr_fd_1000_bank: self.chr_fd_1000_bank,
+                chr_fe_1000_bank: self.chr_fe_1000_bank,
+            }
+        )
     }
 
-    fn apply_state(&mut self, state: &[u8]) {
-        if let Ok(ref state) = serde_json::from_slice::<State>(state) {
-            self.cartridge.apply_state(&state.cartridge);
-            self.latch_0 = state.latch_0;
-            self.latch_1 = state.latch_1;
-            self.prg_rom_switchable_bank = state.prg_rom_switchable_bank;
-            self.prg_rom_fixed_bank_1 = state.prg_rom_fixed_bank_1;
-            self.prg_rom_fixed_bank_2 = state.prg_rom_fixed_bank_2;
-            self.prg_rom_fixed_bank_3 = state.prg_rom_fixed_bank_3;
-            self.chr_fd_0000_bank = state.chr_fd_0000_bank;
-            self.chr_fe_0000_bank = state.chr_fe_0000_bank;
-            self.chr_fd_1000_bank = state.chr_fd_1000_bank;
-            self.chr_fe_1000_bank = state.chr_fe_1000_bank;
+    fn apply_state(&mut self, state: &mapper::State) {
+        match state {
+            &mapper::State::State9(ref state) => {
+                self.cartridge.apply_state(&state.cartridge);
+                self.latch_0 = state.latch_0;
+                self.latch_1 = state.latch_1;
+                self.prg_rom_switchable_bank = state.prg_rom_switchable_bank;
+                self.prg_rom_fixed_bank_1 = state.prg_rom_fixed_bank_1;
+                self.prg_rom_fixed_bank_2 = state.prg_rom_fixed_bank_2;
+                self.prg_rom_fixed_bank_3 = state.prg_rom_fixed_bank_3;
+                self.chr_fd_0000_bank = state.chr_fd_0000_bank;
+                self.chr_fe_0000_bank = state.chr_fe_0000_bank;
+                self.chr_fd_1000_bank = state.chr_fd_1000_bank;
+                self.chr_fe_1000_bank = state.chr_fe_1000_bank;
+            },
+            _ => panic!("Invalid mapper state enum variant in apply_state"),
         }
     }
 }

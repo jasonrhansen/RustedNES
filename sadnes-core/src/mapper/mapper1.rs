@@ -1,10 +1,9 @@
 use cartridge;
 use cartridge::{Cartridge, Mirroring, PRG_ROM_BANK_SIZE};
+use mapper;
 use mapper::Mapper;
 use memory::Memory;
 use ppu::Vram;
-
-use serde_json;
 
 pub struct Mapper1 {
     cartridge: Box<Cartridge>,
@@ -208,21 +207,24 @@ impl Mapper for Mapper1 {
         self.regs = Regs::new();
     }
 
-    fn get_state(&self) -> Vec<u8> {
-        let state = State {
-            cartridge: self.cartridge.get_state(),
-            shift: self.shift,
-            regs: self.regs,
-        };
-
-        serde_json::to_vec(&state).unwrap_or(vec![])
+    fn get_state(&self) -> mapper::State {
+        mapper::State::State1(
+            State {
+                cartridge: self.cartridge.get_state(),
+                shift: self.shift,
+                regs: self.regs,
+            }
+        )
     }
 
-    fn apply_state(&mut self, state: &[u8]) {
-        if let Ok(ref state) = serde_json::from_slice::<State>(&state) {
-            self.cartridge.apply_state(&state.cartridge);
-            self.shift = state.shift;
-            self.regs = state.regs;
+    fn apply_state(&mut self, state: &mapper::State) {
+        match state {
+            &mapper::State::State1(ref state) => {
+                self.cartridge.apply_state(&state.cartridge);
+                self.shift = state.shift;
+                self.regs = state.regs;
+            },
+            _ => panic!("Invalid mapper state enum variant in apply_state"),
         }
     }
 }

@@ -1,11 +1,10 @@
 use cartridge;
 use cartridge::{Cartridge, Mirroring};
+use mapper;
 use mapper::Mapper;
 use memory::Memory;
 use ppu::{self, Ppu, Vram};
 use cpu::{Cpu, Interrupt};
-
-use serde_json;
 
 pub struct Mapper4 {
     cartridge: Box<Cartridge>,
@@ -268,35 +267,38 @@ impl Mapper for Mapper4 {
         self.chr_bank_offsets = [0; 8];
     }
 
-    fn get_state(&self) -> Vec<u8> {
-        let state = State {
-            cartridge: self.cartridge.get_state(),
-            next_bank_register: self.next_bank_register,
-            bank_registers: self.bank_registers,
-            prg_rom_mode: self.prg_rom_mode,
-            chr_a12_inversion: self.chr_a12_inversion,
-            irq_enable: self.irq_enable,
-            irq_counter: self.irq_counter,
-            irq_counter_reload_value: self.irq_counter_reload_value,
-            prg_rom_bank_offsets: self.prg_rom_bank_offsets,
-            chr_bank_offsets: self.chr_bank_offsets,
-        };
-
-        serde_json::to_vec(&state).unwrap_or(vec![])
+    fn get_state(&self) -> mapper::State {
+        mapper::State::State4(
+            State {
+                cartridge: self.cartridge.get_state(),
+                next_bank_register: self.next_bank_register,
+                bank_registers: self.bank_registers,
+                prg_rom_mode: self.prg_rom_mode,
+                chr_a12_inversion: self.chr_a12_inversion,
+                irq_enable: self.irq_enable,
+                irq_counter: self.irq_counter,
+                irq_counter_reload_value: self.irq_counter_reload_value,
+                prg_rom_bank_offsets: self.prg_rom_bank_offsets,
+                chr_bank_offsets: self.chr_bank_offsets,
+            }
+        )
     }
 
-    fn apply_state(&mut self, state: &[u8]) {
-        if let Ok(ref state) = serde_json::from_slice::<State>(&state) {
-            self.cartridge.apply_state(&state.cartridge);
-            self.next_bank_register = state.next_bank_register;
-            self.bank_registers = state.bank_registers;
-            self.prg_rom_mode = state.prg_rom_mode;
-            self.chr_a12_inversion = state.chr_a12_inversion;
-            self.irq_enable = state.irq_enable;
-            self.irq_counter = state.irq_counter;
-            self.irq_counter_reload_value = state.irq_counter_reload_value;
-            self.prg_rom_bank_offsets = state.prg_rom_bank_offsets;
-            self.chr_bank_offsets = state.chr_bank_offsets;
+    fn apply_state(&mut self, state: &mapper::State) {
+        match state {
+            &mapper::State::State4(ref state) => {
+                self.cartridge.apply_state(&state.cartridge);
+                self.next_bank_register = state.next_bank_register;
+                self.bank_registers = state.bank_registers;
+                self.prg_rom_mode = state.prg_rom_mode;
+                self.chr_a12_inversion = state.chr_a12_inversion;
+                self.irq_enable = state.irq_enable;
+                self.irq_counter = state.irq_counter;
+                self.irq_counter_reload_value = state.irq_counter_reload_value;
+                self.prg_rom_bank_offsets = state.prg_rom_bank_offsets;
+                self.chr_bank_offsets = state.chr_bank_offsets;
+            },
+            _ => panic!("Invalid mapper state enum variant in apply_state"),
         }
     }
 }

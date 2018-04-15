@@ -25,8 +25,8 @@ pub trait Mapper {
     fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8);
     fn step(&mut self, _cpu: &mut Cpu, _ppu: &Ppu) {}
     fn reset(&mut self);
-    fn get_state(&self) -> Vec<u8>;
-    fn apply_state(&mut self, state: &[u8]);
+    fn get_state(&self) -> State;
+    fn apply_state(&mut self, state: &State);
 }
 
 pub fn create_mapper(cartridge: Box<Cartridge>) -> Box<Mapper> {
@@ -40,4 +40,15 @@ pub fn create_mapper(cartridge: Box<Cartridge>) -> Box<Mapper> {
         9 => Box::new(Mapper9::new(cartridge)),
         _ => panic!("Unsupported mapper number: {}", cartridge.mapper)
     }
+}
+
+#[derive(Deserialize, Serialize)]
+pub enum State {
+    State0(mapper0::State),
+    State1(mapper1::State),
+    State2(mapper2::State),
+    State3(mapper3::State),
+    State4(mapper4::State),
+    State7(mapper7::State),
+    State9(mapper9::State),
 }

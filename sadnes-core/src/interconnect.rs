@@ -6,6 +6,7 @@ use apu::Apu;
 use cpu::Cpu;
 use input;
 use input::Input;
+use mapper;
 use mapper::Mapper;
 use memory::{Memory, Ram};
 use ppu;
@@ -32,8 +33,7 @@ pub struct State {
     pub ppu: ppu::State,
     pub apu: apu::State,
     pub input: input::State,
-    #[serde(with = "serde_bytes")]
-    pub mapper: Vec<u8>,
+    pub mapper: mapper::State,
 }
 
 impl Interconnect {
