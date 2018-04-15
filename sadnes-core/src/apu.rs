@@ -5,33 +5,29 @@ use cpu::{Cpu, Interrupt, CPU_FREQUENCY};
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::f32::consts::PI;
 
-pub const SAMPLE_RATE: u32 = 44_100;
-pub const CYCLES_PER_SAMPLE: f64 = (CPU_FREQUENCY as f64) / (SAMPLE_RATE as f64);
-
-static DUTY_CYCLE_TABLE: &'static [[u8; 8]] = &[
+static DUTY_CYCLE_TABLE: &[[u8; 8]] = &[
     [0, 1, 0, 0, 0, 0, 0, 0],
     [0, 1, 1, 0, 0, 0, 0, 0],
     [0, 1, 1, 1, 1, 0, 0, 0],
     [1, 0, 0, 1, 1, 1, 1, 1],
 ];
 
-static LENGTH_TABLE: &'static [u8] = &[
+static LENGTH_TABLE: &[u8] = &[
     10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
 	12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
 ];
 
-static TRIANGLE_TABLE: &'static [u8] = &[
+static TRIANGLE_TABLE: &[u8] = &[
     15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0,
      0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
 ];
 
-static NOISE_TABLE: &'static [u16] = &[
+static NOISE_TABLE: &[u16] = &[
     4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068,
 ];
 
-static DMC_TABLE: &'static [u8] = &[
+static DMC_TABLE: &[u8] = &[
     214, 190, 170, 160, 143, 127, 113, 107, 95, 80, 71, 64, 53, 42, 36, 27,
 ];
 
@@ -62,8 +58,7 @@ pub struct Apu {
     noise: Noise,
     dmc: Dmc,
     frame_counter: FrameCounter,
-
-    filter_chain: FilterChain,
+    cycles_per_sample: f64,
 
     mapper: Rc<RefCell<Box<Mapper>>>,
 
@@ -82,21 +77,7 @@ pub struct State {
 }
 
 impl Apu {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Apu {
-        let filter_chain = FilterChain::new()
-            .add(Box::new(
-                FirstOrderFilter::new_high_pass(
-                    SAMPLE_RATE as f32,
-                    90.0)))
-            .add(Box::new(
-                FirstOrderFilter::new_high_pass(
-                    SAMPLE_RATE as f32,
-                    440.0)))
-            .add(Box::new(
-                FirstOrderFilter::new_low_pass(
-                    SAMPLE_RATE as f32,
-                    14000.0)));
-
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, sample_rate: u32) -> Apu {
         Apu {
             cycles: 0,
             pulse_1: Pulse::new(SweepNegationType::OnesComplement),
@@ -105,7 +86,7 @@ impl Apu {
             noise: Noise::new(),
             dmc: Dmc::new(),
             frame_counter: FrameCounter::new(),
-            filter_chain,
+            cycles_per_sample: (CPU_FREQUENCY as f64) / (sample_rate as f64),
             mapper,
             settings: Settings {
                 pulse_1_enabled: true,
@@ -169,8 +150,8 @@ impl Apu {
             self.step_frame_counter(cpu);
         }
 
-        let s1 = ((cycle_1 as f64) / CYCLES_PER_SAMPLE) as u64;
-        let s2 = ((cycle_2 as f64) / CYCLES_PER_SAMPLE) as u64;
+        let s1 = ((cycle_1 as f64) / self.cycles_per_sample) as u64;
+        let s2 = ((cycle_2 as f64) / self.cycles_per_sample) as u64;
         if s1 != s2 {
             audio_frame_sink.append(self.generate_sample());
         }
@@ -186,7 +167,7 @@ impl Apu {
         let pulse_out = PULSE_TABLE[pulse_1 as usize + pulse_2 as usize];
         let tnd_out = TND_TABLE[3 * triangle as usize + 2 * noise as usize + dmc as usize];
 
-        self.filter_chain.step(pulse_out + tnd_out)
+        pulse_out + tnd_out
     }
 
     fn step_frame_counter(&mut self, cpu: &mut Cpu) {
@@ -197,28 +178,29 @@ impl Apu {
         // e e e e    e e e e -    Envelope and linear counter
         match self.frame_counter.mode {
             FrameCounterMode::FourStep => {
+                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 4;
                 match self.frame_counter.sequence_frame {
                     0 | 2 => {
                         self.step_envelope_and_linear_counter();
                     },
                     1 => {
-                        self.step_envelope_and_linear_counter();
-                        self.step_sweep();
                         self.step_length_counter();
+                        self.step_sweep();
+                        self.step_envelope_and_linear_counter();
                     },
                     3 => {
-                        self.step_envelope_and_linear_counter();
-                        self.step_sweep();
-                        self.step_length_counter();
                         if self.frame_counter.interrupt_enable {
                             cpu.request_interrupt(Interrupt::Irq);
                         }
+                        self.step_length_counter();
+                        self.step_sweep();
+                        self.step_envelope_and_linear_counter();
                     },
                     _ => (),
                 }
-                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 4;
             },
             FrameCounterMode::FiveStep => {
+                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 5;
                 match self.frame_counter.sequence_frame {
                     0 | 2 => {
                         self.step_envelope_and_linear_counter();
@@ -230,16 +212,15 @@ impl Apu {
                     },
                     _ => (),
                 }
-                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 5;
             }
         }
     }
 
     fn step_length_counter(&mut self) {
-        self.pulse_1.step_length_counter();
-        self.pulse_2.step_length_counter();
-        self.triangle.step_length_counter();
-        self.noise.step_length_counter();
+        self.pulse_1.length_counter.step();
+        self.pulse_2.length_counter.step();
+        self.triangle.length_counter.step();
+        self.noise.length_counter.step();
     }
 
     fn step_sweep(&mut self) {
@@ -248,10 +229,10 @@ impl Apu {
     }
 
     fn step_envelope_and_linear_counter(&mut self) {
-        self.pulse_1.step_envelope();
-        self.pulse_2.step_envelope();
+        self.pulse_1.envelope.step();
+        self.pulse_2.envelope.step();
         self.triangle.step_linear_counter();
-        self.noise.step_envelope();
+        self.noise.envelope.step();
     }
 
     fn step_timer(&mut self, cpu: &mut Cpu) {
@@ -268,19 +249,19 @@ impl Apu {
     fn read_status(&mut self) -> u8 {
         let mut status = 0x00;
 
-        if self.pulse_1.length_counter > 0 {
+        if self.pulse_1.length_counter.count > 0 {
             status |= 0x01;
         }
 
-        if self.pulse_2.length_counter > 0 {
+        if self.pulse_2.length_counter.count > 0 {
             status |= 0x02;
         }
 
-        if self.triangle.length_counter > 0 {
+        if self.triangle.length_counter.count > 0 {
             status |= 0x04;
         }
 
-        if self.noise.length_counter > 0 {
+        if self.noise.length_counter.count > 0 {
             status |= 0x08;
         }
 
@@ -292,24 +273,24 @@ impl Apu {
     }
 
     fn write_status(&mut self, value: u8) {
-        self.pulse_1.enable_flag = (value & 0x01) != 0;
-        if !self.pulse_1.enable_flag {
-            self.pulse_1.length_counter = 0;
+        self.pulse_1.enabled = (value & 0x01) != 0;
+        if !self.pulse_1.enabled {
+            self.pulse_1.length_counter.reset();
         }
 
-        self.pulse_2.enable_flag = (value & 0x02) != 0;
-        if !self.pulse_2.enable_flag {
-            self.pulse_2.length_counter = 0;
+        self.pulse_2.enabled = (value & 0x02) != 0;
+        if !self.pulse_2.enabled {
+            self.pulse_2.length_counter.reset();
         }
 
-        self.triangle.enable_flag = (value & 0x04) != 0;
-        if !self.triangle.enable_flag {
-            self.triangle.length_counter = 0;
+        self.triangle.enabled = (value & 0x04) != 0;
+        if !self.triangle.enabled {
+            self.triangle.length_counter.reset();
         }
 
-        self.noise.enable_flag = (value & 0x08) != 0;
-        if !self.noise.enable_flag {
-            self.noise.length_counter = 0;
+        self.noise.enabled = (value & 0x08) != 0;
+        if !self.noise.enabled {
+            self.noise.length_counter.reset();
         }
 
         self.dmc.enable_flag = (value & 0x10) != 0;
@@ -389,8 +370,8 @@ enum SweepNegationType {
 
 #[derive(Copy, Clone, Deserialize, Serialize)]
 struct Envelope {
-    enable_flag: bool,
-    start_flag: bool,
+    enabled: bool,
+    start: bool,
     loop_flag: bool,
     volume: u8,
     value: u8,
@@ -400,8 +381,8 @@ struct Envelope {
 impl Envelope {
     fn new() -> Envelope {
         Envelope {
-            enable_flag: false,
-            start_flag: false,
+            enabled: false,
+            start: false,
             loop_flag: false,
             volume: 0,
             value: 0,
@@ -410,8 +391,8 @@ impl Envelope {
     }
 
     fn step(&mut self) {
-        if self.start_flag {
-            self.start_flag = false;
+        if self.start {
+            self.start = false;
             self.volume = 15;
             self.value = self.period;
         } else if self.value > 0 {
@@ -430,9 +411,9 @@ impl Envelope {
 
 #[derive(Copy, Clone, Deserialize, Serialize)]
 struct Sweep {
-    enable_flag: bool,
-    negate_flag: bool,
-    reload_flag: bool,
+    enabled: bool,
+    negate: bool,
+    reload: bool,
     divider: u8,
     period: u8,
     shift_count: u8,
@@ -441,9 +422,9 @@ struct Sweep {
 impl Sweep {
     fn new() -> Sweep {
         Sweep {
-            enable_flag: false,
-            negate_flag: false,
-            reload_flag: false,
+            enabled: false,
+            negate: false,
+            reload: false,
             divider: 0,
             period: 0,
             shift_count: 0,
@@ -452,15 +433,43 @@ impl Sweep {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
+struct LengthCounter {
+    enabled: bool,
+    count: u8,
+}
+
+impl LengthCounter {
+    fn new() -> LengthCounter {
+        LengthCounter {
+            enabled: true,
+            count: 0,
+        }
+    }
+
+    fn step(&mut self) {
+        if self.enabled && self.count > 0 {
+            self.count -= 1;
+        }
+    }
+
+    fn set(&mut self, value: u8) {
+        self.count = LENGTH_TABLE[value as usize];
+    }
+
+    fn reset(&mut self) {
+        self.count = 0;
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
 pub struct Pulse {
-    enable_flag: bool,
+    enabled: bool,
     negation_type: SweepNegationType,
     timer_value: u16,
     timer_period: u16,
     duty_mode: u8,
     duty_cycle: u8,
-    length_counter_enable: bool,
-    length_counter: u8,
+    length_counter: LengthCounter,
     envelope: Envelope,
     sweep: Sweep,
     constant_volume: u8,
@@ -469,14 +478,13 @@ pub struct Pulse {
 impl Pulse {
     fn new(negation_type: SweepNegationType) -> Pulse {
         Pulse {
-            enable_flag: false,
+            enabled: false,
             negation_type,
             timer_value: 0,
             timer_period: 0,
             duty_mode: 0,
             duty_cycle: 0,
-            length_counter_enable: false,
-            length_counter: 0,
+            length_counter: LengthCounter::new(),
             envelope: Envelope::new(),
             sweep: Sweep::new(),
             constant_volume: 0,
@@ -485,20 +493,20 @@ impl Pulse {
 
     fn write_control(&mut self, value: u8) {
         self.duty_cycle = value >> 6;
-        self.length_counter_enable = (value & 0x20) == 0;
-        self.envelope.loop_flag = !self.length_counter_enable;
-        self.envelope.enable_flag = (value & 0x10) == 0;
+        self.length_counter.enabled = (value & 0x20) == 0;
+        self.envelope.loop_flag = !self.length_counter.enabled;
+        self.envelope.enabled = (value & 0x10) == 0;
         self.constant_volume = value & 0x0F;
         self.envelope.period = self.constant_volume;
-        self.envelope.start_flag = true;
+        self.envelope.start = true;
     }
 
     fn write_sweep(&mut self, value: u8) {
-        self.sweep.enable_flag = (value & 0x80) != 0;
+        self.sweep.enabled = (value & 0x80) != 0;
         self.sweep.period = ((value >> 4) & 0x07) + 1;
-        self.sweep.negate_flag = (value & 0x08) != 0;
+        self.sweep.negate = (value & 0x08) != 0;
         self.sweep.shift_count = value & 0x07;
-        self.sweep.reload_flag = true;
+        self.sweep.reload = true;
     }
 
     fn write_timer_lo(&mut self, value: u8) {
@@ -507,28 +515,22 @@ impl Pulse {
 
     fn write_timer_hi(&mut self, value: u8) {
         self.timer_period = (self.timer_period & 0x00FF) | (((value & 0x07) as u16) << 8);
-        self.length_counter = LENGTH_TABLE[(value>>3) as usize];
-        self.envelope.start_flag = true;
+        self.length_counter.set(value >> 3);
+        self.envelope.start = true;
         self.duty_cycle = 0;
     }
 
-    fn step_length_counter(&mut self) {
-        if self.length_counter_enable && self.length_counter > 0 {
-            self.length_counter -= 1;
-        }
-    }
-
     fn step_sweep(&mut self) {
-        if self.sweep.reload_flag {
-            if self.sweep.enable_flag && self.sweep.divider == 0 {
+        if self.sweep.reload {
+            if self.sweep.enabled && self.sweep.divider == 0 {
                 self.set_timer_period_from_sweep();
             }
             self.sweep.divider = self.sweep.period;
-            self.sweep.reload_flag = false;
+            self.sweep.reload = false;
         } else if self.sweep.divider > 0 {
             self.sweep.divider -= 1;
         } else {
-            if self.sweep.enable_flag {
+            if self.sweep.enabled {
                 self.set_timer_period_from_sweep();
             }
             self.sweep.divider = self.sweep.period;
@@ -537,7 +539,7 @@ impl Pulse {
 
     fn set_timer_period_from_sweep(&mut self) {
         let delta = self.timer_period >> self.sweep.shift_count;
-        if self.sweep.negate_flag {
+        if self.sweep.negate {
             match self.negation_type {
                 SweepNegationType::OnesComplement => {
                     self.timer_period -= delta + 1;
@@ -551,10 +553,6 @@ impl Pulse {
         }
     }
 
-    fn step_envelope(&mut self) {
-        self.envelope.step();
-    }
-
     fn step_timer(&mut self) {
         if self.timer_value == 0 {
             self.timer_value = self.timer_period;
@@ -565,13 +563,13 @@ impl Pulse {
     }
 
     fn output(&self) -> u8 {
-        if !self.enable_flag ||
-            self.length_counter == 0 ||
+        if !self.enabled ||
+            self.length_counter.count == 0 ||
             DUTY_CYCLE_TABLE[self.duty_mode as usize][self.duty_cycle as usize] == 0 ||
             self.timer_period < 8 ||
             self.timer_period > 0x7FF {
             0
-        } else if self.envelope.enable_flag {
+        } else if self.envelope.enabled {
             self.envelope.volume
         } else {
             self.constant_volume
@@ -580,39 +578,59 @@ impl Pulse {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
+struct LinearCounter {
+    period: u8,
+    count: u8,
+    reload: bool,
+}
+
+impl LinearCounter {
+    fn new() -> LinearCounter {
+        LinearCounter {
+            period: 0,
+            count: 0,
+            reload: false,
+        }
+    }
+
+    fn step(&mut self, length_counter_enabled: bool) {
+        if self.reload {
+            self.count = self.period;
+        } else if self.count > 0 {
+            self.count -= 1;
+        }
+
+        if length_counter_enabled {
+            self.reload = false;
+        }
+    }
+}
+
+#[derive(Clone, Deserialize, Serialize)]
 pub struct Triangle {
-    enable_flag: bool,
-    control_flag: bool,
+    enabled: bool,
     timer_value: u16,
     timer_period: u16,
-    length_counter_enable: bool,
-    length_counter: u8,
-    linear_counter_period: u8,
-    linear_counter_value: u8,
-    linear_counter_reload: bool,
+    length_counter: LengthCounter,
+    linear_counter: LinearCounter,
     duty_cycle: u8,
 }
 
 impl Triangle {
     fn new() -> Triangle {
         Triangle {
-            enable_flag: false,
-            control_flag: false,
+            enabled: false,
             timer_value: 0,
             timer_period: 0,
-            length_counter_enable: false,
-            length_counter: 0,
-            linear_counter_period: 0,
-            linear_counter_value: 0,
-            linear_counter_reload: false,
+            length_counter: LengthCounter::new(),
+            linear_counter: LinearCounter::new(),
             duty_cycle: 0,
         }
     }
 
     fn write_linear_counter(&mut self, value: u8) {
-        self.control_flag = value & 0x80 != 0;
-        self.length_counter_enable = !self.control_flag;
-        self.linear_counter_period = value & 0x7F;
+        self.length_counter.enabled = value & 0x80 == 0;
+        self.linear_counter.period = value & 0x7F;
     }
 
     fn write_timer_lo(&mut self, value: u8) {
@@ -620,16 +638,16 @@ impl Triangle {
     }
 
     fn write_length_counter_and_timer_hi(&mut self, value: u8) {
-        self.length_counter = LENGTH_TABLE[(value>>3) as usize];
+        self.length_counter.set(value >> 3);
         self.timer_period = (self.timer_period & 0x00FF) | (((value & 0x07) as u16) << 8);
         self.timer_value = self.timer_period;
-        self.linear_counter_reload = true;
+        self.linear_counter.reload = true;
     }
 
     fn step_timer(&mut self) {
         if self.timer_value == 0 {
             self.timer_value = self.timer_period;
-            if self.length_counter > 0 && self.linear_counter_value > 0 {
+            if self.length_counter.count > 0 && self.linear_counter.count > 0 {
                 self.duty_cycle = (self.duty_cycle + 1) % 32;
             }
         } else {
@@ -637,26 +655,12 @@ impl Triangle {
         }
     }
 
-    fn step_length_counter(&mut self) {
-        if self.length_counter_enable && self.length_counter > 0 {
-            self.length_counter -= 1;
-        }
-    }
-
     fn step_linear_counter(&mut self) {
-        if self.linear_counter_reload {
-            self.linear_counter_value = self.linear_counter_period;
-        } else if self.linear_counter_value > 0 {
-            self.linear_counter_value -= 1;
-        }
-
-        if self.length_counter_enable {
-            self.linear_counter_reload = false;
-        }
+        self.linear_counter.step(self.length_counter.enabled);
     }
 
     fn output(&self) -> u8 {
-        if !self.enable_flag || self.length_counter == 0 || self.linear_counter_value == 0 {
+        if !self.enabled || self.length_counter.count == 0 || self.linear_counter.count == 0 {
             0
         } else {
             TRIANGLE_TABLE[self.duty_cycle as usize]
@@ -666,13 +670,12 @@ impl Triangle {
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct Noise {
-    enable_flag: bool,
+    enabled: bool,
     mode: bool,
     shift_register: u16,
     timer_value: u16,
     timer_period: u16,
-    length_counter_enable: bool,
-    length_counter: u8,
+    length_counter: LengthCounter,
     envelope: Envelope,
     constant_volume: u8,
 }
@@ -680,25 +683,24 @@ pub struct Noise {
 impl Noise {
     fn new() -> Noise {
         Noise {
-            enable_flag: false,
+            enabled: false,
             mode: false,
             shift_register: 1,
             timer_value: 0,
             timer_period: 0,
-            length_counter_enable: false,
-            length_counter: 0,
+            length_counter: LengthCounter::new(),
             envelope: Envelope::new(),
             constant_volume: 0,
         }
     }
 
     fn write_control(&mut self, value: u8) {
-        self.length_counter_enable = (value & 0x20) == 0;
-        self.envelope.loop_flag = !self.length_counter_enable;
-        self.envelope.enable_flag = (value & 0x10) == 0;
+        self.length_counter.enabled = (value & 0x20) == 0;
+        self.envelope.loop_flag = !self.length_counter.enabled;
+        self.envelope.enabled = (value & 0x10) == 0;
         self.constant_volume = value & 0x0F;
         self.envelope.period = self.constant_volume;
-        self.envelope.start_flag = true;
+        self.envelope.start = true;
     }
 
     fn write_mode_and_timer_period(&mut self, value: u8) {
@@ -707,8 +709,8 @@ impl Noise {
     }
 
     fn write_length_counter_and_envelope_restart(&mut self, value: u8) {
-        self.length_counter = LENGTH_TABLE[(value >> 3) as usize];
-        self.envelope.start_flag = true;
+        self.length_counter.set(value >> 3);
+        self.envelope.start = true;
     }
 
     fn step_timer(&mut self) {
@@ -724,20 +726,10 @@ impl Noise {
         }
     }
 
-    fn step_envelope(&mut self) {
-        self.envelope.step();
-    }
-
-    fn step_length_counter(&mut self) {
-        if self.length_counter_enable && self.length_counter > 0 {
-            self.length_counter -= 1;
-        }
-    }
-
     fn output(&self) -> u8 {
-        if !self.enable_flag || self.length_counter == 0 || self.shift_register & 0x0001 == 1 {
+        if !self.enabled || self.length_counter.count == 0 || self.shift_register & 0x0001 == 1 {
             0
-        } else if self.envelope.enable_flag {
+        } else if self.envelope.enabled {
             self.envelope.volume
         } else {
             self.constant_volume
@@ -880,81 +872,6 @@ impl FrameCounter {
             mode: FrameCounterMode::FourStep,
             interrupt_enable: false,
         }
-    }
-}
-
-trait Filter {
-    fn step(&mut self, x: f32) -> f32;
-}
-
-struct FirstOrderFilter {
-    b0: f32,
-    b1: f32,
-    a1: f32,
-    prev_x: f32,
-    prev_y: f32,
-}
-
-impl Filter for FirstOrderFilter {
-    fn step(&mut self, x: f32) -> f32 {
-        let y = self.b0 * x + self.b1 * self.prev_x - self.a1 * self.prev_y;
-        self.prev_x = x;
-        self.prev_y = y;
-        y
-    }
-}
-
-impl FirstOrderFilter {
-    fn new_low_pass(sample_rate: f32, cutoff_freq: f32) -> FirstOrderFilter {
-        let c = sample_rate / PI / cutoff_freq;
-        let a0i = 1.0 / (1.0 + c);
-
-        FirstOrderFilter {
-            b0: a0i,
-            b1: a0i,
-            a1: (1.0 - c) * a0i,
-            prev_x: 0.0,
-            prev_y: 0.0,
-        }
-    }
-
-    fn new_high_pass(sample_rate: f32, cutoff_freq: f32) -> FirstOrderFilter {
-        let c = sample_rate / PI / cutoff_freq;
-        let a0i = 1.0 / (1.0 + c);
-
-        FirstOrderFilter {
-            b0: c * a0i,
-            b1: -c * a0i,
-            a1: (1.0 - c) * a0i,
-            prev_x: 0.0,
-            prev_y: 0.0,
-        }
-    }
-}
-
-struct FilterChain {
-    filters: Vec<Box<Filter>>
-}
-
-impl FilterChain {
-    fn new() -> FilterChain {
-        FilterChain {
-            filters: Vec::new(),
-        }
-    }
-
-    fn add(mut self, filter: Box<Filter>) -> FilterChain {
-        self.filters.push(filter);
-        self
-    }
-
-    fn step(&mut self, x: f32) -> f32 {
-        let mut x = x;
-        for filter in self.filters.iter_mut() {
-           x = filter.step(x);
-        }
-
-        x
     }
 }
 

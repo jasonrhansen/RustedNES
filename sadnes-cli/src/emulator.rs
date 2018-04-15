@@ -52,7 +52,8 @@ pub struct Emulator {
 }
 
 impl Emulator {
-    pub fn new(cartridge: Cartridge, audio_frame_sink: Box<Sink<AudioFrame>>, time_source: Box<TimeSource>) -> Emulator {
+    pub fn new(cartridge: Cartridge, audio_frame_sink: Box<Sink<AudioFrame>>,
+               audio_sample_rate: u32, time_source: Box<TimeSource>) -> Emulator {
         let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
         let _stdin_thread = thread::spawn(move || {
@@ -80,7 +81,7 @@ impl Emulator {
                                 }
             ).unwrap(),
 
-            nes: Nes::new(cartridge),
+            nes: Nes::new(cartridge, audio_sample_rate),
             mode: Mode::Running,
 
             breakpoints: HashSet::new(),

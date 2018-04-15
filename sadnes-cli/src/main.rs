@@ -11,10 +11,10 @@ extern crate serde_json;
 extern crate time;
 
 use argparse::*;
+use audio_driver::*;
 use cpal_driver::*;
 use emulator::*;
-use null_audio_sink::*;
-use sadnes_core::apu::SAMPLE_RATE;
+use null_audio_driver::*;
 use sadnes_core::cartridge::*;
 use std::fs::File;
 use system_time_source::*;
@@ -25,8 +25,8 @@ mod command;
 mod emulator;
 mod cpal_driver;
 mod system_time_source;
-mod null_audio_sink;
-
+mod audio_driver;
+mod null_audio_driver;
 
 fn main() {
     let config = parse_args();
@@ -47,18 +47,18 @@ fn load_rom(filename: &str) -> Result<Cartridge, LoadError> {
 }
 
 fn run_rom(rom: Cartridge, config: CommandLineConfig) {
-    let audio_sink = if config.enable_audio {
-        let audio_driver = CpalDriver::new(SAMPLE_RATE, 100).unwrap();
-        println!("Output sample rate: {}", audio_driver.output_sample_rate);
-        audio_driver.sink()
+    let mut emulator = if config.enable_audio {
+        let audio_driver = Box::new(CpalDriver::new(44_100).unwrap());
+        let time_source = audio_driver.time_source();
+        println!("Audio sample rate: {}", audio_driver.sample_rate());
+        Emulator::new(rom, audio_driver.sink(), audio_driver.sample_rate(), time_source)
     } else {
+        let audio_driver = Box::new(NullAudioDriver{});
+        let time_source = Box::new(SystemTimeSource{});
         println!("Audio disabled");
-        Box::new(NullAudioSink{})
+        Emulator::new(rom, audio_driver.sink(), audio_driver.sample_rate(), time_source)
     };
 
-    let time_source = Box::new(SystemTimeSource{});
-
-    let mut emulator = Emulator::new(rom, audio_sink, time_source);
     emulator.run(config.debug);
 }
 
