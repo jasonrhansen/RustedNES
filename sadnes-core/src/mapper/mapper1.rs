@@ -208,18 +208,18 @@ impl Mapper for Mapper1 {
         self.regs = Regs::new();
     }
 
-    fn get_state(&self) -> String {
+    fn get_state(&self) -> Vec<u8> {
         let state = State {
             cartridge: self.cartridge.get_state(),
             shift: self.shift,
             regs: self.regs,
         };
 
-        serde_json::to_string(&state).unwrap_or("".into())
+        serde_json::to_vec(&state).unwrap_or(vec![])
     }
 
-    fn apply_state(&mut self, state: &String) {
-        if let Ok(ref state) = serde_json::from_str::<State>(&state) {
+    fn apply_state(&mut self, state: &[u8]) {
+        if let Ok(ref state) = serde_json::from_slice::<State>(&state) {
             self.cartridge.apply_state(&state.cartridge);
             self.shift = state.shift;
             self.regs = state.regs;

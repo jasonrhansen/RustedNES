@@ -32,7 +32,8 @@ pub struct State {
     pub ppu: ppu::State,
     pub apu: apu::State,
     pub input: input::State,
-    pub mapper: String,
+    #[serde(with = "serde_bytes")]
+    pub mapper: Vec<u8>,
 }
 
 impl Interconnect {

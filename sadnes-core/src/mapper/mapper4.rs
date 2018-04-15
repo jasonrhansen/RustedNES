@@ -268,7 +268,7 @@ impl Mapper for Mapper4 {
         self.chr_bank_offsets = [0; 8];
     }
 
-    fn get_state(&self) -> String {
+    fn get_state(&self) -> Vec<u8> {
         let state = State {
             cartridge: self.cartridge.get_state(),
             next_bank_register: self.next_bank_register,
@@ -282,11 +282,11 @@ impl Mapper for Mapper4 {
             chr_bank_offsets: self.chr_bank_offsets,
         };
 
-        serde_json::to_string(&state).unwrap_or("".into())
+        serde_json::to_vec(&state).unwrap_or(vec![])
     }
 
-    fn apply_state(&mut self, state: &String) {
-        if let Ok(ref state) = serde_json::from_str::<State>(&state) {
+    fn apply_state(&mut self, state: &[u8]) {
+        if let Ok(ref state) = serde_json::from_slice::<State>(&state) {
             self.cartridge.apply_state(&state.cartridge);
             self.next_bank_register = state.next_bank_register;
             self.bank_registers = state.bank_registers;

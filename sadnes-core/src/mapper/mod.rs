@@ -25,8 +25,8 @@ pub trait Mapper {
     fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8);
     fn step(&mut self, _cpu: &mut Cpu, _ppu: &Ppu) {}
     fn reset(&mut self);
-    fn get_state(&self) -> String;
-    fn apply_state(&mut self, _state: &String);
+    fn get_state(&self) -> Vec<u8>;
+    fn apply_state(&mut self, state: &[u8]);
 }
 
 pub fn create_mapper(cartridge: Box<Cartridge>) -> Box<Mapper> {
