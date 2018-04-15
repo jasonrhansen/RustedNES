@@ -49,7 +49,7 @@ const BRK_VECTOR: u16 = 0xFFFE;
 
 // The number of cycles that each opcode takes.
 // This doesn't include additional cycles for page crossing.
-static OPCODE_CYCLES: &'static [u8] = &[
+static OPCODE_CYCLES: &[u8] = &[
     7, 6, 2, 8, 3, 3, 5, 5, 3, 2, 2, 2, 4, 4, 6, 6,
     2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
     6, 6, 2, 8, 3, 3, 5, 5, 4, 2, 2, 2, 4, 4, 6, 6,
