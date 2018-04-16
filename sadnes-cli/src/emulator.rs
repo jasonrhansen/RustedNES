@@ -188,7 +188,7 @@ impl Emulator {
 
                     if self.window.is_key_pressed(Key::F1, KeyRepeat::No) {
                         if let Some(ref s) = self.serialized {
-                            if let Ok(ref state) = serde_json::from_str(&s) {
+                            if let Ok(state) = serde_json::from_str(&s) {
                                 serialize::apply_state(&mut self.nes, state);
                             }
                         }
