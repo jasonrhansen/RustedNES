@@ -8,11 +8,14 @@ use sadnes_core::input::Button;
 use sadnes_core::memory::Memory;
 use sadnes_core::nes::Nes;
 use sadnes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use sadnes_core::serialize;
 use sadnes_core::sink::*;
 use sadnes_core::time_source::TimeSource;
 use serde_json;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::Write;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time;
@@ -174,13 +177,19 @@ impl Emulator {
                     }
 
                     if self.window.is_key_pressed(Key::Key1, KeyRepeat::No) {
-                        self.serialized = serde_json::to_string(&self.nes.get_state()).ok();
+                        self.serialized = serde_json::to_string(&serialize::get_state(&self.nes)).ok();
+
+//                        if let Some(ref s) = self.serialized {
+//                            if let Ok(mut f) = File::create("save_state.json") {
+//                                f.write_all(&s.as_bytes());
+//                            }
+//                        }
                     }
 
                     if self.window.is_key_pressed(Key::F1, KeyRepeat::No) {
                         if let Some(ref s) = self.serialized {
-                            if let Ok(ref d) = serde_json::from_str(&s) {
-                                self.nes.apply_state(&d);
+                            if let Ok(ref state) = serde_json::from_str(&s) {
+                                serialize::apply_state(&mut self.nes, state);
                             }
                         }
                     }
