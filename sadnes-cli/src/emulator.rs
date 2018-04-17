@@ -14,8 +14,6 @@ use sadnes_core::time_source::TimeSource;
 use serde_json;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::Write;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time;
@@ -179,6 +177,8 @@ impl Emulator {
                     if self.window.is_key_pressed(Key::Key1, KeyRepeat::No) {
                         self.serialized = serde_json::to_string(&serialize::get_state(&self.nes)).ok();
 
+//                        use std::fs::File;
+//                        use std::io::Write;
 //                        if let Some(ref s) = self.serialized {
 //                            if let Ok(mut f) = File::create("save_state.json") {
 //                                f.write_all(&s.as_bytes());
