@@ -23,7 +23,10 @@ pub trait Mapper {
     fn prg_write_byte(&mut self, address: u16, value: u8);
     fn ppu_read_byte(&mut self, vram: &mut Vram, address: u16) -> u8;
     fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8);
+
+    // Called for every PPU cycle. Most mappers don't need to do anything.
     fn step(&mut self, _cpu: &mut Cpu, _ppu: &Ppu) {}
+
     fn reset(&mut self);
     fn get_state(&self) -> State;
     fn apply_state(&mut self, state: &State);

@@ -131,14 +131,16 @@ impl Interconnect {
                   audio_frame_sink: &mut Sink<AudioFrame>) {
 
 
-        // 3 PPU cycles per CPU cycle
-        for _ in 0..cycles * 3 {
-            self.ppu.step(cpu, video_frame_sink);
-            let mut mapper = self.mapper.borrow_mut();
-            mapper.step(cpu, &self.ppu);
-        }
+        for _ in 0..cycles {
+            // 3 PPU cycles per CPU cycle
+            for _ in 0..3 {
+                self.ppu.step(cpu, video_frame_sink);
+                let mut mapper = self.mapper.borrow_mut();
+                mapper.step(cpu, &self.ppu);
+            }
 
-        self.apu.cycles(cpu, cycles, audio_frame_sink);
+            self.apu.step(cpu, audio_frame_sink);
+        }
     }
 
     pub fn reset(&mut self) {

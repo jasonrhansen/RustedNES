@@ -130,14 +130,7 @@ impl Apu {
         self.frame_counter = state.frame_counter;
     }
 
-    // Run for the given number of cpu cycles
-    pub fn cycles(&mut self, cpu: &mut Cpu, cycles: u32, audio_frame_sink: &mut Sink<AudioFrame>) {
-        for _ in 0 .. cycles {
-            self.step(cpu, audio_frame_sink);
-        }
-    }
-
-    fn step(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut Sink<AudioFrame>) {
+    pub fn step(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut Sink<AudioFrame>) {
         let cycle_1 = self.cycles;
         self.cycles += 1;
         let cycle_2 = self.cycles;
