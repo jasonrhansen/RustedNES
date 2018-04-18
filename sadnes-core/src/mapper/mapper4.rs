@@ -265,6 +265,7 @@ impl Mapper for Mapper4 {
         self.irq_counter_reload_value = 0;
         self.prg_rom_bank_offsets = [0; 4];
         self.chr_bank_offsets = [0; 8];
+        self.update_banks();
     }
 
     fn get_state(&self) -> mapper::State {
