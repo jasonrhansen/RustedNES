@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "sadnes-cli",
+    "sadnes-core",
+]
