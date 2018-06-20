@@ -33,42 +33,6 @@ const PPUSCROLL_ADDRESS: u16 = 0x2005;
 const PPUADDR_ADDRESS: u16 = 0x2006;
 const PPUDATA_ADDRESS: u16 = 0x2007;
 
-static PALETTE: &[u32] = &[
-    0x666666, 0x002A88, 0x1412A7, 0x3B00A4, 0x5C007E, 0x6E0040, 0x6C0600, 0x561D00,
-    0x333500, 0x0B4800, 0x005200, 0x004F08, 0x00404D, 0x000000, 0x000000, 0x000000,
-    0xADADAD, 0x155FD9, 0x4240FF, 0x7527FE, 0xA01ACC, 0xB71E7B, 0xB53120, 0x994E00,
-    0x6B6D00, 0x388700, 0x0C9300, 0x008F32, 0x007C8D, 0x000000, 0x000000, 0x000000,
-    0xFFFEFF, 0x64B0FF, 0x9290FF, 0xC676FF, 0xF36AFF, 0xFE6ECC, 0xFE8170, 0xEA9E22,
-    0xBCBE00, 0x88D800, 0x5CE430, 0x45E082, 0x48CDDE, 0x4F4F4F, 0x000000, 0x000000,
-    0xFFFEFF, 0xC0DFFF, 0xD3D2FF, 0xE8C8FF, 0xFBC2FF, 0xFEC4EA, 0xFECCC5, 0xF7D8A5,
-    0xE4E594, 0xCFEF96, 0xBDF4AB, 0xB3F3CC, 0xB5EBF2, 0xB8B8B8, 0x000000, 0x000000,
-];
-
-lazy_static! {
-    static ref XRGB1555_PALETTE: [u16; 64] = {
-        let mut palette = [0; 64];
-        for n in 0..64 {
-            let color = PALETTE[n];
-            let r = ((color >> 19) & 0x1F) as u16;
-            let g = ((color >> 11) & 0x1F) as u16;
-            let b = ((color >> 3) & 0x1F) as u16;
-            palette[n] = (r << 10) | (g << 5) | b;
-        }
-        palette
-    };
-    static ref RGB565_PALETTE: [u16; 64] = {
-        let mut palette = [0; 64];
-        for n in 0..64 {
-            let color = PALETTE[n];
-            let r = ((color >> 19) & 0x1F) as u16;
-            let g = ((color >> 10) & 0x3F) as u16;
-            let b = ((color >> 3) & 0x1F) as u16;
-            palette[n] = (r << 11) | (g << 5) | b;
-        }
-        palette
-    };
-}
-
 pub struct Ppu {
     cycles: u64,
     regs: Regs,
@@ -769,7 +733,7 @@ impl Ppu {
             }
             POST_RENDER_SCANLINE => {
                 if scanline_cycle == 0 {
-                    self.output_frame(video_frame_sink);
+                    video_frame_sink.append(&self.frame_buffer);
                 }
             }
             VBLANK_START_SCANLINE => {
@@ -801,28 +765,6 @@ impl Ppu {
             self.scanline = PRE_RENDER_SCANLINE;
             self.frame += 1;
         }
-    }
-
-    pub fn output_frame(&mut self, video_frame_sink: &mut VideoSink) {
-        for pixel_x in 0..SCREEN_WIDTH {
-            for pixel_y in 0..SCREEN_HEIGHT {
-                let pixel_index = pixel_y * SCREEN_WIDTH + pixel_x;
-                let palette_index = (self.frame_buffer[pixel_index] & 0x3F) as usize;
-                match video_frame_sink.buffer {
-                    PixelBuffer::Xrgb1555(ref mut buffer, _) => {
-                        buffer[pixel_index] = XRGB1555_PALETTE[palette_index];
-                    }
-                    PixelBuffer::Rgb565(ref mut buffer, _) => {
-                        buffer[pixel_index] = RGB565_PALETTE[palette_index];
-                    }
-                    PixelBuffer::Xrgb8888(ref mut buffer, _) => {
-                        buffer[pixel_index] = PALETTE[palette_index];
-                    }
-                }
-            }
-        }
-
-        video_frame_sink.is_populated = true;
     }
 }
 

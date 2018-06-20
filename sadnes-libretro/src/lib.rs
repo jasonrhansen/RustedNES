@@ -187,42 +187,21 @@ impl Context {
                     );
                 }
 
-                let (pixel_buffer_ptr, pixel_buffer) = match CALLBACKS
+                let (pixel_buffer_ptr, mut video_output_sink): (_, Box<VideoSink>) = match CALLBACKS
                     .get_current_software_framebuffer(SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32)
                 {
                     Some(fb) => match fb.format {
                         0 => (
                             fb.data,
-                            PixelBuffer::Xrgb1555(
-                                slice::from_raw_parts_mut(
-                                    fb.data as *mut _,
-                                    (fb.height as usize) * (fb.pitch as usize)
-                                        / mem::size_of::<u16>(),
-                                ),
-                                fb.pitch,
-                            ),
+                            Box::new(Xrgb1555VideoSink::new(slice::from_raw_parts_mut(fb.data as *mut _, (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u16>()))),
                         ),
                         1 => (
                             fb.data,
-                            PixelBuffer::Xrgb8888(
-                                slice::from_raw_parts_mut(
-                                    fb.data as *mut _,
-                                    (fb.height as usize) * (fb.pitch as usize)
-                                        / mem::size_of::<u32>(),
-                                ),
-                                fb.pitch,
-                            ),
+                            Box::new(Xrgb8888VideoSink::new(slice::from_raw_parts_mut(fb.data as *mut _, (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u32>()))),
                         ),
                         2 => (
                             fb.data,
-                            PixelBuffer::Rgb565(
-                                slice::from_raw_parts_mut(
-                                    fb.data as *mut _,
-                                    (fb.height as usize) * (fb.pitch as usize)
-                                        / mem::size_of::<u16>(),
-                                ),
-                                fb.pitch,
-                            ),
+                            Box::new(Rgb565VideoSink::new(slice::from_raw_parts_mut(fb.data as *mut _, (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u16>()))),
                         ),
                         _ => panic!(
                             "Host returned framebuffer with unrecognized pixel format format"
@@ -231,22 +210,17 @@ impl Context {
                     _ => match self.video_output_frame_buffer {
                         OutputBuffer::Xrgb1555(ref mut buffer) => (
                             buffer.as_mut_ptr() as *mut c_void,
-                            PixelBuffer::Xrgb1555(buffer, SCREEN_WIDTH * mem::size_of::<u16>()),
+                            Box::new(Xrgb1555VideoSink::new(buffer)),
                         ),
                         OutputBuffer::Xrgb8888(ref mut buffer) => (
                             buffer.as_mut_ptr() as *mut c_void,
-                            PixelBuffer::Xrgb8888(buffer, SCREEN_WIDTH * mem::size_of::<u32>()),
+                            Box::new(Xrgb8888VideoSink::new(buffer)),
                         ),
                         OutputBuffer::Rgb565(ref mut buffer) => (
                             buffer.as_mut_ptr() as *mut c_void,
-                            PixelBuffer::Rgb565(buffer, SCREEN_WIDTH * mem::size_of::<u16>()),
+                            Box::new(Rgb565VideoSink::new(buffer)),
                         ),
                     },
-                };
-
-                let mut video_output_sink = VideoSink {
-                    buffer: pixel_buffer,
-                    is_populated: false,
                 };
 
                 let rendered_audio_frames = {
@@ -255,10 +229,10 @@ impl Context {
                         buffer_pos: 0,
                     };
 
-                    while !video_output_sink.is_populated {
+                    while !video_output_sink.is_populated() {
                         system
                             .nes
-                            .step(&mut video_output_sink, &mut audio_output_sink);
+                            .step(video_output_sink.as_mut(), &mut audio_output_sink);
                     }
 
                     audio_output_sink.buffer_pos
@@ -268,7 +242,7 @@ impl Context {
                     pixel_buffer_ptr,
                     SCREEN_WIDTH as u32,
                     SCREEN_HEIGHT as u32,
-                    video_output_sink.buffer.pitch(),
+                    video_output_sink.pixel_size() * SCREEN_WIDTH,
                 );
                 (CALLBACKS.audio_sample_batch.unwrap())(
                     self.audio_frame_buffer.as_mut_ptr() as *mut _,
