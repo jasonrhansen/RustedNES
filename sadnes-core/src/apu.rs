@@ -1,7 +1,7 @@
+use cpu::{Cpu, Interrupt, CPU_FREQUENCY};
 use mapper::Mapper;
 use memory::Memory;
 use sink::*;
-use cpu::{Cpu, Interrupt, CPU_FREQUENCY};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -14,13 +14,13 @@ static DUTY_CYCLE_TABLE: &[[u8; 8]] = &[
 ];
 
 static LENGTH_TABLE: &[u8] = &[
-    10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
-	12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
+    10, 254, 20, 2, 40, 4, 80, 6, 160, 8, 60, 10, 14, 12, 26, 14, 12, 16, 24, 18, 48, 20, 96, 22,
+    192, 24, 72, 26, 16, 28, 32, 30,
 ];
 
 static TRIANGLE_TABLE: &[u8] = &[
-    15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0,
-     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+    13, 14, 15,
 ];
 
 static NOISE_TABLE: &[u16] = &[
@@ -39,7 +39,6 @@ lazy_static! {
         }
         pulse_table
     };
-
     static ref TND_TABLE: [f32; 203] = {
         let mut tnd_table = [0f32; 203];
         for n in 0..203 {
@@ -94,7 +93,7 @@ impl Apu {
                 triangle_enabled: true,
                 noise_enabled: true,
                 dmc_enabled: true,
-            }
+            },
         }
     }
 
@@ -130,7 +129,7 @@ impl Apu {
         self.frame_counter = state.frame_counter;
     }
 
-    pub fn step(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut Sink<AudioFrame>) {
+    pub fn step(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut AudioSink) {
         let cycle_1 = self.cycles;
         self.cycles += 1;
         let cycle_2 = self.cycles;
@@ -146,16 +145,37 @@ impl Apu {
         let s1 = ((cycle_1 as f64) / self.cycles_per_sample) as u64;
         let s2 = ((cycle_2 as f64) / self.cycles_per_sample) as u64;
         if s1 != s2 {
-            audio_frame_sink.append(self.generate_sample());
+            let sample = (self.generate_sample() * 32768.0) as i16;
+            audio_frame_sink.append((sample, sample));
         }
     }
 
     fn generate_sample(&mut self) -> f32 {
-        let pulse_1 = if self.settings.pulse_1_enabled { self.pulse_1.output() } else { 0 };
-        let pulse_2 = if self.settings.pulse_2_enabled { self.pulse_2.output() } else { 0 };
-        let triangle = if self.settings.triangle_enabled { self.triangle.output() } else { 0 };
-        let noise = if self.settings.noise_enabled { self.noise.output() } else { 0 };
-        let dmc = if self.settings.dmc_enabled { self.dmc.output() } else { 0 };
+        let pulse_1 = if self.settings.pulse_1_enabled {
+            self.pulse_1.output()
+        } else {
+            0
+        };
+        let pulse_2 = if self.settings.pulse_2_enabled {
+            self.pulse_2.output()
+        } else {
+            0
+        };
+        let triangle = if self.settings.triangle_enabled {
+            self.triangle.output()
+        } else {
+            0
+        };
+        let noise = if self.settings.noise_enabled {
+            self.noise.output()
+        } else {
+            0
+        };
+        let dmc = if self.settings.dmc_enabled {
+            self.dmc.output()
+        } else {
+            0
+        };
 
         let pulse_out = PULSE_TABLE[pulse_1 as usize + pulse_2 as usize];
         let tnd_out = TND_TABLE[3 * triangle as usize + 2 * noise as usize + dmc as usize];
@@ -175,12 +195,12 @@ impl Apu {
                 match self.frame_counter.sequence_frame {
                     0 | 2 => {
                         self.step_envelope_and_linear_counter();
-                    },
+                    }
                     1 => {
                         self.step_length_counter();
                         self.step_sweep();
                         self.step_envelope_and_linear_counter();
-                    },
+                    }
                     3 => {
                         if self.frame_counter.interrupt_enable {
                             cpu.request_interrupt(Interrupt::Irq);
@@ -188,10 +208,10 @@ impl Apu {
                         self.step_length_counter();
                         self.step_sweep();
                         self.step_envelope_and_linear_counter();
-                    },
+                    }
                     _ => (),
                 }
-            },
+            }
             FrameCounterMode::FiveStep => {
                 self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 5;
                 match self.frame_counter.sequence_frame {
@@ -199,10 +219,10 @@ impl Apu {
                         self.step_envelope_and_linear_counter();
                         self.step_sweep();
                         self.step_length_counter();
-                    },
+                    }
                     1 | 3 => {
                         self.step_envelope_and_linear_counter();
-                    },
+                    }
                     _ => (),
                 }
             }
@@ -539,7 +559,7 @@ impl Pulse {
                 }
                 SweepNegationType::TwosComplement => {
                     self.timer_period -= delta;
-                },
+                }
             }
         } else {
             self.timer_period += delta;
@@ -556,11 +576,10 @@ impl Pulse {
     }
 
     fn output(&self) -> u8 {
-        if !self.enabled ||
-            self.length_counter.count == 0 ||
-            DUTY_CYCLE_TABLE[self.duty_mode as usize][self.duty_cycle as usize] == 0 ||
-            self.timer_period < 8 ||
-            self.timer_period > 0x7FF {
+        if !self.enabled || self.length_counter.count == 0
+            || DUTY_CYCLE_TABLE[self.duty_mode as usize][self.duty_cycle as usize] == 0
+            || self.timer_period < 8 || self.timer_period > 0x7FF
+        {
             0
         } else if self.envelope.enabled {
             self.envelope.volume
@@ -867,4 +886,3 @@ impl FrameCounter {
         }
     }
 }
-

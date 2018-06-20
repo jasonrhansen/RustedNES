@@ -34,15 +34,40 @@ const PPUADDR_ADDRESS: u16 = 0x2006;
 const PPUDATA_ADDRESS: u16 = 0x2007;
 
 static PALETTE: &[u32] = &[
-    0x666666, 0x002A88, 0x1412A7, 0x3B00A4, 0x5C007E, 0x6E0040, 0x6C0600, 0x561D00,
-    0x333500, 0x0B4800, 0x005200, 0x004F08, 0x00404D, 0x000000, 0x000000, 0x000000,
-    0xADADAD, 0x155FD9, 0x4240FF, 0x7527FE, 0xA01ACC, 0xB71E7B, 0xB53120, 0x994E00,
-    0x6B6D00, 0x388700, 0x0C9300, 0x008F32, 0x007C8D, 0x000000, 0x000000, 0x000000,
-    0xFFFEFF, 0x64B0FF, 0x9290FF, 0xC676FF, 0xF36AFF, 0xFE6ECC, 0xFE8170, 0xEA9E22,
-    0xBCBE00, 0x88D800, 0x5CE430, 0x45E082, 0x48CDDE, 0x4F4F4F, 0x000000, 0x000000,
-    0xFFFEFF, 0xC0DFFF, 0xD3D2FF, 0xE8C8FF, 0xFBC2FF, 0xFEC4EA, 0xFECCC5, 0xF7D8A5,
-    0xE4E594, 0xCFEF96, 0xBDF4AB, 0xB3F3CC, 0xB5EBF2, 0xB8B8B8, 0x000000, 0x000000,
+    0x666666, 0x002A88, 0x1412A7, 0x3B00A4, 0x5C007E, 0x6E0040, 0x6C0600, 0x561D00, 0x333500,
+    0x0B4800, 0x005200, 0x004F08, 0x00404D, 0x000000, 0x000000, 0x000000, 0xADADAD, 0x155FD9,
+    0x4240FF, 0x7527FE, 0xA01ACC, 0xB71E7B, 0xB53120, 0x994E00, 0x6B6D00, 0x388700, 0x0C9300,
+    0x008F32, 0x007C8D, 0x000000, 0x000000, 0x000000, 0xFFFEFF, 0x64B0FF, 0x9290FF, 0xC676FF,
+    0xF36AFF, 0xFE6ECC, 0xFE8170, 0xEA9E22, 0xBCBE00, 0x88D800, 0x5CE430, 0x45E082, 0x48CDDE,
+    0x4F4F4F, 0x000000, 0x000000, 0xFFFEFF, 0xC0DFFF, 0xD3D2FF, 0xE8C8FF, 0xFBC2FF, 0xFEC4EA,
+    0xFECCC5, 0xF7D8A5, 0xE4E594, 0xCFEF96, 0xBDF4AB, 0xB3F3CC, 0xB5EBF2, 0xB8B8B8, 0x000000,
+    0x000000,
 ];
+
+lazy_static! {
+    static ref XRGB1555_PALETTE: [u16; 64] = {
+        let mut palette = [0; 64];
+        for n in 0..64 {
+            let color = PALETTE[n];
+            let r = ((color >> 19) & 0x1F) as u16;
+            let g = ((color >> 11) & 0x1F) as u16;
+            let b = ((color >> 3) & 0x1F) as u16;
+            palette[n] = (r << 10) | (g << 5) | b;
+        }
+        palette
+    };
+    static ref RGB565_PALETTE: [u16; 64] = {
+        let mut palette = [0; 64];
+        for n in 0..64 {
+            let color = PALETTE[n];
+            let r = ((color >> 19) & 0x1F) as u16;
+            let g = ((color >> 10) & 0x3F) as u16;
+            let b = ((color >> 3) & 0x1F) as u16;
+            palette[n] = (r << 11) | (g << 5) | b;
+        }
+        palette
+    };
+}
 
 pub struct Ppu {
     cycles: u64,
@@ -104,7 +129,6 @@ pub struct Ppu {
     nmi_occurred: bool,
     nmi_output: bool,
 }
-
 
 #[derive(Deserialize, Serialize)]
 pub struct State {
@@ -260,8 +284,9 @@ impl Ppu {
     fn write_oam_byte(&mut self, val: u8) {
         // Ignore writes during rendering
         // http://wiki.nesdev.com/w/index.php/PPU_registers#OAM_data_.28.242004.29_.3C.3E_read.2Fwrite
-        if self.rendering_enabled() &&
-            VISIBLE_START_SCANLINE <= self.scanline && self.scanline <= VISIBLE_END_SCANLINE {
+        if self.rendering_enabled() && VISIBLE_START_SCANLINE <= self.scanline
+            && self.scanline <= VISIBLE_END_SCANLINE
+        {
             return;
         }
 
@@ -281,18 +306,16 @@ impl Ppu {
         match self.regs.w {
             WriteToggle::FirstWrite => {
                 // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242005_first_write_.28w_is_0.29
-                self.regs.t = (self.regs.t & 0xFFE0) |
-                    (((value as u16) >> 3) & 0x01F);
+                self.regs.t = (self.regs.t & 0xFFE0) | (((value as u16) >> 3) & 0x01F);
                 self.regs.x = value & 0x07;
                 self.regs.w = WriteToggle::SecondWrite;
-            },
+            }
             WriteToggle::SecondWrite => {
                 // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242005_second_write_.28w_is_1.29
-                self.regs.t = (self.regs.t & 0x0C1F) |
-                    (((value & 0x07) as u16) << 12) |
-                    (((value & 0xF8) as u16) << 2);
+                self.regs.t = (self.regs.t & 0x0C1F) | (((value & 0x07) as u16) << 12)
+                    | (((value & 0xF8) as u16) << 2);
                 self.regs.w = WriteToggle::FirstWrite;
-            },
+            }
         }
     }
 
@@ -315,13 +338,13 @@ impl Ppu {
                 // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242006_first_write_.28w_is_0.29
                 self.regs.t = (self.regs.t & 0x00FF) | ((value as u16 & 0x3F) << 8);
                 self.regs.w = WriteToggle::SecondWrite;
-            },
+            }
             WriteToggle::SecondWrite => {
                 // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242006_second_write_.28w_is_1.29
                 self.regs.t = (self.regs.t & 0xFF00) | (value as u16);
                 self.regs.v = self.regs.t;
                 self.regs.w = WriteToggle::FirstWrite;
-            },
+            }
         }
     }
 
@@ -408,8 +431,8 @@ impl Ppu {
     }
 
     pub fn rendering_enabled(&self) -> bool {
-        self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND) ||
-            self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES)
+        self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND)
+            || self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES)
     }
 
     fn current_name_address(&self) -> u16 {
@@ -423,8 +446,8 @@ impl Ppu {
 
     fn current_pattern_address(&self) -> u16 {
         let fine_y = ((self.regs.v >> 12) & 0x07) as u16;
-        self.regs.ppu_ctrl.background_pattern_table_address() +
-            (self.name_table_byte as u16 * 16 + fine_y)
+        self.regs.ppu_ctrl.background_pattern_table_address()
+            + (self.name_table_byte as u16 * 16 + fine_y)
     }
 
     fn fetch_name_table_byte(&mut self) {
@@ -456,12 +479,10 @@ impl Ppu {
         let palette_shift = ((self.regs.v >> 4) & 0x04) | (self.regs.v & 0x02);
         let palette = ((self.attribute_table_byte >> palette_shift) & 0x03) as u16;
 
-        self.background_palette_shift_lo =
-            (self.background_palette_shift_lo & 0xFF00) |
-                (if (palette & 0x01) == 0x01 { 0xFF } else { 0x00 });
-        self.background_palette_shift_hi =
-            (self.background_palette_shift_hi & 0xFF00) |
-                (if (palette & 0x02) == 0x02 { 0xFF } else { 0x00 });
+        self.background_palette_shift_lo = (self.background_palette_shift_lo & 0xFF00)
+            | (if (palette & 0x01) == 0x01 { 0xFF } else { 0x00 });
+        self.background_palette_shift_hi = (self.background_palette_shift_hi & 0xFF00)
+            | (if (palette & 0x02) == 0x02 { 0xFF } else { 0x00 });
     }
 
     fn shift_background_registers(&mut self) {
@@ -473,7 +494,8 @@ impl Ppu {
 
     fn fetch_sprite_tile(&mut self, sprite_index: usize) {
         let index = sprite_index * Oam::BYTES_PER_SPRITE;
-        let sprite = Sprite::from_oam_bytes(&self.oam.secondary[index..(index + Oam::BYTES_PER_SPRITE)]);
+        let sprite =
+            Sprite::from_oam_bytes(&self.oam.secondary[index..(index + Oam::BYTES_PER_SPRITE)]);
 
         let mut row = self.scanline as u16 - sprite.y as u16;
         let size = self.regs.ppu_ctrl.sprite_size();
@@ -483,15 +505,19 @@ impl Ppu {
                     row = 7 - row;
                 }
 
-                (sprite.tile_index as u16) * 16 +
-                    self.regs.ppu_ctrl.sprite_pattern_table_address() + row
-            },
+                (sprite.tile_index as u16) * 16 + self.regs.ppu_ctrl.sprite_pattern_table_address()
+                    + row
+            }
             SpriteSize::Size8x16 => {
                 if sprite.flip_vertically() {
                     row = 15 - row;
                 }
 
-                let table: u16 = if sprite.tile_index & 0x01 == 0 { 0x0000 } else { 0x1000 };
+                let table: u16 = if sprite.tile_index & 0x01 == 0 {
+                    0x0000
+                } else {
+                    0x1000
+                };
                 let mut tile_index = sprite.tile_index & 0xFE;
                 if row > 7 {
                     // Jump to second tile
@@ -531,7 +557,8 @@ impl Ppu {
     }
 
     fn color_from_palette_index(&mut self, index: u8) -> u8 {
-        self.mem.read_byte(PaletteRam::START_ADDRESS | (index & 0x1F) as u16)
+        self.mem
+            .read_byte(PaletteRam::START_ADDRESS | (index & 0x1F) as u16)
     }
 
     fn render_pixel(&mut self) {
@@ -559,10 +586,8 @@ impl Ppu {
             let attrs = self.sprite_attribute_latches[sprite_index];
 
             match attrs.priority() {
-                SpritePriority::InFrontOfBackground =>
-                    self.color_from_palette_index(sprite_pixel),
-                SpritePriority::BehindBackground =>
-                    self.color_from_palette_index(background_pixel),
+                SpritePriority::InFrontOfBackground => self.color_from_palette_index(sprite_pixel),
+                SpritePriority::BehindBackground => self.color_from_palette_index(background_pixel),
             }
         };
 
@@ -571,32 +596,33 @@ impl Ppu {
 
     fn background_pixel(&self) -> u8 {
         let x = self.scanline_cycle() - 1;
-        if !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND) ||
-            x < 8 && !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND_LEFT_8) {
+        if !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND)
+            || x < 8 && !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND_LEFT_8)
+        {
             return 0;
         }
 
         let fine_x = self.regs.x;
 
-        ((self.background_pattern_shift_lo >> (15 - fine_x)) & 0x01) as u8 |
-            ((self.background_pattern_shift_hi >> (14 - fine_x)) & 0x02) as u8 |
-            ((self.background_palette_shift_lo >> (13 - fine_x)) & 0x04) as u8 |
-            ((self.background_palette_shift_hi >> (12 - fine_x)) & 0x08) as u8
+        ((self.background_pattern_shift_lo >> (15 - fine_x)) & 0x01) as u8
+            | ((self.background_pattern_shift_hi >> (14 - fine_x)) & 0x02) as u8
+            | ((self.background_palette_shift_lo >> (13 - fine_x)) & 0x04) as u8
+            | ((self.background_palette_shift_hi >> (12 - fine_x)) & 0x08) as u8
     }
 
     fn sprite_pixel_and_index(&mut self) -> (u8, usize) {
         let x = self.scanline_cycle() - 1;
-        if !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES) ||
-            x < 8 && !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES_LEFT_8) {
+        if !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES)
+            || x < 8 && !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES_LEFT_8)
+        {
             return (0, 0);
         }
 
         for i in 0..8 {
             if self.sprite_x_counters[i] == 0 && self.sprite_attribute_latches[i].0 != 0xFF {
-                let pixel =
-                    ((self.sprite_pattern_shifts_lo[i] as u8 >> 7) & 0x01) |
-                        ((self.sprite_pattern_shifts_hi[i] as u8 >> 6) & 0x02) |
-                        ((self.sprite_attribute_latches[i].palette() << 2) & 0x1C);
+                let pixel = ((self.sprite_pattern_shifts_lo[i] as u8 >> 7) & 0x01)
+                    | ((self.sprite_pattern_shifts_hi[i] as u8 >> 6) & 0x02)
+                    | ((self.sprite_attribute_latches[i].palette() << 2) & 0x1C);
 
                 if pixel & 0x03 != 0 {
                     return (pixel, i);
@@ -609,8 +635,8 @@ impl Ppu {
 
     fn inc_coarse_x_with_wrap(&mut self) {
         if (self.regs.v & 0x001F) == 31 {
-            self.regs.v &= !0x001F;         // course X = 0
-            self.regs.v ^= 0x0400;          // switch horizontal nametable
+            self.regs.v &= !0x001F; // course X = 0
+            self.regs.v ^= 0x0400; // switch horizontal nametable
         } else {
             self.regs.v += 1;
         }
@@ -647,20 +673,17 @@ impl Ppu {
         self.cycles - self.scanline_start_cycle
     }
 
-    pub fn step(&mut self, cpu: &mut Cpu, video_frame_sink: &mut Sink<VideoFrame>) {
+    pub fn step(&mut self, cpu: &mut Cpu, video_frame_sink: &mut VideoSink) {
         let scanline_cycle = self.scanline_cycle();
 
         let on_visible_scanline =
             VISIBLE_START_SCANLINE <= self.scanline && self.scanline <= VISIBLE_END_SCANLINE;
-        let on_visible_cycle =
-            1 <= scanline_cycle && scanline_cycle <= 256;
+        let on_visible_cycle = 1 <= scanline_cycle && scanline_cycle <= 256;
 
         let on_fetch_scanline = self.scanline <= VISIBLE_END_SCANLINE;
-        let on_fetch_cycle =
-                on_visible_cycle ||
+        let on_fetch_cycle = on_visible_cycle ||
                     // Pre-fetch tiles for the next scanline
                     321 <= scanline_cycle && scanline_cycle <= 336;
-
 
         // Handle backgrounds
         if self.rendering_enabled() {
@@ -681,8 +704,7 @@ impl Ppu {
             }
 
             if on_fetch_scanline {
-                if on_fetch_cycle &&
-                    scanline_cycle % 8 == 0 {
+                if on_fetch_cycle && scanline_cycle % 8 == 0 {
                     // Increment the effective x scroll coordinate every 8 cycles
                     self.inc_coarse_x_with_wrap();
                 }
@@ -695,8 +717,9 @@ impl Ppu {
                 }
             }
 
-            if self.scanline == PRE_RENDER_SCANLINE &&
-                280 <= scanline_cycle && scanline_cycle <= 304 {
+            if self.scanline == PRE_RENDER_SCANLINE && 280 <= scanline_cycle
+                && scanline_cycle <= 304
+            {
                 // Copy bits related to vertical position from t to v
                 self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
             }
@@ -717,14 +740,14 @@ impl Ppu {
                         if scanline_cycle % 2 == 0 {
                             self.oam.secondary[((scanline_cycle / 2) - 1) as usize] = 0xFF;
                         }
-                    },
+                    }
                     65...256 => {
                         if scanline_cycle % 2 == 1 {
                             self.sprite_evaluation_read_byte();
                         } else {
                             self.sprite_evaluation_write_byte();
                         }
-                    },
+                    }
                     _ => (),
                 }
             }
@@ -743,14 +766,12 @@ impl Ppu {
                     self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
                     self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, false);
                 }
-            },
+            }
             POST_RENDER_SCANLINE => {
                 if scanline_cycle == 0 {
-                    let buffer: Vec<u32> = self.frame_buffer.iter()
-                        .map(|b| PALETTE[(b & 0x3F) as usize]).collect();
-                    video_frame_sink.append(buffer.into_boxed_slice());
+                    self.output_frame(video_frame_sink);
                 }
-            },
+            }
             VBLANK_START_SCANLINE => {
                 if scanline_cycle == 1 {
                     self.set_vblank();
@@ -758,10 +779,9 @@ impl Ppu {
                         cpu.request_interrupt(Interrupt::Nmi);
                     }
                 }
-            },
+            }
             _ => (),
         }
-
 
         self.cycles += 1;
 
@@ -771,7 +791,8 @@ impl Ppu {
             (self.rendering_enabled() &&
                 self.scanline == PRE_RENDER_SCANLINE &&
                 scanline_cycle == CYCLES_PER_SCANLINE - 1 &&
-                self.frame % 2 != 0) {
+                self.frame % 2 != 0)
+        {
             self.scanline_start_cycle = self.cycles;
             self.scanline += 1;
         }
@@ -781,13 +802,38 @@ impl Ppu {
             self.frame += 1;
         }
     }
+
+    pub fn output_frame(&mut self, video_frame_sink: &mut VideoSink) {
+        for pixel_x in 0..SCREEN_WIDTH {
+            for pixel_y in 0..SCREEN_HEIGHT {
+                let pixel_index = pixel_y * SCREEN_WIDTH + pixel_x;
+                let palette_index = (self.frame_buffer[pixel_index] & 0x3F) as usize;
+                match video_frame_sink.buffer {
+                    PixelBuffer::Xrgb1555(ref mut buffer, _) => {
+                        buffer[pixel_index] = XRGB1555_PALETTE[palette_index];
+                    }
+                    PixelBuffer::Rgb565(ref mut buffer, _) => {
+                        buffer[pixel_index] = RGB565_PALETTE[palette_index];
+                    }
+                    PixelBuffer::Xrgb8888(ref mut buffer, _) => {
+                        buffer[pixel_index] = PALETTE[palette_index];
+                    }
+                }
+            }
+        }
+
+        video_frame_sink.is_populated = true;
+    }
 }
 
 // Implements mapping of PPU registers into CPU address space
 impl Memory for Ppu {
     fn read_byte(&mut self, address: u16) -> u8 {
         if !(0x2000 <= address && address < 0x4000) {
-            panic!("Invalid read from PPU memory-mapped registers: {:X}", address)
+            panic!(
+                "Invalid read from PPU memory-mapped registers: {:X}",
+                address
+            )
         }
 
         let address = address & 0x2007;
@@ -806,18 +852,20 @@ impl Memory for Ppu {
 
     fn write_byte(&mut self, address: u16, value: u8) {
         if !(0x2000 <= address && address < 0x4000) {
-            panic!("Invalid write to PPU memory-mapped registers, address: {:X}, value: {}", address, value)
+            panic!(
+                "Invalid write to PPU memory-mapped registers, address: {:X}, value: {}",
+                address, value
+            )
         }
 
         let address = address & 0x2007;
 
         // Writes to the following registers are ignored if earlier than
         // ~29658 CPU clocks after reset: PPUCTRL, PPUMASK, PPUSCROLL, PPUADDR
-        if self.cycles < 3 * 29658 &&
-            (address == PPUCTRL_ADDRESS ||
-                address == PPUMASK_ADDRESS ||
-                address == PPUSCROLL_ADDRESS ||
-                address == PPUADDR_ADDRESS) {
+        if self.cycles < 3 * 29658
+            && (address == PPUCTRL_ADDRESS || address == PPUMASK_ADDRESS
+                || address == PPUSCROLL_ADDRESS || address == PPUADDR_ADDRESS)
+        {
             return;
         }
 
@@ -831,15 +879,15 @@ impl Memory for Ppu {
             PPUSCROLL_ADDRESS => self.write_ppu_scroll(value),
             PPUADDR_ADDRESS => self.write_ppu_addr(value),
             PPUDATA_ADDRESS => self.write_ppu_data_byte(value),
-            _ => ()
+            _ => (),
         }
     }
 }
 
 // VRAM address increment per CPU read/write of PPUDATA
 enum VramAddressIncrement {
-    Add1Across,         // Add 1, going across
-    Add32Down,          // Add 32, going down
+    Add1Across, // Add 1, going across
+    Add32Down,  // Add 32, going down
 }
 
 enum SpriteSize {
@@ -857,7 +905,9 @@ impl SpriteSize {
 }
 
 #[derive(Copy, Clone, Deserialize, Serialize)]
-struct PpuCtrl { val: u8 }
+struct PpuCtrl {
+    val: u8,
+}
 
 impl PpuCtrl {
     fn vram_address_increment(&self) -> VramAddressIncrement {
@@ -870,11 +920,19 @@ impl PpuCtrl {
 
     // For 8x8 sprites (ignored in 8x16 mode)
     fn sprite_pattern_table_address(&self) -> u16 {
-        if (self.val & 0x08) == 0 { 0x0000 } else { 0x1000 }
+        if (self.val & 0x08) == 0 {
+            0x0000
+        } else {
+            0x1000
+        }
     }
 
     fn background_pattern_table_address(&self) -> u16 {
-        if (self.val & 0x10) == 0 { 0x0000 } else { 0x1000 }
+        if (self.val & 0x10) == 0 {
+            0x0000
+        } else {
+            0x1000
+        }
     }
 
     fn sprite_size(&self) -> SpriteSize {
@@ -970,16 +1028,16 @@ enum WriteToggle {
 #[derive(Copy, Clone, Deserialize, Serialize)]
 pub struct Regs {
     // Registers mapped from CPU address space
-    ppu_ctrl: PpuCtrl,          // 0x2000
-    ppu_mask: PpuMask,          // 0x2001
-    ppu_status: PpuStatus,      // 0x2002
-    oam_addr: u8,               // 0x2003
+    ppu_ctrl: PpuCtrl,     // 0x2000
+    ppu_mask: PpuMask,     // 0x2001
+    ppu_status: PpuStatus, // 0x2002
+    oam_addr: u8,          // 0x2003
 
     // Internal registers (for scrolling)
-    v: u16,                     // Current VRAM address (15 bits)
-    t: u16,                     // Temporary VRAM address (15 bits)
-    x: u8,                      // Fine X scroll (3 bits)
-    w: WriteToggle,             // First of second write toggle
+    v: u16,         // Current VRAM address (15 bits)
+    t: u16,         // Temporary VRAM address (15 bits)
+    x: u8,          // Fine X scroll (3 bits)
+    w: WriteToggle, // First of second write toggle
 }
 
 impl Regs {
@@ -996,7 +1054,6 @@ impl Regs {
         }
     }
 }
-
 
 // OAM (Object Attribute Memory) is internal memory inside the PPU that contains
 // a display list of up to 64 sprites, where each sprite's information occupies 4 bytes
@@ -1101,7 +1158,9 @@ impl DerefMut for Vram {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-pub struct PaletteRam { bytes: [u8; PaletteRam::SIZE] }
+pub struct PaletteRam {
+    bytes: [u8; PaletteRam::SIZE],
+}
 
 impl PaletteRam {
     const SIZE: usize = 32;
@@ -1192,7 +1251,10 @@ impl Memory for MemMap {
             // internal palette control in VRAM.
             self.palette_ram.write_byte(address, value);
         } else {
-            panic!("Invalid write to PPU-space memory, address: 0x{:04x}, value: 0x{:02x}", address, value)
+            panic!(
+                "Invalid write to PPU-space memory, address: 0x{:04x}, value: 0x{:02x}",
+                address, value
+            )
         }
     }
 }

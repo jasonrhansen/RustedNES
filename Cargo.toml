@@ -3,4 +3,5 @@
 members = [
     "sadnes-cli",
     "sadnes-core",
+    "sadnes-libretro",
 ]

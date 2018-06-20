@@ -37,8 +37,7 @@ pub struct State {
 }
 
 impl Interconnect {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: *mut Cpu,
-               audio_sample_rate: u32) -> Self {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: *mut Cpu, audio_sample_rate: u32) -> Self {
         Interconnect {
             ram: Ram::new(),
             ppu: Ppu::new(mapper.clone()),
@@ -75,7 +74,6 @@ impl Interconnect {
             let val = self.read_byte(start + i);
             self.write_byte(OAMDATA_ADDRESS, val);
         }
-
 
         unsafe {
             let cpu = &mut *self.cpu;
@@ -124,13 +122,13 @@ impl Memory for Interconnect {
 }
 
 impl Interconnect {
-    pub fn cycles(&mut self,
-                  cpu: &mut Cpu,
-                  cycles: u32,
-                  video_frame_sink: &mut Sink<VideoFrame>,
-                  audio_frame_sink: &mut Sink<AudioFrame>) {
-
-
+    pub fn cycles(
+        &mut self,
+        cpu: &mut Cpu,
+        cycles: u32,
+        video_frame_sink: &mut VideoSink,
+        audio_frame_sink: &mut AudioSink,
+    ) {
         for _ in 0..cycles {
             // 3 PPU cycles per CPU cycle
             for _ in 0..3 {
