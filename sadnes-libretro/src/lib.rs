@@ -69,7 +69,7 @@ impl System {
 pub struct Context {
     system: Option<System>,
     video_output_frame_buffer: OutputBuffer,
-    audio_frame_buffer: Vec<AudioFrame>,
+    audio_frame_buffer: Vec<(i16, i16)>,
 }
 
 impl Context {
@@ -224,10 +224,7 @@ impl Context {
                 };
 
                 let rendered_audio_frames = {
-                    let mut audio_output_sink = AudioSink {
-                        buffer: &mut self.audio_frame_buffer,
-                        buffer_pos: 0,
-                    };
+                    let mut audio_output_sink = AudioSinkI16::new(&mut self.audio_frame_buffer);
 
                     while !video_output_sink.is_populated() {
                         system
@@ -235,7 +232,7 @@ impl Context {
                             .step(video_output_sink.as_mut(), &mut audio_output_sink);
                     }
 
-                    audio_output_sink.buffer_pos
+                    audio_output_sink.position()
                 };
 
                 (CALLBACKS.video_refresh.unwrap())(

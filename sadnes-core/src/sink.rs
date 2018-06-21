@@ -1,38 +1,84 @@
 use std::mem;
 
-pub type AudioFrame = (i16, i16);
-
-// pub enum AudioFrame {
-//     U16(u16, u16),
-//     I16(i16, i16),
-//     F32(f32, f32),
-// }
-
-pub struct AudioSink<'a> {
-    pub buffer: &'a mut [AudioFrame],
-    pub buffer_pos: usize,
+pub trait AudioSink {
+    fn append(&mut self, sample: f32);
+    fn position(&self) -> usize;
 }
 
-impl<'a> AudioSink<'a> {
-    pub fn append(&mut self, frame: AudioFrame) {
-        self.buffer[self.buffer_pos] = frame;
-        self.buffer_pos += 1;
+pub struct AudioSinkF32<'a> {
+    buffer: &'a mut [(f32, f32)],
+    buffer_pos: usize,
+}
+
+impl<'a> AudioSinkF32<'a> {
+    pub fn new(buffer: &'a mut [(f32, f32)]) -> Self {
+        AudioSinkF32 {
+            buffer,
+            buffer_pos: 0,
+        }
     }
 }
 
-pub enum PixelBuffer<'a> {
-    Xrgb1555(&'a mut [u16], usize),
-    Rgb565(&'a mut [u16], usize),
-    Xrgb8888(&'a mut [u32], usize),
+impl<'a> AudioSink for AudioSinkF32<'a> {
+    fn append(&mut self, sample: f32) {
+        self.buffer[self.buffer_pos] = (sample, sample);
+        self.buffer_pos += 1;
+    }
+
+    fn position(&self) -> usize {
+        self.buffer_pos
+    }
 }
 
-impl<'a> PixelBuffer<'a> {
-    pub fn pitch(&self) -> usize {
-        match self {
-            &PixelBuffer::Xrgb1555(_, pitch) => pitch,
-            &PixelBuffer::Rgb565(_, pitch) => pitch,
-            &PixelBuffer::Xrgb8888(_, pitch) => pitch,
+pub struct AudioSinkI16<'a> {
+    buffer: &'a mut [(i16, i16)],
+    buffer_pos: usize,
+}
+
+impl<'a> AudioSinkI16<'a> {
+    pub fn new(buffer: &'a mut [(i16, i16)]) -> Self {
+        AudioSinkI16 {
+            buffer,
+            buffer_pos: 0,
         }
+    }
+}
+
+impl<'a> AudioSink for AudioSinkI16<'a> {
+    fn append(&mut self, sample: f32) {
+        let sample = (sample * 32768.0) as i16;
+        self.buffer[self.buffer_pos] = (sample, sample);
+        self.buffer_pos += 1;
+    }
+
+    fn position(&self) -> usize {
+        self.buffer_pos
+    }
+}
+
+pub struct AudioSinkU16<'a> {
+    buffer: &'a mut [(u16, u16)],
+    buffer_pos: usize,
+}
+
+impl<'a> AudioSinkU16<'a> {
+    pub fn new(buffer: &'a mut [(u16, u16)]) -> Self {
+        AudioSinkU16 {
+            buffer,
+            buffer_pos: 0,
+        }
+    }
+}
+
+impl<'a> AudioSink for AudioSinkU16<'a> {
+    fn append(&mut self, sample: f32) {
+        let sample = ((sample * 32768.0) + 32768.0) as u16;
+        self.buffer[self.buffer_pos] = (sample, sample);
+        self.buffer_pos += 1;
+    }
+
+    fn position(&self) -> usize {
+        self.buffer_pos
     }
 }
 
