@@ -733,7 +733,7 @@ impl Ppu {
             }
             POST_RENDER_SCANLINE => {
                 if scanline_cycle == 0 {
-                    video_frame_sink.append(&self.frame_buffer);
+                    video_frame_sink.write_frame(&self.frame_buffer);
                 }
             }
             VBLANK_START_SCANLINE => {

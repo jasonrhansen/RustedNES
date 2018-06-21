@@ -147,7 +147,7 @@ impl Emulator {
                     }
                 }
 
-                video_frame_sink.is_populated()
+                video_frame_sink.frame_written()
             };
 
             if frame_rendered {

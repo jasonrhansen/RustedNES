@@ -145,7 +145,7 @@ impl Apu {
         let s1 = ((cycle_1 as f64) / self.cycles_per_sample) as u64;
         let s2 = ((cycle_2 as f64) / self.cycles_per_sample) as u64;
         if s1 != s2 {
-            audio_frame_sink.append(self.generate_sample());
+            audio_frame_sink.write_sample(self.generate_sample());
         }
     }
 

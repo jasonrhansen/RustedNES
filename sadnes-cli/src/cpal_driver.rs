@@ -49,12 +49,12 @@ struct CpalDriverBufferSink {
 }
 
 impl AudioSink for CpalDriverBufferSink {
-    fn append(&mut self, sample: f32) {
+    fn write_sample(&mut self, sample: f32) {
         let mut sample_buffer = self.sample_buffer.lock().unwrap();
         sample_buffer.push(sample);
     }
 
-    fn position(&self) -> usize {
+    fn samples_written(&self) -> usize {
         let sample_buffer = self.sample_buffer.lock().unwrap();
         sample_buffer.samples_written as usize
     }

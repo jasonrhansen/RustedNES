@@ -16,11 +16,11 @@ impl AudioDriver for NullAudioDriver {
 struct NullAudioSink;
 
 impl AudioSink for NullAudioSink {
-    fn append(&mut self, _frame: f32) {
+    fn write_sample(&mut self, _frame: f32) {
         // Do nothing
     }
 
-    fn position(&self) -> usize {
+    fn samples_written(&self) -> usize {
         0
     }
 }

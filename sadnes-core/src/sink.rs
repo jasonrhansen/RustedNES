@@ -1,8 +1,8 @@
 use std::mem;
 
 pub trait AudioSink {
-    fn append(&mut self, sample: f32);
-    fn position(&self) -> usize;
+    fn write_sample(&mut self, sample: f32);
+    fn samples_written(&self) -> usize;
 }
 
 pub struct AudioSinkF32<'a> {
@@ -20,12 +20,12 @@ impl<'a> AudioSinkF32<'a> {
 }
 
 impl<'a> AudioSink for AudioSinkF32<'a> {
-    fn append(&mut self, sample: f32) {
+    fn write_sample(&mut self, sample: f32) {
         self.buffer[self.buffer_pos] = (sample, sample);
         self.buffer_pos += 1;
     }
 
-    fn position(&self) -> usize {
+    fn samples_written(&self) -> usize {
         self.buffer_pos
     }
 }
@@ -45,13 +45,13 @@ impl<'a> AudioSinkI16<'a> {
 }
 
 impl<'a> AudioSink for AudioSinkI16<'a> {
-    fn append(&mut self, sample: f32) {
+    fn write_sample(&mut self, sample: f32) {
         let sample = (sample * 32768.0) as i16;
         self.buffer[self.buffer_pos] = (sample, sample);
         self.buffer_pos += 1;
     }
 
-    fn position(&self) -> usize {
+    fn samples_written(&self) -> usize {
         self.buffer_pos
     }
 }
@@ -71,47 +71,47 @@ impl<'a> AudioSinkU16<'a> {
 }
 
 impl<'a> AudioSink for AudioSinkU16<'a> {
-    fn append(&mut self, sample: f32) {
+    fn write_sample(&mut self, sample: f32) {
         let sample = ((sample * 32768.0) + 32768.0) as u16;
         self.buffer[self.buffer_pos] = (sample, sample);
         self.buffer_pos += 1;
     }
 
-    fn position(&self) -> usize {
+    fn samples_written(&self) -> usize {
         self.buffer_pos
     }
 }
 
 pub trait VideoSink {
-    fn append(&mut self, frame_buffer: &[u8]);
-    fn is_populated(&self) -> bool;
+    fn write_frame(&mut self, frame_buffer: &[u8]);
+    fn frame_written(&self) -> bool;
     fn pixel_size(&self) -> usize;
 }
 
 pub struct Rgb565VideoSink<'a> {
     buffer: &'a mut [u16],
-    is_populated: bool,
+    frame_written: bool,
 }
 
 impl<'a> Rgb565VideoSink<'a> {
     pub fn new(buffer: &'a mut [u16]) -> Self {
         Rgb565VideoSink {
             buffer,
-            is_populated: false,
+            frame_written: false,
         }
     }
 }
 
 impl<'a> VideoSink for Rgb565VideoSink<'a> {
-    fn append(&mut self, frame_buffer: &[u8]) {
+    fn write_frame(&mut self, frame_buffer: &[u8]) {
         for (i, palette_index) in frame_buffer.iter().enumerate() {
             self.buffer[i] = RGB565_PALETTE[*palette_index as usize];
         }
-        self.is_populated = true;
+        self.frame_written = true;
     }
 
-    fn is_populated(&self) -> bool {
-        self.is_populated
+    fn frame_written(&self) -> bool {
+        self.frame_written
     } 
 
     fn pixel_size(&self) -> usize {
@@ -121,28 +121,28 @@ impl<'a> VideoSink for Rgb565VideoSink<'a> {
 
 pub struct Xrgb1555VideoSink<'a> {
     buffer: &'a mut [u16],
-    is_populated: bool,
+    frame_written: bool,
 }
 
 impl<'a> Xrgb1555VideoSink<'a> {
     pub fn new(buffer: &'a mut [u16]) -> Self {
         Xrgb1555VideoSink {
             buffer,
-            is_populated: false,
+            frame_written: false,
         }
     }
 }
 
 impl<'a> VideoSink for Xrgb1555VideoSink<'a> {
-    fn append(&mut self, frame_buffer: &[u8]) {
+    fn write_frame(&mut self, frame_buffer: &[u8]) {
         for (i, palette_index) in frame_buffer.iter().enumerate() {
             self.buffer[i] = XRGB1555_PALETTE[*palette_index as usize];
         }
-        self.is_populated = true;
+        self.frame_written = true;
     }
 
-    fn is_populated(&self) -> bool {
-        self.is_populated
+    fn frame_written(&self) -> bool {
+        self.frame_written
     } 
 
     fn pixel_size(&self) -> usize {
@@ -152,28 +152,28 @@ impl<'a> VideoSink for Xrgb1555VideoSink<'a> {
 
 pub struct Xrgb8888VideoSink<'a> {
     buffer: &'a mut [u32],
-    is_populated: bool,
+    frame_written: bool,
 }
 
 impl<'a> Xrgb8888VideoSink<'a> {
     pub fn new(buffer: &'a mut [u32]) -> Self {
         Xrgb8888VideoSink {
             buffer,
-            is_populated: false,
+            frame_written: false,
         }
     }
 }
 
 impl<'a> VideoSink for Xrgb8888VideoSink<'a> {
-    fn append(&mut self, frame_buffer: &[u8]) {
+    fn write_frame(&mut self, frame_buffer: &[u8]) {
         for (i, palette_index) in frame_buffer.iter().enumerate() {
             self.buffer[i] = XRGB8888_PALETTE[*palette_index as usize];
         }
-        self.is_populated = true;
+        self.frame_written = true;
     }
 
-    fn is_populated(&self) -> bool {
-        self.is_populated
+    fn frame_written(&self) -> bool {
+        self.frame_written
     } 
 
     fn pixel_size(&self) -> usize {

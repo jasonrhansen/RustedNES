@@ -226,13 +226,13 @@ impl Context {
                 let rendered_audio_frames = {
                     let mut audio_output_sink = AudioSinkI16::new(&mut self.audio_frame_buffer);
 
-                    while !video_output_sink.is_populated() {
+                    while !video_output_sink.frame_written() {
                         system
                             .nes
                             .step(video_output_sink.as_mut(), &mut audio_output_sink);
                     }
 
-                    audio_output_sink.position()
+                    audio_output_sink.samples_written()
                 };
 
                 (CALLBACKS.video_refresh.unwrap())(
