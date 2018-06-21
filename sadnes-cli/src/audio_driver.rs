@@ -1,6 +1,6 @@
-use sadnes_core::sink::{AudioFrame, Sink};
+use sadnes_core::sink::AudioSink;
 
 pub trait AudioDriver {
-    fn sink(&self) -> Box<Sink<AudioFrame>>;
+    fn sink(&self) -> Box<AudioSink>;
     fn sample_rate(&self) -> u32;
 }

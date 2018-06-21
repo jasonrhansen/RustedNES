@@ -1,10 +1,10 @@
 use audio_driver::AudioDriver;
-use sadnes_core::sink::{AudioFrame, Sink};
+use sadnes_core::sink::AudioSink;
 
-pub struct NullAudioDriver {}
+pub struct NullAudioDriver;
 
 impl AudioDriver for NullAudioDriver {
-    fn sink(&self) -> Box<Sink<AudioFrame>> {
+    fn sink(&self) -> Box<AudioSink> {
         Box::new(NullAudioSink{})
     }
 
@@ -13,10 +13,14 @@ impl AudioDriver for NullAudioDriver {
     }
 }
 
-struct NullAudioSink {}
+struct NullAudioSink;
 
-impl Sink<AudioFrame> for NullAudioSink {
-    fn append(&mut self, _frame: AudioFrame) {
+impl AudioSink for NullAudioSink {
+    fn append(&mut self, _frame: f32) {
         // Do nothing
+    }
+
+    fn position(&self) -> usize {
+        0
     }
 }

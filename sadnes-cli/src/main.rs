@@ -19,7 +19,6 @@ use sadnes_core::cartridge::*;
 use std::fs::File;
 use system_time_source::*;
 
-mod video_frame_sink;
 mod argparse;
 mod command;
 mod emulator;

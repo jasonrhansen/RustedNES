@@ -17,7 +17,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time;
-use video_frame_sink::VideoFrameSink;
 
 const CPU_CYCLE_TIME_NS: u64 = (1e9 as f64 / CPU_FREQUENCY as f64) as u64 + 1;
 
@@ -42,7 +41,7 @@ pub struct Emulator {
     prompt_sender: Sender<String>,
     stdin_receiver: Receiver<String>,
 
-    audio_frame_sink: Box<Sink<AudioFrame>>,
+    audio_frame_sink: Box<AudioSink>,
 
     time_source: Box<TimeSource>,
     start_time_ns: u64,
@@ -53,7 +52,7 @@ pub struct Emulator {
 }
 
 impl Emulator {
-    pub fn new(cartridge: Cartridge, audio_frame_sink: Box<Sink<AudioFrame>>,
+    pub fn new(cartridge: Cartridge, audio_frame_sink: Box<AudioSink>,
                audio_sample_rate: u32, time_source: Box<TimeSource>) -> Emulator {
         let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
@@ -112,41 +111,47 @@ impl Emulator {
             self.start_debugger();
         }
 
+        let mut pixel_buffer = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
+
         while self.window.is_open() && !self.window.is_key_down(Key::Escape) {
-            let mut video_frame_sink = VideoFrameSink::new();
+            let frame_rendered = {
+                let mut video_frame_sink = Xrgb8888VideoSink::new(&mut pixel_buffer);
 
-            let target_time_ns = self.time_source.time_ns() - self.start_time_ns;
-            let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
+                let target_time_ns = self.time_source.time_ns() - self.start_time_ns;
+                let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
 
-            match self.mode {
-                Mode::Running => {
-                    let mut start_debugger = false;
-                    while self.emulated_cycles < target_cycles && !start_debugger {
-                        let (_cycles, trigger_watchpoint) =
-                            self.step(&mut video_frame_sink);
+                match self.mode {
+                    Mode::Running => {
+                        let mut start_debugger = false;
+                        while self.emulated_cycles < target_cycles && !start_debugger {
+                            let (_cycles, trigger_watchpoint) =
+                                self.step(&mut video_frame_sink);
 
-                        if trigger_watchpoint ||
-                            (self.breakpoints.len() != 0 &&
-                                self.breakpoints.contains(&self.nes.cpu.regs().pc)) {
-                            start_debugger = true;
+                            if trigger_watchpoint ||
+                                (self.breakpoints.len() != 0 &&
+                                    self.breakpoints.contains(&self.nes.cpu.regs().pc)) {
+                                start_debugger = true;
+                            }
                         }
-                    }
 
-                    if start_debugger {
-                        self.start_debugger();
-                    }
-                },
-                Mode::Debugging => {
-                    if self.run_debugger_commands(&mut video_frame_sink) {
-                        break;
-                    }
+                        if start_debugger {
+                            self.start_debugger();
+                        }
+                    },
+                    Mode::Debugging => {
+                        if self.run_debugger_commands(&mut video_frame_sink) {
+                            break;
+                        }
 
-                    self.window.update();
+                        self.window.update();
+                    }
                 }
-            }
 
-            if let Some(sink_frame) = video_frame_sink.into_frame() {
-                self.window.update_with_buffer(&sink_frame).unwrap();
+                video_frame_sink.is_populated()
+            };
+
+            if frame_rendered {
+                self.window.update_with_buffer(&pixel_buffer).unwrap();
 
                 if self.mode == Mode::Running {
                     self.read_input_keys();
@@ -176,14 +181,6 @@ impl Emulator {
 
                     if self.window.is_key_pressed(Key::Key1, KeyRepeat::No) {
                         self.serialized = serde_json::to_string(&serialize::get_state(&self.nes)).ok();
-
-//                        use std::fs::File;
-//                        use std::io::Write;
-//                        if let Some(ref s) = self.serialized {
-//                            if let Ok(mut f) = File::create("save_state.json") {
-//                                f.write_all(&s.as_bytes());
-//                            }
-//                        }
                     }
 
                     if self.window.is_key_pressed(Key::F1, KeyRepeat::No) {
@@ -201,7 +198,7 @@ impl Emulator {
     }
 
     fn step(&mut self,
-            video_frame_sink: &mut Sink<VideoFrame>) -> (u32, bool) {
+            video_frame_sink: &mut VideoSink) -> (u32, bool) {
         let (cycles, trigger_watchpoint) =
             self.nes.step(video_frame_sink, self.audio_frame_sink.as_mut());
 
@@ -242,7 +239,7 @@ impl Emulator {
         self.print_cursor();
     }
 
-    fn run_debugger_commands(&mut self, video_frame_sink: &mut Sink<VideoFrame>) -> bool {
+    fn run_debugger_commands(&mut self, video_frame_sink: &mut VideoSink) -> bool {
         while let Ok(command_string) = self.stdin_receiver.try_recv() {
             let command =
                 match (command_string.parse(), self.last_command.clone()) {

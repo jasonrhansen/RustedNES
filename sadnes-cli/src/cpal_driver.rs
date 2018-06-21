@@ -2,7 +2,7 @@ use audio_driver::AudioDriver;
 use cpal::{default_endpoint, EventLoop, UnknownTypeBuffer, Voice};
 use futures::stream::Stream;
 use futures::task::{self, Executor, Run};
-use sadnes_core::sink::{AudioFrame, Sink};
+use sadnes_core::sink::AudioSink;
 use sadnes_core::time_source::TimeSource;
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -48,10 +48,15 @@ struct CpalDriverBufferSink {
     sample_buffer: Arc<Mutex<SampleBuffer>>,
 }
 
-impl Sink<AudioFrame> for CpalDriverBufferSink {
-    fn append(&mut self, frame: AudioFrame) {
+impl AudioSink for CpalDriverBufferSink {
+    fn append(&mut self, sample: f32) {
         let mut sample_buffer = self.sample_buffer.lock().unwrap();
-        sample_buffer.push(frame);
+        sample_buffer.push(sample);
+    }
+
+    fn position(&self) -> usize {
+        let sample_buffer = self.sample_buffer.lock().unwrap();
+        sample_buffer.samples_written as usize
     }
 }
 
@@ -174,7 +179,7 @@ impl CpalDriver {
 }
 
 impl AudioDriver for CpalDriver {
-    fn sink(&self) -> Box<Sink<AudioFrame>> {
+    fn sink(&self) -> Box<AudioSink> {
         Box::new(CpalDriverBufferSink {
             sample_buffer: self.sample_buffer.clone(),
         })
