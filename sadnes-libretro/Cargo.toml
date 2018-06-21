@@ -2,6 +2,8 @@
 name = "sadnes-libretro"
 version = "0.1.0"
 authors = ["Jason Rodney Hansen <jasonrodneyhansen@gmail.com>"]
+description = "A libretro core for sadnes-core"
+license = "MIT/Apache-2.0"
 
 [lib]
 name = "sadnes_libretro"

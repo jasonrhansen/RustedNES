@@ -2,7 +2,7 @@
 name = "sadnes-core"
 version = "0.1.0"
 authors = ["Jason Rodney Hansen <jasonrodneyhansen@gmail.com>"]
-description = "The core of an sadNES, an NES (Nintendo Entertainment System) emulator"
+description = "The core of sadNES, an NES (Nintendo Entertainment System) emulator"
 license = "MIT/Apache-2.0"
 
 [dependencies]
