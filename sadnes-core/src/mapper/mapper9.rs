@@ -6,7 +6,7 @@ use memory::Memory;
 use ppu::Vram;
 
 pub struct Mapper9 {
-    cartridge: Box<Cartridge>,
+    cartridge: Cartridge,
 
     latch_0: u8,
     latch_1: u8,
@@ -36,7 +36,7 @@ pub struct State {
 }
 
 impl Mapper9 {
-    pub fn new(cartridge: Box<Cartridge>) -> Self {
+    pub fn new(cartridge: Cartridge) -> Self {
         let prg_rom_fixed_bank_1 = cartridge.prg_rom_num_banks * 2 - 3;
         let prg_rom_fixed_bank_2 = cartridge.prg_rom_num_banks * 2 - 2;
         let prg_rom_fixed_bank_3 = cartridge.prg_rom_num_banks * 2 - 1;

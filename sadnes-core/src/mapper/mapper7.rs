@@ -6,7 +6,7 @@ use memory::Memory;
 use ppu::Vram;
 
 pub struct Mapper7 {
-    cartridge: Box<Cartridge>,
+    cartridge: Cartridge,
     prg_rom_bank: u8,
 }
 
@@ -17,7 +17,7 @@ pub struct State {
 }
 
 impl Mapper7 {
-    pub fn new(cartridge: Box<Cartridge>) -> Self {
+    pub fn new(cartridge: Cartridge) -> Self {
         Mapper7 {
             cartridge,
             prg_rom_bank: 0,

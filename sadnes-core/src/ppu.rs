@@ -1151,7 +1151,7 @@ impl DerefMut for PaletteRam {
 }
 
 pub struct MemMap {
-    vram: Vram,
+    pub vram: Vram,
     palette_ram: PaletteRam,
     mapper: Rc<RefCell<Box<Mapper>>>,
 }

@@ -18,6 +18,8 @@ use super::cartridge::Cartridge;
 use super::cpu::Cpu;
 use super::ppu::Ppu;
 
+use std::ptr;
+
 pub trait Mapper {
     fn prg_read_byte(&mut self, address: u16) -> u8;
     fn prg_write_byte(&mut self, address: u16, value: u8);
@@ -27,12 +29,20 @@ pub trait Mapper {
     // Called for every PPU cycle. Most mappers don't need to do anything.
     fn step(&mut self, _cpu: &mut Cpu, _ppu: &Ppu) {}
 
+    fn sram(&mut self) -> *mut &[u8] {
+        ptr::null_mut()
+    }
+
+    fn sram_size(&self) -> usize {
+        0
+    }
+
     fn reset(&mut self);
     fn get_state(&self) -> State;
     fn apply_state(&mut self, state: &State);
 }
 
-pub fn create_mapper(cartridge: Box<Cartridge>) -> Box<Mapper> {
+pub fn create_mapper(cartridge: Cartridge) -> Box<Mapper> {
     match cartridge.mapper {
         0 => Box::new(Mapper0::new(cartridge)),
         1 => Box::new(Mapper1::new(cartridge)),

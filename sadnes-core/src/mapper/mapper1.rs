@@ -6,7 +6,7 @@ use memory::Memory;
 use ppu::Vram;
 
 pub struct Mapper1 {
-    cartridge: Box<Cartridge>,
+    cartridge: Cartridge,
     shift: u8,
     regs: Regs,
 }
@@ -55,7 +55,7 @@ pub struct State {
 const SHIFT_REGISTER_DEFAULT: u8 = 0x10;
 
 impl Mapper1 {
-    pub fn new(cartridge: Box<Cartridge>) -> Self {
+    pub fn new(cartridge: Cartridge) -> Self {
         Mapper1 {
             cartridge,
             shift: SHIFT_REGISTER_DEFAULT,
@@ -200,6 +200,14 @@ impl Mapper for Mapper1 {
         } else {
             vram.write_byte(self.mirror_address(address) - 0x2000, value);
         }
+    }
+
+    fn sram(&mut self) -> *mut &[u8] {
+        self.cartridge.prg_ram.as_mut_ptr() as *mut _        
+    }
+
+    fn sram_size(&self) -> usize {
+        self.cartridge.prg_ram.len()
     }
 
     fn reset(&mut self) {

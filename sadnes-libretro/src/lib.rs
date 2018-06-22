@@ -357,17 +357,49 @@ pub unsafe extern "C" fn retro_run() {
 
 #[no_mangle]
 pub unsafe extern "C" fn retro_get_region() -> u32 {
-    1 // TODO
+    REGION_NTSC
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn retro_get_memory_data(_id: u32) -> *mut c_void {
-    ptr::null_mut()
+pub unsafe extern "C" fn retro_get_memory_data(id: u32) -> *mut c_void {
+    if let Some(ref mut system) = (*CONTEXT).system {
+        match id & MEMORY_MASK {
+            MEMORY_SYSTEM_RAM => {
+                system.nes.interconnect.ram.as_mut_ptr() as *mut _
+            }
+            MEMORY_VIDEO_RAM => {
+                system.nes.interconnect.ppu.mem.vram.as_mut_ptr() as *mut _
+            }
+            MEMORY_SAVE_RAM => {
+                let mut mapper = system.nes.interconnect.mapper.borrow_mut();
+                mapper.sram() as *mut _
+            }
+            _ => ptr::null_mut()
+        }
+    } else {
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn retro_get_memory_size(_id: u32) -> size_t {
-    0
+pub unsafe extern "C" fn retro_get_memory_size(id: u32) -> size_t {
+    if let Some(ref mut system) = (*CONTEXT).system {
+        match id & MEMORY_MASK {
+            MEMORY_SYSTEM_RAM => {
+                system.nes.interconnect.ram.len()
+            }
+            MEMORY_VIDEO_RAM => {
+                system.nes.interconnect.ppu.mem.vram.len()
+            }
+            MEMORY_SAVE_RAM => {
+                let mut mapper = system.nes.interconnect.mapper.borrow_mut();
+                mapper.sram_size()
+            }
+            _ => 0
+        }
+    } else {
+        0
+    }
 }
 
 #[no_mangle]

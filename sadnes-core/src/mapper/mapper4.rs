@@ -7,7 +7,7 @@ use ppu::{self, Ppu, Vram};
 use cpu::{Cpu, Interrupt};
 
 pub struct Mapper4 {
-    cartridge: Box<Cartridge>,
+    cartridge: Cartridge,
 
     next_bank_register: u8,
     bank_registers: [u8; 8],
@@ -50,7 +50,7 @@ pub struct State {
 }
 
 impl Mapper4 {
-    pub fn new(cartridge: Box<Cartridge>) -> Self {
+    pub fn new(cartridge: Cartridge) -> Self {
         let mut m = Mapper4 {
             cartridge,
             next_bank_register: 0,
@@ -252,6 +252,14 @@ impl Mapper for Mapper4 {
         if ppu.rendering_enabled() && ppu.scanline <= ppu::VISIBLE_END_SCANLINE && ppu.scanline_cycle() == 280 {
             self.handle_scanline(cpu);
         }
+    }
+
+    fn sram(&mut self) -> *mut &[u8] {
+        self.cartridge.prg_ram.as_mut_ptr() as *mut _        
+    }
+
+    fn sram_size(&self) -> usize {
+        self.cartridge.prg_ram.len()
     }
 
     fn reset(&mut self) {

@@ -6,11 +6,11 @@ use memory::Memory;
 use ppu::Vram;
 
 pub struct Mapper0 {
-    cartridge: Box<Cartridge>,
+    cartridge: Cartridge,
 }
 
 impl Mapper0 {
-    pub fn new(cartridge: Box<Cartridge>) -> Self {
+    pub fn new(cartridge: Cartridge) -> Self {
         Mapper0 {
             cartridge,
         }

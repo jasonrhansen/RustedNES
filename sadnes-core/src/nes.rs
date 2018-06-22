@@ -22,7 +22,7 @@ pub struct State {
 
 impl Nes {
     pub fn new(cartridge: Cartridge, audio_sample_rate: u32) -> Nes {
-        let mapper = Rc::new(RefCell::new(mapper::create_mapper(Box::new(cartridge))));
+        let mapper = Rc::new(RefCell::new(mapper::create_mapper(cartridge)));
 
         let mut cpu = Cpu::new();
 
