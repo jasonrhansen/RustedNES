@@ -145,4 +145,11 @@ impl Callbacks {
             None
         }
     }
+
+    pub fn set_support_achievements(&self, mut support: bool) -> bool {
+        self.environment(
+            EnvironmentCommand::SetSupportAchievements as u32,
+            &mut support as *mut _ as *mut _,
+        )
+    }
 }

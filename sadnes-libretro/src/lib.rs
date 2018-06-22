@@ -269,6 +269,7 @@ pub extern "C" fn retro_api_version() -> u32 {
 #[no_mangle]
 pub unsafe extern "C" fn retro_init() {
     CONTEXT = Box::into_raw(Box::new(Context::new()));
+    CALLBACKS.set_support_achievements(true);
 }
 
 #[no_mangle]
