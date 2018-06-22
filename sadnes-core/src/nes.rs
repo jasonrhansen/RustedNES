@@ -8,6 +8,7 @@ use interconnect;
 use interconnect::Interconnect;
 use mapper;
 use sink::*;
+use game_genie::Cheat;
 
 pub struct Nes {
     pub interconnect: Interconnect,
@@ -67,5 +68,17 @@ impl Nes {
         );
 
         (cpu_cycles, trigger_watchpoint)
+    }
+
+    pub fn add_cheat(&mut self, cheat: Cheat) {
+        self.interconnect.cheats.insert(cheat.address(), cheat);
+    }
+
+    pub fn remove_cheat(&mut self, cheat: Cheat) {
+        self.interconnect.cheats.remove(&cheat.address());
+    }
+
+    pub fn clear_cheats(&mut self) {
+        self.interconnect.cheats.clear();
     }
 }

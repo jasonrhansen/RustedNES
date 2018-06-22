@@ -21,6 +21,7 @@ use sadnes_core::nes::*;
 use sadnes_core::ppu::*;
 use sadnes_core::serialize;
 use sadnes_core::sink::*;
+use sadnes_core::game_genie::Cheat;
 
 use callbacks::*;
 use game_info::*;
@@ -32,6 +33,7 @@ use system_info::*;
 use std::io::Cursor;
 use std::slice;
 use std::{mem, ptr};
+use std::ffi::CStr;
 
 const AUDIO_SAMPLE_RATE: u32 = 44_100;
 const DISPLAY_PIXELS: usize = SCREEN_WIDTH * SCREEN_HEIGHT;
@@ -447,10 +449,22 @@ pub unsafe extern "C" fn retro_unserialize(data: *const c_void, size: size_t) ->
 
 #[no_mangle]
 pub unsafe extern "C" fn retro_cheat_reset() {
-    unimplemented!("retro_cheat_reset");
+    if let Some(ref mut system) = (*CONTEXT).system {
+        system.nes.clear_cheats();
+    }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn retro_cheat_set(_index: u32, _enabled: bool, _code: *const c_char) {
-    unimplemented!("retro_cheat_set");
+pub unsafe extern "C" fn retro_cheat_set(_index: u32, enabled: bool, code: *const c_char) {
+    if let Some(ref mut system) = (*CONTEXT).system {
+        let code = CStr::from_ptr(code).to_bytes();
+
+        if let Ok(cheat) = Cheat::from_code(code) {
+            if enabled {
+                system.nes.add_cheat(cheat);
+            } else {
+                system.nes.remove_cheat(cheat);
+            }
+        }
+    }
 }

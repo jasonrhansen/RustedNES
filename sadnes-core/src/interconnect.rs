@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::collections::HashMap;
 
 use apu;
 use apu::Apu;
@@ -12,6 +13,7 @@ use memory::{Memory, Ram};
 use ppu;
 use ppu::{Ppu, OAMDATA_ADDRESS};
 use sink::*;
+use game_genie::Cheat;
 
 use serde_bytes;
 
@@ -24,6 +26,7 @@ pub struct Interconnect {
     pub input: Input,
     pub mapper: Rc<RefCell<Box<Mapper>>>,
     pub cpu: *mut Cpu,
+    pub cheats: HashMap<u16, Cheat>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -45,6 +48,7 @@ impl Interconnect {
             input: Input::new(),
             mapper,
             cpu,
+            cheats: HashMap::new(),
         }
     }
 
@@ -89,7 +93,7 @@ impl Interconnect {
 
 impl Memory for Interconnect {
     fn read_byte(&mut self, address: u16) -> u8 {
-        if address < 0x2000 {
+        let byte = if address < 0x2000 {
             self.ram.read_byte(address)
         } else if address < 0x4000 {
             self.ppu.read_byte(address)
@@ -100,7 +104,16 @@ impl Memory for Interconnect {
         } else {
             let mut mapper = self.mapper.borrow_mut();
             mapper.prg_read_byte(address)
-        }
+        };
+
+        if let Some(cheat) = self.cheats.get(&address) {
+            let compare = cheat.compare();
+            if compare.is_none() || compare.unwrap() == byte {
+                return cheat.data();
+            }
+        }    
+
+        byte
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
