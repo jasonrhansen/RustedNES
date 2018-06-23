@@ -555,7 +555,7 @@ impl Ppu {
             }
         };
 
-        self.frame_buffer[(y as usize * SCREEN_WIDTH) + x as usize] = color;
+        self.frame_buffer[(y as usize * SCREEN_WIDTH) + x as usize] = color & 0x3F;
     }
 
     fn background_pixel(&self) -> u8 {
