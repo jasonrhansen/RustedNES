@@ -13,4 +13,4 @@ crate-type = ["cdylib"]
 libc = "0.2.*"
 sadnes-core = { path="../sadnes-core" }
 serde = "1.0"
-serde_json = "1.0"
+serde_cbor = "0.8.2"

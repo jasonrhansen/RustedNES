@@ -4,7 +4,7 @@ extern crate libc;
 
 extern crate sadnes_core;
 extern crate serde;
-extern crate serde_json;
+extern crate serde_cbor;
 
 mod callbacks;
 mod game_info;
@@ -72,6 +72,7 @@ pub struct Context {
     system: Option<System>,
     video_output_frame_buffer: OutputBuffer,
     audio_frame_buffer: Vec<(i16, i16)>,
+    serialized: Option<Vec<u8>>,
 }
 
 impl Context {
@@ -80,6 +81,7 @@ impl Context {
             system: None,
             video_output_frame_buffer: OutputBuffer::Xrgb1555(vec![0; DISPLAY_PIXELS]),
             audio_frame_buffer: vec![(0, 0); (AUDIO_SAMPLE_RATE as usize) / 29 * 2], // double space needed for 1 frame for lots of skid room
+            serialized: None,
         }
     }
 
@@ -409,8 +411,16 @@ pub unsafe extern "C" fn retro_get_memory_size(id: u32) -> size_t {
 pub unsafe extern "C" fn retro_serialize_size() -> size_t {
     if let Some(ref mut system) = (*CONTEXT).system {
         let state = system.get_nes_state();
-        if let Ok(serialized) = serde_json::to_vec(&state) {
-            return serialized.len();
+
+        // Serialize to get size and cache result to use in retro_serialize
+        (*CONTEXT).serialized = match (*CONTEXT).serialized {
+            Some(_) => serde_cbor::ser::to_vec_packed(&state).ok(),
+            // The first time we get the size return non packed version to make sure we have enough room for all future save states
+            None => serde_cbor::ser::to_vec(&state).ok(),
+        };
+
+        if let Some(ref s) = (*CONTEXT).serialized {
+            return s.len();
         }
     }
 
@@ -419,16 +429,14 @@ pub unsafe extern "C" fn retro_serialize_size() -> size_t {
 
 #[no_mangle]
 pub unsafe extern "C" fn retro_serialize(data: *mut c_void, size: size_t) -> bool {
-    if let Some(ref mut system) = (*CONTEXT).system {
-        let state = system.get_nes_state();
-        if let Ok(serialized) = serde_json::to_vec(&state) {
-            if serialized.len() <= size {
-                ptr::copy_nonoverlapping(serialized.as_ptr(), data as *mut u8, serialized.len());
+    // Use cached serialization that was created in retro_serialize_size
+    if let Some(ref serialized) = (*CONTEXT).serialized {
+        if serialized.len() <= size {
+            ptr::copy_nonoverlapping(serialized.as_ptr(), data as *mut u8, serialized.len());
 
-                return true;
-            } else {
-                println!("Couldn't serialize. Size of serialize buffer if smaller than the serialized data");
-            }
+            return true;
+        } else {
+            println!("Couldn't serialize. Size of serialize buffer is smaller than the serialized data");
         }
     }
 
@@ -438,10 +446,15 @@ pub unsafe extern "C" fn retro_serialize(data: *mut c_void, size: size_t) -> boo
 #[no_mangle]
 pub unsafe extern "C" fn retro_unserialize(data: *const c_void, size: size_t) -> bool {
     if let Some(ref mut system) = (*CONTEXT).system {
-        if let Ok(state) = serde_json::from_slice(slice::from_raw_parts(data as _, size)) {
-            system.apply_nes_state(state);
-            return true;
-        }
+        match serde_cbor::from_slice(slice::from_raw_parts(data as _, size)) {
+            Ok(state) => {
+                system.apply_nes_state(state);
+                return true;
+            }
+            Err(e) => {
+                println!("Unable to deserialize data. {:?}", e);
+            }
+        }    
     }
 
     false
