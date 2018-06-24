@@ -6,6 +6,8 @@ use sink::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+pub const SAMPLE_RATE: u32 = 44_100;
+
 static DUTY_CYCLE_TABLE: &[[u8; 8]] = &[
     [0, 1, 0, 0, 0, 0, 0, 0],
     [0, 1, 1, 0, 0, 0, 0, 0],
@@ -15,7 +17,7 @@ static DUTY_CYCLE_TABLE: &[[u8; 8]] = &[
 
 static LENGTH_TABLE: &[u8] = &[
     10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
-	12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
+    12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
 ];
 
 static TRIANGLE_TABLE: &[u8] = &[
@@ -61,6 +63,8 @@ pub struct Apu {
 
     mapper: Rc<RefCell<Box<Mapper>>>,
 
+    filter: Box<Filter>,
+
     pub settings: Settings,
 }
 
@@ -76,7 +80,7 @@ pub struct State {
 }
 
 impl Apu {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, sample_rate: u32) -> Apu {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Apu {
         Apu {
             cycles: 0,
             pulse_1: Pulse::new(SweepNegationType::OnesComplement),
@@ -85,8 +89,13 @@ impl Apu {
             noise: Noise::new(),
             dmc: Dmc::new(),
             frame_counter: FrameCounter::new(),
-            cycles_per_sample: (CPU_FREQUENCY as f64) / (sample_rate as f64),
+            cycles_per_sample: (CPU_FREQUENCY as f64) / (SAMPLE_RATE as f64),
             mapper,
+            filter: Box::new(
+                LowPassFilter::new(0.815686)
+                .chain(HighPassFilter::new(0.996039))
+                .chain(HighPassFilter::new(0.999835))
+            ),
             settings: Settings {
                 pulse_1_enabled: true,
                 pulse_2_enabled: true,
@@ -145,7 +154,8 @@ impl Apu {
         let s1 = ((cycle_1 as f64) / self.cycles_per_sample) as u64;
         let s2 = ((cycle_2 as f64) / self.cycles_per_sample) as u64;
         if s1 != s2 {
-            audio_frame_sink.write_sample(self.generate_sample());
+            let sample = self.generate_sample();
+            audio_frame_sink.write_sample(self.filter.step(sample));
         }
     }
 
@@ -883,5 +893,80 @@ impl FrameCounter {
             mode: FrameCounterMode::FourStep,
             interrupt_enable: false,
         }
+    }
+}
+
+trait Filter {
+    fn step(&mut self, sample: f32) -> f32;
+
+    fn chain<U>(self, other: U) -> FilterChain<Self, U> where
+        Self: Sized, 
+        U: Filter
+    {
+        FilterChain {
+            a: self, 
+            b: other
+        }
+    }
+}
+
+struct FilterChain<A, B> {
+    a: A,
+    b: B,
+}
+
+impl<A, B> Filter for FilterChain<A, B> where
+    A: Filter,
+    B: Filter 
+{
+     fn step(&mut self, sample: f32) -> f32 {
+        self.b.step(self.a.step(sample))
+    }
+}
+
+struct LowPassFilter {
+    last_out: f32,
+    k: f32,
+}
+
+impl LowPassFilter {
+    fn new(k: f32) -> LowPassFilter {
+        LowPassFilter {
+            last_out: 0.0,
+            k,
+        }
+    }
+}
+
+impl Filter for LowPassFilter {
+    fn step(&mut self, sample: f32) -> f32 {
+        self.last_out = (sample - self.last_out) * self.k;
+
+        self.last_out
+    }
+}
+
+struct HighPassFilter {
+    last_in: f32,
+    last_out: f32,
+    k: f32,
+}
+
+impl HighPassFilter {
+    fn new(k: f32) -> HighPassFilter {
+        HighPassFilter {
+            last_in: 0.0,
+            last_out: 0.0,
+            k,
+        }
+    }
+}
+
+impl Filter for HighPassFilter {
+    fn step(&mut self, sample: f32) -> f32 {
+        self.last_out = self.last_out * self.k + sample - self.last_in;
+        self.last_in = sample;
+
+        self.last_out
     }
 }

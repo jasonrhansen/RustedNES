@@ -40,11 +40,11 @@ pub struct State {
 }
 
 impl Interconnect {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: *mut Cpu, audio_sample_rate: u32) -> Self {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: *mut Cpu) -> Self {
         Interconnect {
             ram: Ram::new(),
             ppu: Ppu::new(mapper.clone()),
-            apu: Apu::new(mapper.clone(), audio_sample_rate),
+            apu: Apu::new(mapper.clone()),
             input: Input::new(),
             mapper,
             cpu,

@@ -119,6 +119,8 @@ impl CpalDriver {
         let (mut voice, stream) = Voice::new(&endpoint, &format, &event_loop).expect("Failed to create voice");
         voice.play();
 
+        let mut resampler = LinearResampler::new(desired_sample_rate, sample_rate);
+
         let read_sample_buffer = sample_buffer.clone();
         task::spawn(stream.for_each(move |output_buffer| {
             let mut read_ring_buffer = read_sample_buffer.lock().unwrap();
@@ -127,8 +129,7 @@ impl CpalDriver {
             match output_buffer {
                 UnknownTypeBuffer::I16(mut buffer) => {
                     for sample in buffer.chunks_mut(format.channels.len()) {
-                        let val = read_ring_buffer.next().unwrap_or(0f32);
-                        let val = (val * 32768.0) as i16;
+                        let val = (resampler.next(&mut *read_ring_buffer) * 32768.0) as i16;
                         for out in sample.iter_mut() {
                             *out = val;
                         }
@@ -136,8 +137,7 @@ impl CpalDriver {
                 },
                 UnknownTypeBuffer::U16(mut buffer) => {
                     for sample in buffer.chunks_mut(format.channels.len()) {
-                        let val = read_ring_buffer.next().unwrap_or(0f32);
-                        let val = ((val * 32768.0) + 32768.0) as u16;
+                        let val = ((resampler.next(&mut *read_ring_buffer) * 32768.0) + 32768.0) as u16;
                         for out in sample.iter_mut() {
                             *out = val;
                         }
@@ -145,7 +145,7 @@ impl CpalDriver {
                 },
                 UnknownTypeBuffer::F32(mut buffer) => {
                     for sample in buffer.chunks_mut(format.channels.len()) {
-                        let val = read_ring_buffer.next().unwrap_or(0f32);
+                        let val = resampler.next(&mut *read_ring_buffer);
                         for out in sample.iter_mut() {
                             *out = val;
                         }
@@ -187,5 +187,58 @@ impl AudioDriver for CpalDriver {
 
     fn sample_rate(&self) -> u32 {
         self.sample_rate
+    }
+}
+
+struct LinearResampler {
+    from_sample_rate: u32,
+    to_sample_rate: u32,
+
+    current_from_sample: f32,
+    next_from_sample: f32,
+    from_fract_pos: u32,
+}
+
+impl LinearResampler {
+    fn new(from_sample_rate: u32, to_sample_rate: u32) -> LinearResampler {
+        let sample_rate_gcd = {
+            fn gcd(a: u32, b: u32) -> u32 {
+                if b == 0 {
+                    a
+                } else {
+                    gcd(b, a % b)
+                }
+            }
+
+            gcd(from_sample_rate, to_sample_rate)
+        };
+
+        LinearResampler {
+            from_sample_rate: from_sample_rate / sample_rate_gcd,
+            to_sample_rate: to_sample_rate / sample_rate_gcd,
+
+            current_from_sample: 0.0,
+            next_from_sample: 0.0,
+            from_fract_pos: 0,
+        }
+    }
+
+    fn next(&mut self, input: &mut Iterator<Item = f32>) -> f32 {
+        fn interpolate(a: f32, b: f32, num: u32, denom: u32) -> f32 {
+            ((a * ((denom - num) as f32) + b * (num as f32)) / (denom as f32))
+        }
+
+        let ret = interpolate(self.current_from_sample, self.next_from_sample,
+                              self.from_fract_pos, self.to_sample_rate);
+
+        self.from_fract_pos += self.from_sample_rate;
+        while self.from_fract_pos > self.to_sample_rate {
+            self.from_fract_pos -= self.to_sample_rate;
+
+            self.current_from_sample = self.next_from_sample;
+            self.next_from_sample = input.next().unwrap_or(0.0);
+        }
+
+        ret
     }
 }

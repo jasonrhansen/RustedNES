@@ -19,6 +19,7 @@ use sadnes_core::cartridge::*;
 use sadnes_core::input::*;
 use sadnes_core::nes::*;
 use sadnes_core::ppu::*;
+use sadnes_core::apu::SAMPLE_RATE;
 use sadnes_core::serialize;
 use sadnes_core::sink::*;
 use sadnes_core::game_genie::Cheat;
@@ -35,7 +36,6 @@ use std::slice;
 use std::{mem, ptr};
 use std::ffi::CStr;
 
-const AUDIO_SAMPLE_RATE: u32 = 44_100;
 const DISPLAY_PIXELS: usize = SCREEN_WIDTH * SCREEN_HEIGHT;
 
 pub enum OutputBuffer {
@@ -51,7 +51,7 @@ struct System {
 impl System {
     fn new(cartridge: Cartridge) -> System {
         System {
-            nes: Nes::new(cartridge, AUDIO_SAMPLE_RATE),
+            nes: Nes::new(cartridge),
         }
     }
 
@@ -80,7 +80,7 @@ impl Context {
         Context {
             system: None,
             video_output_frame_buffer: OutputBuffer::Xrgb1555(vec![0; DISPLAY_PIXELS]),
-            audio_frame_buffer: vec![(0, 0); (AUDIO_SAMPLE_RATE as usize) / 29 * 2], // double space needed for 1 frame for lots of skid room
+            audio_frame_buffer: vec![(0, 0); (SAMPLE_RATE as usize) / 29 * 2], // double space needed for 1 frame for lots of skid room
             serialized: None,
         }
     }
@@ -133,7 +133,7 @@ impl Context {
             },
             timing: SystemTiming {
                 fps: 29.97,
-                sample_rate: AUDIO_SAMPLE_RATE as f64,
+                sample_rate: SAMPLE_RATE as f64,
             },
         }
     }

@@ -10,6 +10,8 @@ extern crate serde;
 extern crate serde_json;
 extern crate time;
 
+use sadnes_core::apu::SAMPLE_RATE;
+
 use argparse::*;
 use audio_driver::*;
 use cpal_driver::*;
@@ -47,15 +49,15 @@ fn load_rom(filename: &str) -> Result<Cartridge, LoadError> {
 
 fn run_rom(rom: Cartridge, config: CommandLineConfig) {
     let mut emulator = if config.enable_audio {
-        let audio_driver = Box::new(CpalDriver::new(44_100).unwrap());
+        let audio_driver = Box::new(CpalDriver::new(SAMPLE_RATE).unwrap());
         let time_source = audio_driver.time_source();
         println!("Audio sample rate: {}", audio_driver.sample_rate());
-        Emulator::new(rom, audio_driver.sink(), audio_driver.sample_rate(), time_source)
+        Emulator::new(rom, audio_driver.sink(), time_source)
     } else {
         let audio_driver = Box::new(NullAudioDriver{});
         let time_source = Box::new(SystemTimeSource{});
         println!("Audio disabled");
-        Emulator::new(rom, audio_driver.sink(), audio_driver.sample_rate(), time_source)
+        Emulator::new(rom, audio_driver.sink(), time_source)
     };
 
     emulator.run(config.debug);
