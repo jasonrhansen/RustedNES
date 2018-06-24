@@ -102,6 +102,7 @@ impl Apu {
                 triangle_enabled: true,
                 noise_enabled: true,
                 dmc_enabled: true,
+                filter_enabled: true,
             },
         }
     }
@@ -154,8 +155,11 @@ impl Apu {
         let s1 = ((cycle_1 as f64) / self.cycles_per_sample) as u64;
         let s2 = ((cycle_2 as f64) / self.cycles_per_sample) as u64;
         if s1 != s2 {
-            let sample = self.generate_sample();
-            audio_frame_sink.write_sample(self.filter.step(sample));
+            let mut sample = self.generate_sample();
+            if self.settings.filter_enabled {
+                sample = self.filter.step(sample);
+            }
+            audio_frame_sink.write_sample(sample);
         }
     }
 
@@ -382,6 +386,7 @@ pub struct Settings {
     pub triangle_enabled: bool,
     pub noise_enabled: bool,
     pub dmc_enabled: bool,
+    pub filter_enabled: bool,
 }
 
 #[derive(Copy, Clone, Deserialize, Serialize)]
@@ -617,7 +622,7 @@ impl LinearCounter {
     fn step(&mut self, length_counter_enabled: bool) {
         if self.reload {
             self.count = self.period;
-        } else if self.count > 0 {
+        } else if self.count != 0 {
             self.count -= 1;
         }
 

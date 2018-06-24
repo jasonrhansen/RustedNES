@@ -179,6 +179,16 @@ impl Emulator {
                         settings.noise_enabled = !settings.noise_enabled;
                     }
 
+                    if self.window.is_key_pressed(Key::D, KeyRepeat::No) {
+                        let settings = &mut self.nes.interconnect.apu.settings;
+                        settings.dmc_enabled = !settings.dmc_enabled;
+                    }
+
+                    if self.window.is_key_pressed(Key::F, KeyRepeat::No) {
+                        let settings = &mut self.nes.interconnect.apu.settings;
+                        settings.filter_enabled = !settings.filter_enabled;
+                    }
+
                     if self.window.is_key_pressed(Key::Key1, KeyRepeat::No) {
                         self.serialized = serde_json::to_string(&serialize::get_state(&self.nes)).ok();
                     }
