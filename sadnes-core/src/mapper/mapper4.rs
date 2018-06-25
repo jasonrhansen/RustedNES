@@ -249,7 +249,7 @@ impl Mapper for Mapper4 {
     }
 
     fn step(&mut self, cpu: &mut Cpu, ppu: &Ppu) {
-        if ppu.rendering_enabled() && ppu.scanline <= ppu::VISIBLE_END_SCANLINE && ppu.scanline_cycle() == 280 {
+        if ppu.rendering_enabled() && ppu.scanline <= ppu::VISIBLE_END_SCANLINE && ppu.scanline_cycle() == 260 {
             self.handle_scanline(cpu);
         }
     }
