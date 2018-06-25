@@ -204,14 +204,16 @@ impl Apu {
         // e e e e    e e e e -    Envelope and linear counter
         match self.frame_counter.mode {
             FrameCounterMode::FourStep => {
-                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 4;
                 match self.frame_counter.sequence_frame {
-                    0 | 2 => {
+                    0 => {
                         self.step_envelope_and_linear_counter();
                     }
                     1 => {
                         self.step_length_counter();
                         self.step_sweep();
+                        self.step_envelope_and_linear_counter();
+                    }
+                    2 => {
                         self.step_envelope_and_linear_counter();
                     }
                     3 => {
@@ -224,20 +226,21 @@ impl Apu {
                     }
                     _ => (),
                 }
+                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 4;
             }
             FrameCounterMode::FiveStep => {
-                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 5;
                 match self.frame_counter.sequence_frame {
                     0 | 2 => {
-                        self.step_envelope_and_linear_counter();
-                        self.step_sweep();
                         self.step_length_counter();
+                        self.step_sweep();
+                        self.step_envelope_and_linear_counter();
                     }
                     1 | 3 => {
                         self.step_envelope_and_linear_counter();
                     }
                     _ => (),
                 }
+                self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 5;
             }
         }
     }
@@ -293,6 +296,14 @@ impl Apu {
 
         if self.dmc.current_length > 0 {
             status |= 0x10;
+        }
+
+        if self.frame_counter.interrupt_enable {
+            status |= 0x40;
+        }
+
+        if self.dmc.irq_flag {
+            status |= 0x80;
         }
 
         status
@@ -686,11 +697,7 @@ impl Triangle {
     }
 
     fn output(&self) -> u8 {
-        if !self.enabled || self.length_counter.count == 0 || self.linear_counter.count == 0 {
-            0
-        } else {
-            TRIANGLE_TABLE[self.duty_cycle as usize]
-        }
+        TRIANGLE_TABLE[self.duty_cycle as usize]
     }
 }
 
@@ -890,7 +897,7 @@ pub struct FrameCounter {
 }
 
 impl FrameCounter {
-    const RATE: f64 = (CPU_FREQUENCY as f64) / 240.0;
+    const RATE: f64 = (CPU_FREQUENCY as f64) / 240.029;
 
     fn new() -> FrameCounter {
         FrameCounter {
