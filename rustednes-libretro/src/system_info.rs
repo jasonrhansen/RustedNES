@@ -18,7 +18,7 @@ pub struct SystemInfo {
 impl SystemInfo {
     pub fn new() -> SystemInfo {
         SystemInfo {
-            library_name: cstring!("sadnes libretro"),
+            library_name: cstring!("RustedNES"),
             library_version: cstring!(env!("CARGO_PKG_VERSION")),
             valid_extensions: cstring!("nes"),
             need_fullpath: false,

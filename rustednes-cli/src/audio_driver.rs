@@ -1,4 +1,4 @@
-use sadnes_core::sink::AudioSink;
+use rustednes_core::sink::AudioSink;
 
 pub trait AudioDriver {
     fn sink(&self) -> Box<AudioSink>;

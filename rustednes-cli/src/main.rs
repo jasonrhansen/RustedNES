@@ -5,19 +5,19 @@ extern crate cpal;
 extern crate futures;
 extern crate liner;
 extern crate minifb;
-extern crate sadnes_core;
+extern crate rustednes_core;
 extern crate serde;
 extern crate serde_json;
 extern crate time;
 
-use sadnes_core::apu::SAMPLE_RATE;
+use rustednes_core::apu::SAMPLE_RATE;
 
 use argparse::*;
 use audio_driver::*;
 use cpal_driver::*;
 use emulator::*;
 use null_audio_driver::*;
-use sadnes_core::cartridge::*;
+use rustednes_core::cartridge::*;
 use std::fs::File;
 use system_time_source::*;
 

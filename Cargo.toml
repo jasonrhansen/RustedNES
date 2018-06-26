@@ -1,7 +1,7 @@
 [workspace]
 
 members = [
-    "sadnes-cli",
-    "sadnes-core",
-    "sadnes-libretro",
+    "rustednes-cli",
+    "rustednes-core",
+    "rustednes-libretro",
 ]

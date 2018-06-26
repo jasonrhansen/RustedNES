@@ -7,10 +7,10 @@ pub struct CommandLineConfig {
 }
 
 pub fn parse_args() -> CommandLineConfig {
-    let app = App::new("sadNES")
+    let app = App::new("RustedNES")
         .version(crate_version!())
         .author(crate_authors!())
-        .about("A CLI frontend to the sadNES emulator")
+        .about("A CLI frontend to the RustedNES emulator")
         .arg(Arg::with_name("ROM")
             .help("The name of the ROM to load")
             .required(true)

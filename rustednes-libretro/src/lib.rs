@@ -2,7 +2,7 @@
 
 extern crate libc;
 
-extern crate sadnes_core;
+extern crate rustednes_core;
 extern crate serde;
 extern crate serde_cbor;
 
@@ -15,14 +15,14 @@ mod system_info;
 
 use libc::*;
 
-use sadnes_core::cartridge::*;
-use sadnes_core::input::*;
-use sadnes_core::nes::*;
-use sadnes_core::ppu::*;
-use sadnes_core::apu::SAMPLE_RATE;
-use sadnes_core::serialize;
-use sadnes_core::sink::*;
-use sadnes_core::game_genie::Cheat;
+use rustednes_core::cartridge::*;
+use rustednes_core::input::*;
+use rustednes_core::nes::*;
+use rustednes_core::ppu::*;
+use rustednes_core::apu::SAMPLE_RATE;
+use rustednes_core::serialize;
+use rustednes_core::sink::*;
+use rustednes_core::game_genie::Cheat;
 
 use callbacks::*;
 use game_info::*;
@@ -80,7 +80,7 @@ impl Context {
         Context {
             system: None,
             video_output_frame_buffer: OutputBuffer::Xrgb1555(vec![0; DISPLAY_PIXELS]),
-            audio_frame_buffer: vec![(0, 0); (SAMPLE_RATE as usize) / 29 * 2], // double space needed for 1 frame for lots of skid room
+            audio_frame_buffer: vec![(0, 0); (SAMPLE_RATE as usize) / 60 * 2], // double space needed for 1 frame for lots of skid room
             serialized: None,
         }
     }
@@ -132,7 +132,7 @@ impl Context {
                 aspect_ratio: 0.0,
             },
             timing: SystemTiming {
-                fps: 29.97,
+                fps: 60.1,
                 sample_rate: SAMPLE_RATE as f64,
             },
         }

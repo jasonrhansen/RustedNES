@@ -1,4 +1,4 @@
-use sadnes_core::time_source::TimeSource;
+use rustednes_core::time_source::TimeSource;
 
 use time;
 

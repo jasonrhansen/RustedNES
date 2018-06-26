@@ -1,5 +1,5 @@
 use audio_driver::AudioDriver;
-use sadnes_core::sink::AudioSink;
+use rustednes_core::sink::AudioSink;
 
 pub struct NullAudioDriver;
 

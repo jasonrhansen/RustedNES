@@ -1,16 +1,16 @@
 use command::*;
 use liner;
 use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
-use sadnes_core::cartridge::Cartridge;
-use sadnes_core::cpu::CPU_FREQUENCY;
-use sadnes_core::disassembler::Disassembler;
-use sadnes_core::input::Button;
-use sadnes_core::memory::Memory;
-use sadnes_core::nes::Nes;
-use sadnes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
-use sadnes_core::serialize;
-use sadnes_core::sink::*;
-use sadnes_core::time_source::TimeSource;
+use rustednes_core::cartridge::Cartridge;
+use rustednes_core::cpu::CPU_FREQUENCY;
+use rustednes_core::disassembler::Disassembler;
+use rustednes_core::input::Button;
+use rustednes_core::memory::Memory;
+use rustednes_core::nes::Nes;
+use rustednes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use rustednes_core::serialize;
+use rustednes_core::sink::*;
+use rustednes_core::time_source::TimeSource;
 use serde_json;
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
@@ -48,6 +48,8 @@ pub struct Emulator {
 
     emulated_cycles: u64,
 
+    emulated_instructions: u64,
+
     serialized: Option<String>,
 }
 
@@ -71,7 +73,7 @@ impl Emulator {
         });
 
         Emulator {
-            window: Window::new("sadNES",
+            window: Window::new("RustedNES",
                                 SCREEN_WIDTH, SCREEN_HEIGHT,
                                 WindowOptions {
                                     borderless: false,
@@ -99,6 +101,7 @@ impl Emulator {
             start_time_ns: 0,
 
             emulated_cycles: 0,
+            emulated_instructions: 0,
 
             serialized: None,
         }
@@ -126,6 +129,8 @@ impl Emulator {
                         while self.emulated_cycles < target_cycles && !start_debugger {
                             let (_cycles, trigger_watchpoint) =
                                 self.step(&mut video_frame_sink);
+
+                            self.emulated_instructions += 1;
 
                             if trigger_watchpoint ||
                                 (self.breakpoints.len() != 0 &&
@@ -274,8 +279,9 @@ impl Emulator {
                     Command::Step(count) => {
                         for _ in 0..count {
                             self.nes.step(video_frame_sink, self.audio_frame_sink.as_mut());
+                            self.emulated_instructions += 1;
                             self.cursor = self.nes.cpu.regs().pc;
-                            print!("0x{:04x}  ", self.cursor);
+                            print!("{} 0x{:04x}  ", self.emulated_instructions, self.cursor);
                             self.disassemble_instruction();
                         }
                     },
@@ -405,7 +411,7 @@ impl Emulator {
     }
 
     fn print_cursor(&self) {
-        self.prompt_sender.send(format!("(sadnes-debug 0x{:04x}) > ", self.cursor)).unwrap();
+        self.prompt_sender.send(format!("(rustednes-debug 0x{:04x}) > ", self.cursor)).unwrap();
     }
 
     fn print_labels_at_cursor(&mut self) {
