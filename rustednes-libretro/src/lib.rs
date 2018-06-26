@@ -149,47 +149,7 @@ impl Context {
             CALLBACKS.input_poll();
 
             if let Some(ref mut system) = self.system {
-                {
-                    let game_pad = &mut system.nes.interconnect.input.game_pad_1;
-
-                    game_pad
-                        .set_button_pressed(Button::A, CALLBACKS.joypad_button(JoypadButton::A));
-                    game_pad
-                        .set_button_pressed(Button::B, CALLBACKS.joypad_button(JoypadButton::B));
-                    game_pad.set_button_pressed(
-                        Button::Start,
-                        CALLBACKS.joypad_button(JoypadButton::Start),
-                    );
-                    game_pad.set_button_pressed(
-                        Button::Select,
-                        CALLBACKS.joypad_button(JoypadButton::Select),
-                    );
-
-                    let joypad_left_pressed = CALLBACKS.joypad_button(JoypadButton::Left);
-                    let joypad_right_pressed = CALLBACKS.joypad_button(JoypadButton::Right);
-                    let joypad_up_pressed = CALLBACKS.joypad_button(JoypadButton::Up);
-                    let joypad_down_pressed = CALLBACKS.joypad_button(JoypadButton::Down);
-
-                    const ANALOG_THRESHOLD: i16 = 0x7fff / 2;
-
-                    let (left_x, left_y) = CALLBACKS.analog_xy(AnalogStick::Left);
-                    game_pad.set_button_pressed(
-                        Button::Left,
-                        left_x < -ANALOG_THRESHOLD || joypad_left_pressed,
-                    );
-                    game_pad.set_button_pressed(
-                        Button::Right,
-                        left_x > ANALOG_THRESHOLD || joypad_right_pressed,
-                    );
-                    game_pad.set_button_pressed(
-                        Button::Up,
-                        left_y < -ANALOG_THRESHOLD || joypad_up_pressed,
-                    );
-                    game_pad.set_button_pressed(
-                        Button::Down,
-                        left_y > ANALOG_THRESHOLD || joypad_down_pressed,
-                    );
-                }
+                Context::handle_input(system);
 
                 let (pixel_buffer_ptr, mut video_output_sink): (_, Box<VideoSink>) = match CALLBACKS
                     .get_current_software_framebuffer(SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32)
@@ -251,6 +211,57 @@ impl Context {
                 );
             }
         }
+    }
+
+    unsafe fn handle_input(system: &mut System) {
+        {
+            let mut game_pad = &mut system.nes.interconnect.input.game_pad_1;
+            Context::handle_game_pad(&mut game_pad, 0);
+        }
+        {
+            let mut game_pad = &mut system.nes.interconnect.input.game_pad_2;
+            Context::handle_game_pad(&mut game_pad, 1);
+        }
+    }
+
+    unsafe fn handle_game_pad(game_pad: &mut GamePad, index: u32) {
+        game_pad
+            .set_button_pressed(Button::A, CALLBACKS.joypad_button(JoypadButton::A, index));
+        game_pad
+            .set_button_pressed(Button::B, CALLBACKS.joypad_button(JoypadButton::B, index));
+        game_pad.set_button_pressed(
+            Button::Start,
+            CALLBACKS.joypad_button(JoypadButton::Start, index),
+        );
+        game_pad.set_button_pressed(
+            Button::Select,
+            CALLBACKS.joypad_button(JoypadButton::Select, index),
+        );
+
+        let joypad_left_pressed = CALLBACKS.joypad_button(JoypadButton::Left, index);
+        let joypad_right_pressed = CALLBACKS.joypad_button(JoypadButton::Right, index);
+        let joypad_up_pressed = CALLBACKS.joypad_button(JoypadButton::Up, index);
+        let joypad_down_pressed = CALLBACKS.joypad_button(JoypadButton::Down, index);
+
+        const ANALOG_THRESHOLD: i16 = 0x7fff / 2;
+
+        let (left_x, left_y) = CALLBACKS.analog_xy(AnalogStick::Left, index);
+        game_pad.set_button_pressed(
+            Button::Left,
+            left_x < -ANALOG_THRESHOLD || joypad_left_pressed,
+        );
+        game_pad.set_button_pressed(
+            Button::Right,
+            left_x > ANALOG_THRESHOLD || joypad_right_pressed,
+        );
+        game_pad.set_button_pressed(
+            Button::Up,
+            left_y < -ANALOG_THRESHOLD || joypad_up_pressed,
+        );
+        game_pad.set_button_pressed(
+            Button::Down,
+            left_y > ANALOG_THRESHOLD || joypad_down_pressed,
+        );
     }
 }
 

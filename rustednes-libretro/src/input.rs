@@ -47,11 +47,11 @@ pub enum RetroDeviceType {
 
 // TODO: I don't like Callbacks impl being split up like this
 impl Callbacks {
-    pub fn joypad_button(&self, button: JoypadButton) -> bool {
-        0 != self.input_state(0, RetroDeviceType::Joypad as u32, 0, button as u32)
+    pub fn joypad_button(&self, button: JoypadButton, index: u32) -> bool {
+        0 != self.input_state(0, RetroDeviceType::Joypad as u32, index, button as u32)
     }
 
-    pub fn analog_xy(&self, stick: AnalogStick) -> (i16, i16) {
+    pub fn analog_xy(&self, stick: AnalogStick, index: u32) -> (i16, i16) {
         let x = self.input_state(
             0,
             RetroDeviceType::Analog as u32,
