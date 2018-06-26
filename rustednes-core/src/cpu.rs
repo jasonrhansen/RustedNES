@@ -822,7 +822,7 @@ impl Cpu {
 
     fn brk(&mut self, mem: &mut impl Memory) {
         let pc = self.regs.pc;
-        self.push_word(mem, pc);
+        self.push_word(mem, pc + 1);
         self.php(mem);
         self.sei();
         self.regs.pc = mem.read_word(BRK_VECTOR);
