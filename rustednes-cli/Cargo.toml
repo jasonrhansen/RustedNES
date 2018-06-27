@@ -11,8 +11,10 @@ combine = "2.2.0"
 minifb = "0.10.3"
 rustednes-core = { path = "../rustednes-core" }
 time = "0.1"
-liner = "0.4.3"
 cpal = "0.4.6"
 futures = "0.1.14"
 serde = "1.0"
 serde_json = "1.0"
+
+[target.'cfg(not(windows))'.dependencies]
+liner = "0.4.3"

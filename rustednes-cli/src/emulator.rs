@@ -1,5 +1,4 @@
 use command::*;
-use liner;
 use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
 use rustednes_core::cartridge::Cartridge;
 use rustednes_core::cpu::CPU_FREQUENCY;
@@ -59,17 +58,7 @@ impl Emulator {
         let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
         let _stdin_thread = thread::spawn(move || {
-            let mut con = liner::Context::new();
-            loop {
-                if let Ok(prompt) = prompt_receiver.recv() {
-                    let res = con.read_line(prompt,
-                                                &mut |_| {});
-                    if let Ok(res) = res {
-                        stdin_sender.send(res.as_str().into()).unwrap();
-                        con.history.push(res.into()).unwrap();
-                    }
-                }
-            }
+            input_loop(stdin_sender, prompt_receiver);
         });
 
         Emulator {
@@ -419,4 +408,36 @@ impl Emulator {
             println!(".{}:", name);
         }
     }
+}
+
+#[cfg(not(windows))]
+fn input_loop(stdin_sender: Sender<String>, prompt_receiver: Receiver<String>) {
+    use liner;
+
+    let mut con = liner::Context::new();
+    loop {
+        if let Ok(prompt) = prompt_receiver.recv() {
+            let res = con.read_line(prompt,
+                                    &mut |_| {});
+            if let Ok(res) = res {
+                stdin_sender.send(res.as_str().into()).unwrap();
+                con.history.push(res.into()).unwrap();
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn input_loop(stdin_sender: Sender<String>, _prompt_receiver: Receiver<String>) {
+    loop {
+        stdin_sender.send(read_stdin()).unwrap();
+    }
+}
+
+#[cfg(windows)]
+fn read_stdin() -> String {
+    use std::io::stdin;
+    let mut input = String::new();
+    stdin().read_line(&mut input).unwrap();
+    input.trim().into()
 }

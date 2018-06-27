@@ -3,12 +3,14 @@ extern crate clap;
 extern crate combine;
 extern crate cpal;
 extern crate futures;
-extern crate liner;
 extern crate minifb;
 extern crate rustednes_core;
 extern crate serde;
 extern crate serde_json;
 extern crate time;
+
+#[cfg(not(windows))]
+extern crate liner;
 
 use rustednes_core::apu::SAMPLE_RATE;
 
