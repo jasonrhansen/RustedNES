@@ -4,6 +4,13 @@
 
 RustedNES is a Nintendo Entertainment System emulator written in the Rust programming language. It runs on Windows, MacOS, and Linux. It currently supports many commercial games.
 
+## Screenshots
+
+![screenshot mario](media/screenshot_mario.png)
+![screenshot zelda](media/screenshot_zelda.png)
+![screenshot metroid](media/screenshot_metroid.png)
+![screenshot contra](media/screenshot_contra.png)
+
 ## Building
 
 To build RustedNES you will need to have have Rust installed. You can find instructions here https://www.rust-lang.org/en-US/install.html
