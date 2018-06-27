@@ -1,0 +1,11 @@
+[Libretro]
+Type=Emulator
+Version=0.1.0
+Name=RustedNES
+Module=rustednes_libretro.so
+LibretroVersion=1
+Authors=Jason Rodney Hansen;
+License=MIT;Apache-2.0;
+
+[Platform:NintendoEntertainmentSystem]
+MimeType=application/x-nes-rom;
