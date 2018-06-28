@@ -316,8 +316,52 @@ impl Disassembler {
     // Unofficial Instructions
     ///////////////////////////
 
-    fn nop_2_bytes<M: Memory>(&mut self, mem: &mut M) -> String {
-        format!("nop2 {}", self.dis_pc_byte(mem)).into()
+    fn alr(&mut self, mem: &mut impl Memory) -> String {
+        self.dis_instruction("alr", mem, AddressMode::Immediate)
+    }
+
+    fn anc(&mut self, mem: &mut impl Memory) -> String {
+        self.dis_instruction("anc", mem, AddressMode::Immediate)
+    }
+
+    fn arr(&mut self, mem: &mut impl Memory) -> String {
+        self.dis_instruction("arr", mem, AddressMode::Immediate)
+    }
+
+    fn axs(&mut self, mem: &mut impl Memory) -> String {
+        self.dis_instruction("axs", mem, AddressMode::Immediate)
+    }
+
+    fn sax(&mut self, mem: &mut impl Memory, am: AddressMode) -> String {
+        self.dis_instruction("sax", mem, am)
+    }
+
+    fn dcp(&mut self, mem: &mut impl Memory, am: AddressMode) -> String {
+        self.dis_instruction("dcp", mem, am)
+    }
+
+    fn isc(&mut self, mem: &mut impl Memory, am: AddressMode) -> String {
+        self.dis_instruction("isc", mem, am)
+    }
+
+    fn rla(&mut self, mem: &mut impl Memory, am: AddressMode) -> String {
+        self.dis_instruction("rla", mem, am)
+    }
+
+    fn rra(&mut self, mem: &mut impl Memory, am: AddressMode) -> String {
+        self.dis_instruction("rra", mem, am)
+    }
+
+    fn sre(&mut self, mem: &mut impl Memory, am: AddressMode) -> String {
+        self.dis_instruction("sre", mem, am)
+    }
+
+    fn skb<M: Memory>(&mut self, mem: &mut M) -> String {
+        format!("skb {}", self.dis_pc_byte(mem)).into()
+    }
+
+    fn ign(&mut self, mem: &mut impl Memory, am: AddressMode) -> String {
+        self.dis_instruction("ign", mem, am)
     }
 
     fn xaa<M: Memory>(&mut self, _mem: &mut M) -> String {
@@ -330,6 +374,18 @@ impl Disassembler {
 
     fn slo<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
         self.dis_instruction("slo", mem, am)
+    }
+
+    fn ahx<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
+        self.dis_instruction("ahx", mem, am)
+    }
+
+    fn sya<M: Memory>(&mut self, mem: &mut M) -> String {
+        self.dis_instruction("sya", mem, AddressMode::AbsoluteIndexed(Register8::X))
+    }
+
+    fn sxa<M: Memory>(&mut self, mem: &mut M) -> String {
+        self.dis_instruction("sxa", mem, AddressMode::AbsoluteIndexed(Register8::Y))
     }
 }
 
