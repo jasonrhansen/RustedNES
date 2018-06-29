@@ -257,13 +257,15 @@ impl Emulator {
                 match command {
                     Command::ShowRegs => {
                         let regs = self.nes.cpu.regs();
+                        let flags = self.nes.cpu.flags();
+                        let status: u8 = flags.into();
                         println!("pc: 0x{:04x}", regs.pc);
                         println!("a: 0x{:02x}", regs.a);
                         println!("x: 0x{:02x}", regs.x);
                         println!("y: 0x{:02x}", regs.y);
                         println!("sp: 0x{:02x}", regs.sp);
-                        println!("status: 0x{:02x}", regs.status);
-                        println!("Flags: {}", regs.status);
+                        println!("status: 0x{:02x}", status);
+                        println!("Flags: {:?}", flags);
                     },
                     Command::Step(count) => {
                         for _ in 0..count {

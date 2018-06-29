@@ -51,7 +51,7 @@ impl Callbacks {
         0 != self.input_state(0, RetroDeviceType::Joypad as u32, index, button as u32)
     }
 
-    pub fn analog_xy(&self, stick: AnalogStick, index: u32) -> (i16, i16) {
+    pub fn analog_xy(&self, stick: AnalogStick, _index: u32) -> (i16, i16) {
         let x = self.input_state(
             0,
             RetroDeviceType::Analog as u32,

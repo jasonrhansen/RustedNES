@@ -5,35 +5,6 @@ use std::fmt::{Debug, Formatter};
 
 pub const CPU_FREQUENCY: u64 = 1_789_773;
 
-bitflags! {
-    #[derive(Deserialize, Serialize)]
-    pub struct StatusFlags: u8 {
-        const NONE              = 0;
-        const CARRY             = 1 << 0;
-        const ZERO_RESULT       = 1 << 1;
-        const INTERRUPT_DISABLE = 1 << 2;
-        const DECIMAL_MODE      = 1 << 3;
-        const BREAK_COMMAND     = 1 << 4;
-        const EXPANSION         = 1 << 5;
-        const OVERFLOW          = 1 << 6;
-        const NEGATIVE_RESULT   = 1 << 7;
-    }
-}
-
-impl fmt::Display for StatusFlags {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{{C: {}, Z: {}, I: {}, D: {}, B: {}, E: {}, V: {}, N: {}}}",
-               self.contains(StatusFlags::CARRY) as u8,
-               self.contains(StatusFlags::ZERO_RESULT) as u8,
-               self.contains(StatusFlags::INTERRUPT_DISABLE) as u8,
-               self.contains(StatusFlags::DECIMAL_MODE) as u8,
-               self.contains(StatusFlags::BREAK_COMMAND) as u8,
-               self.contains(StatusFlags::EXPANSION) as u8,
-               self.contains(StatusFlags::OVERFLOW) as u8,
-               self.contains(StatusFlags::NEGATIVE_RESULT) as u8,
-        )
-    }
-}
 
 #[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
 pub enum Interrupt {
@@ -68,13 +39,75 @@ static OPCODE_CYCLES: &[u8] = &[
 ];
 
 #[derive(Copy, Clone, Deserialize, Serialize)]
+pub struct Flags {
+    c: bool,    // Carry
+    z: bool,    // Zero
+    i: bool,    // Interrupt inhibit
+    d: bool,    // Decimal (not used on NES)
+    b: bool,    // Break Command
+    e: bool,    // Expansion
+    v: bool,    // Overflow
+    n: bool,    // Negative
+}
+
+impl Flags {
+    pub fn new() -> Flags {
+        Flags {
+            c: false,
+            z: false,
+            i: false,
+            d: false,
+            b: false,
+            e: false,
+            v: false,
+            n: false,
+        }
+    }
+}
+
+impl Into<u8> for Flags {
+    fn into(self) -> u8 {
+         (self.c as u8) |
+        ((self.z as u8) << 1) |
+        ((self.i as u8) << 2) |
+        ((self.d as u8) << 3) |
+        ((self.b as u8) << 4) |
+        ((self.e as u8) << 5) |
+        ((self.v as u8) << 6) |
+        ((self.n as u8) << 7)
+    }
+}
+
+impl From<u8> for Flags {
+    fn from(bits: u8) -> Self {
+        Flags {
+            c: (bits & 0x01) != 0,
+            z: (bits & 0x02) != 0,
+            i: (bits & 0x04) != 0,
+            d: (bits & 0x08) != 0,
+            b: (bits & 0x10) != 0,
+            e: (bits & 0x20) != 0,
+            v: (bits & 0x40) != 0,
+            n: (bits & 0x80) != 0,
+        }
+    }
+}
+
+impl Debug for Flags {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "N: {}, V: {}, e: {}, b: {}, d: {}, I: {}, Z: {}, C: {}",
+               self.n as u8, self.v as u8, self.e as u8, self.b as u8,
+               self.d as u8, self.i as u8, self.z as u8, self.c as u8)
+    }
+}
+
+#[derive(Copy, Clone, Deserialize, Serialize)]
 pub struct Regs {
     pub pc: u16,
     pub a: u8,
     pub x: u8,
     pub y: u8,
     pub sp: u8,
-    pub status: StatusFlags,
 }
 
 impl Regs {
@@ -85,15 +118,14 @@ impl Regs {
             x: 0,
             y: 0,
             sp: 0,
-            status: StatusFlags::NONE,
         }
     }
 }
 
 impl Debug for Regs {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "pc: {:04X}, a: {:02X}, x: {:02X}, y: {:02X}, sp: {:02X}, status: {}",
-               self.pc, self.a, self.x, self.y, self.sp, self.status)
+        write!(f, "pc: {:04X}, a: {:02X}, x: {:02X}, y: {:02X}, sp: {:02X}",
+               self.pc, self.a, self.x, self.y, self.sp)
     }
 }
 
@@ -126,6 +158,7 @@ pub struct Cpu {
     pub cycles: u64,
     stall_cycles: u8,
     regs: Regs,
+    flags: Flags,
     interrupt: Option<Interrupt>,
 
     pub watchpoints: HashSet<u16>,
@@ -137,6 +170,7 @@ pub struct State {
     pub cycles: u64,
     pub stall_cycles: u8,
     pub regs: Regs,
+    pub flags: Flags,
     pub interrupt: Option<Interrupt>,
 }
 
@@ -146,6 +180,7 @@ impl Cpu {
             cycles: 0,
             stall_cycles: 0,
             regs: Regs::new(),
+            flags: Flags::new(),
             interrupt: None,
             watchpoints: HashSet::new(),
             trigger_watchpoint: false,
@@ -159,6 +194,7 @@ impl Cpu {
             cycles: self.cycles,
             stall_cycles: self.stall_cycles,
             regs: self.regs,
+            flags: self.flags,
             interrupt: self.interrupt,
         }
     }
@@ -167,6 +203,7 @@ impl Cpu {
         self.cycles = state.cycles;
         self.stall_cycles = state.stall_cycles;
         self.regs = state.regs;
+        self.flags = state.flags;
         self.interrupt = state.interrupt;
     }
 
@@ -178,10 +215,23 @@ impl Cpu {
         self.regs
     }
 
+    pub fn flags(&self) -> Flags {
+        self.flags
+    }
+
     pub fn reset(&mut self, mem: &mut impl Memory) {
         self.regs.pc = mem.read_word(RESET_VECTOR);
         self.regs.sp = 0xFD;
-        self.regs.status = StatusFlags::INTERRUPT_DISABLE | StatusFlags::EXPANSION;
+        self.flags = Flags {
+            c: false,
+            z: false,
+            i: true,
+            d: false,
+            b: false,
+            e: true,
+            v: false,
+            n: false,
+        };
         self.interrupt = None;
     }
 
@@ -338,19 +388,9 @@ impl Cpu {
     ///////////////////////
 
     #[inline(always)]
-    fn get_flag(&self, sf: StatusFlags) -> bool {
-        self.regs.status.contains(sf)
-    }
-
-    #[inline(always)]
-    fn set_flags(&mut self, sf: StatusFlags, value: bool) {
-        self.regs.status.set(sf, value);
-    }
-
-    #[inline(always)]
     fn set_zero_negative(&mut self, result: u8) {
-        self.set_flags(StatusFlags::ZERO_RESULT, result == 0);
-        self.set_flags(StatusFlags::NEGATIVE_RESULT, result & 0x80 != 0);
+        self.flags.z = result == 0;
+        self.flags.n = (result & 0x80) != 0;
     }
 
     ///////////////////////
@@ -365,7 +405,7 @@ impl Cpu {
             X => self.regs.x,
             Y => self.regs.y,
             Sp => self.regs.sp,
-            Status => self.regs.status.bits(),
+            Status => self.flags.into(),
         }
     }
 
@@ -377,7 +417,7 @@ impl Cpu {
             X => self.regs.x = val,
             Y => self.regs.y = val,
             Sp => self.regs.sp = val,
-            Status => self.regs.status = StatusFlags::from_bits(val).unwrap(),
+            Status => self.flags = val.into(),
         }
     }
 
@@ -423,44 +463,29 @@ impl Cpu {
         let result = r.wrapping_sub(value);
 
         self.set_zero_negative(result);
-        self.set_flags(StatusFlags::CARRY, value <= r);
+        self.flags.c = value <= r;
     }
 
     fn add_value(&mut self, value: u8) {
         let a = self.regs.a;
-        let result = a as u32 + value as u32 + if self.get_flag(StatusFlags::CARRY) {
-            1
-        } else {
-            0
-        };
+        let result = a as u32 + value as u32 + self.flags.c as u32;
 
-        self.set_flags(StatusFlags::CARRY, result & 0x100 != 0);
+        self.flags.c = (result & 0x100) != 0;
         let result = result as u8;
-        self.set_flags(
-            StatusFlags::OVERFLOW,
-            ((a & 0x80) == (value & 0x80)) && (a & 0x80 != result & 0x80),
-        );
+        self.flags.v = ((a & 0x80) == (value & 0x80)) && (a & 0x80 != result & 0x80);
         self.set_zero_negative(result);
 
         self.regs.a = result;
     }
 
-
     fn sub_value(&mut self, value: u8) {
         let a = self.regs.a;
-        let result = a as i32 - value as i32 - if self.get_flag(StatusFlags::CARRY) {
-            0
-        } else {
-            1
-        };
+        let result = a as i32 - value as i32 - (!self.flags.c) as i32;
 
-        self.set_flags(StatusFlags::CARRY, result >= 0);
+        self.flags.c = result >= 0;
 
         let result = result as u8;
-        self.set_flags(
-            StatusFlags::OVERFLOW,
-            (a ^ value) & 0x80 != 0 && (a ^ result) & 0x80 != 0,
-        );
+        self.flags.v = ((a ^ value) & 0x80 != 0) && (((a ^ result) & 0x80) != 0);
         self.set_zero_negative(result);
 
         self.regs.a = result;
@@ -515,7 +540,7 @@ impl Cpu {
 
         let result = (val << 1) & 0xFE;
         self.set_zero_negative(result);
-        self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
+        self.flags.c = (val & 0x80) != 0;
 
         if let Some(addr) = addr {
             mem.write_byte(addr, result);
@@ -529,14 +554,10 @@ impl Cpu {
     fn rotate_right(&mut self, mem: &mut impl Memory, am: AddressMode) -> u8 {
         let (val, addr) = self.load(mem, am);
 
-        let carry: u8 = if self.get_flag(StatusFlags::CARRY) {
-            1 << 7
-        } else {
-            0
-        };
+        let carry: u8 = if self.flags.c { 1 << 7 } else { 0 };
         let result = ((val >> 1) & 0x7F) | carry;
         self.set_zero_negative(result);
-        self.set_flags(StatusFlags::CARRY, (val & 0x01) != 0);
+        self.flags.c = (val & 0x01) != 0;
 
         if let Some(addr) = addr {
             mem.write_byte(addr, result);
@@ -550,14 +571,10 @@ impl Cpu {
     fn rotate_left(&mut self, mem: &mut impl Memory, am: AddressMode) -> u8 {
         let (val, addr) = self.load(mem, am);
 
-        let carry: u8 = if self.get_flag(StatusFlags::CARRY) {
-            1
-        } else {
-            0
-        };
+        let carry: u8 = if self.flags.c { 1 } else { 0 };
         let result = ((val << 1) & 0xFE) | carry;
         self.set_zero_negative(result);
-        self.set_flags(StatusFlags::CARRY, (val & 0x80) != 0);
+        self.flags.c = (val & 0x80) != 0;
 
         if let Some(addr) = addr {
             mem.write_byte(addr, result);
@@ -573,7 +590,7 @@ impl Cpu {
 
         let result = (val >> 1) & 0x7F;
         self.set_zero_negative(result);
-        self.set_flags(StatusFlags::CARRY, (val & 0x01) != 0);
+        self.flags.c = (val & 0x01) != 0;
 
         if let Some(addr) = addr {
             mem.write_byte(addr, result);
@@ -668,31 +685,31 @@ impl Cpu {
     }
 
     fn sec(&mut self) {
-        self.set_flags(StatusFlags::CARRY, true);
+        self.flags.c = true;
     }
 
     fn clc(&mut self) {
-        self.set_flags(StatusFlags::CARRY, false);
+        self.flags.c = false;
     }
 
     fn sei(&mut self) {
-        self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
+        self.flags.i = true;
     }
 
     fn cli(&mut self) {
-        self.set_flags(StatusFlags::INTERRUPT_DISABLE, false);
+        self.flags.i = false;
     }
 
     fn sed(&mut self) {
-        self.set_flags(StatusFlags::DECIMAL_MODE, true);
+        self.flags.d = true;
     }
 
     fn cld(&mut self) {
-        self.set_flags(StatusFlags::DECIMAL_MODE, false);
+        self.flags.d = false;
     }
 
     fn clv(&mut self) {
-        self.set_flags(StatusFlags::OVERFLOW, false);
+        self.flags.v = false;
     }
 
     fn jmp(&mut self, mem: &mut impl Memory) {
@@ -717,42 +734,42 @@ impl Cpu {
     }
 
     fn bmi(&mut self, mem: &mut impl Memory) {
-        let cond = self.get_flag(StatusFlags::NEGATIVE_RESULT);
+        let cond = self.flags.n;
         self.branch(mem, cond);
     }
 
     fn bpl(&mut self, mem: &mut impl Memory) {
-        let cond = !self.get_flag(StatusFlags::NEGATIVE_RESULT);
+        let cond = !self.flags.n;
         self.branch(mem, cond);
     }
 
     fn bcc(&mut self, mem: &mut impl Memory) {
-        let cond = !self.get_flag(StatusFlags::CARRY);
+        let cond = !self.flags.c;
         self.branch(mem, cond);
     }
 
     fn bcs(&mut self, mem: &mut impl Memory) {
-        let cond = self.get_flag(StatusFlags::CARRY);
+        let cond = self.flags.c;
         self.branch(mem, cond);
     }
 
     fn beq(&mut self, mem: &mut impl Memory) {
-        let cond = self.get_flag(StatusFlags::ZERO_RESULT);
+        let cond = self.flags.z;
         self.branch(mem, cond);
     }
 
     fn bne(&mut self, mem: &mut impl Memory) {
-        let cond = !self.get_flag(StatusFlags::ZERO_RESULT);
+        let cond = !self.flags.z;
         self.branch(mem, cond);
     }
 
     fn bvs(&mut self, mem: &mut impl Memory) {
-        let cond = self.get_flag(StatusFlags::OVERFLOW);
+        let cond = self.flags.v;
         self.branch(mem, cond);
     }
 
     fn bvc(&mut self, mem: &mut impl Memory) {
-        let cond = !self.get_flag(StatusFlags::OVERFLOW);
+        let cond = !self.flags.v;
         self.branch(mem, cond);
     }
 
@@ -772,9 +789,9 @@ impl Cpu {
         let (m, _) = self.load(mem, am);
         let a = self.regs.a;
 
-        self.set_flags(StatusFlags::NEGATIVE_RESULT, m & 0x80 != 0);
-        self.set_flags(StatusFlags::OVERFLOW, m & 0x40 != 0);
-        self.set_flags(StatusFlags::ZERO_RESULT, (m & a) == 0);
+        self.flags.n = (m & 0x80) != 0;
+        self.flags.v = (m & 0x40) != 0;
+        self.flags.z = (m & a) == 0;
     }
 
     fn inc(&mut self, mem: &mut impl Memory, am: AddressMode) {
@@ -866,13 +883,15 @@ impl Cpu {
     }
 
     fn php(&mut self, mem: &mut impl Memory) {
-        let p = self.regs.status | StatusFlags::BREAK_COMMAND | StatusFlags::EXPANSION;
-        self.push_byte(mem, p.bits);
+        let mut status = self.flags;
+        status.b = true;
+        status.e = true;
+        self.push_byte(mem, status.into());
     }
 
     fn plp(&mut self, mem: &mut impl Memory) {
         let val = self.pull_byte(mem);
-        self.regs.status = StatusFlags::from_bits(val).unwrap();
+        self.flags = val.into();
     }
 
     fn lsr(&mut self, mem: &mut impl Memory, am: AddressMode) {
@@ -903,7 +922,7 @@ impl Cpu {
         let status = self.pull_byte(mem);
         let pc = self.pull_word(mem);
 
-        self.regs.status = StatusFlags::from_bits(status).unwrap();
+        self.flags = status.into();
         self.regs.pc = pc;
     }
 
@@ -921,21 +940,21 @@ impl Cpu {
     // Does AND #i, setting N and Z flags based on the result. Then it copies N (bit 7) to C
     fn anc(&mut self, mem: &mut impl Memory) {
         self.and(mem, AddressMode::Immediate);
-        let n = self.get_flag(StatusFlags::NEGATIVE_RESULT);
-        self.set_flags(StatusFlags::CARRY,  n);
+        let n = self.flags.n;
+        self.flags.c = n;
     }
 
     fn arr(&mut self, mem: &mut impl Memory) {
         let imm = self.next_pc_byte(mem);
 
         let a = self.regs.a;
-        self.regs.a = ((self.get_flag(StatusFlags::CARRY) as u8) << 7) | ((a & imm) >> 1);
+        self.regs.a = ((self.flags.c as u8) << 7) | ((a & imm) >> 1);
         let a = self.regs.a;
 
         self.set_zero_negative(a);
 
-        self.set_flags(StatusFlags::CARRY, (a & 0x40) != 0);
-        self.set_flags(StatusFlags::OVERFLOW, ((a  ^ (a << 1)) & 0x40) != 0);
+        self.flags.c = (a & 0x40) != 0;
+        self.flags.v = ((a  ^ (a << 1)) & 0x40) != 0;
     }
 
     // Sets X to {(A AND X) - #value without borrow}, and updates NZC
@@ -944,7 +963,7 @@ impl Cpu {
         let a_and_x = self.regs.a & self.regs.x;
         let result = (a_and_x).wrapping_sub(imm);
         self.set_zero_negative(result);
-        self.set_flags(StatusFlags::CARRY, imm <= a_and_x);
+        self.flags.c = imm <= a_and_x;
         self.regs.x = result;
     }
 
@@ -1068,7 +1087,7 @@ impl Cpu {
         match interrupt {
             Interrupt::Nmi => self.interrupt = Some(interrupt),
             Interrupt::Irq => {
-                if !self.get_flag(StatusFlags::INTERRUPT_DISABLE) {
+                if !self.flags.i {
                     self.interrupt = Some(interrupt);
                 }
             }
@@ -1092,7 +1111,7 @@ impl Cpu {
         self.push_word(mem, pc);
         self.php(mem);
         self.regs.pc = mem.read_word(vector);
-        self.set_flags(StatusFlags::INTERRUPT_DISABLE, true);
+        self.flags.i = true;
         self.interrupt = None;
         self.cycles += 7;
     }
