@@ -217,7 +217,7 @@ impl Ppu {
         self.frame = 0;
         *self.regs.ppu_ctrl = 0;
         *self.regs.ppu_mask = 0;
-        *self.regs.ppu_status != 0x80;
+        *self.regs.ppu_status = !0x80;
         self.ppu_data_read_buffer = 0;
     }
 
