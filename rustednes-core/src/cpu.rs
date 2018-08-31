@@ -259,6 +259,13 @@ impl Cpu {
         self.watchpoints.len() != 0 && self.watchpoints.contains(&addr)
     }
 
+
+    #[inline(always)]
+    fn dummy_read(&mut self, mem: &mut impl Memory) {
+        let pc = self.regs.pc;
+        mem.read_byte(pc);
+    }
+
     #[inline(always)]
     fn next_pc_byte(&mut self, mem: &mut impl Memory) -> u8 {
         let pc = self.regs.pc;
@@ -340,7 +347,10 @@ impl Cpu {
 
                 (mem.read_byte(addr), Some(addr))
             }
-            Register(reg) => (self.get_register(reg), None),
+            Register(reg) => {
+                self.dummy_read(mem);
+                (self.get_register(reg), None)
+            },
         }
     }
 
@@ -427,6 +437,7 @@ impl Cpu {
 
     fn ld_reg(&mut self, mem: &mut impl Memory, am: AddressMode, r: Register8) {
         let (m, _) = self.load(mem, am);
+        self.dummy_read(mem);
         self.set_zero_negative(m);
         self.set_register(r, m);
     }
@@ -684,31 +695,38 @@ impl Cpu {
         self.eor_value(m);
     }
 
-    fn sec(&mut self) {
+    fn sec(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         self.flags.c = true;
     }
 
-    fn clc(&mut self) {
+    fn clc(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         self.flags.c = false;
     }
 
-    fn sei(&mut self) {
+    fn sei(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         self.flags.i = true;
     }
 
-    fn cli(&mut self) {
+    fn cli(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         self.flags.i = false;
     }
 
-    fn sed(&mut self) {
+    fn sed(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         self.flags.d = true;
     }
 
-    fn cld(&mut self) {
+    fn cld(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         self.flags.d = false;
     }
 
-    fn clv(&mut self) {
+    fn clv(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         self.flags.v = false;
     }
 
@@ -802,61 +820,71 @@ impl Cpu {
         self.decrement(mem, am);
     }
 
-    fn inx(&mut self) {
+    fn inx(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         let val = self.regs.x.wrapping_add(1);
         self.set_zero_negative(val);
         self.regs.x = val;
     }
 
-    fn iny(&mut self) {
+    fn iny(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         let val = self.regs.y.wrapping_add(1);
         self.set_zero_negative(val);
         self.regs.y = val;
     }
 
-    fn dex(&mut self) {
+    fn dex(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         let val = self.regs.x.wrapping_sub(1);
         self.set_zero_negative(val);
         self.regs.x = val;
     }
 
-    fn dey(&mut self) {
+    fn dey(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         let val = self.regs.y.wrapping_sub(1);
         self.set_zero_negative(val);
         self.regs.y = val;
     }
 
-    fn tax(&mut self) {
+    fn tax(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         let a = self.regs.a;
         self.set_zero_negative(a);
         self.regs.x = a;
     }
 
-    fn txa(&mut self) {
+    fn txa(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         let x = self.regs.x;
         self.set_zero_negative(x);
         self.regs.a = x;
     }
 
-    fn tay(&mut self) {
+    fn tay(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         let a = self.regs.a;
         self.set_zero_negative(a);
         self.regs.y = a;
     }
 
-    fn tya(&mut self) {
+    fn tya(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         let y = self.regs.y;
         self.set_zero_negative(y);
         self.regs.a = y;
     }
 
-    fn tsx(&mut self) {
+    fn tsx(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         let s = self.regs.sp;
         self.set_zero_negative(s);
         self.regs.x = s;
     }
 
-    fn txs(&mut self) {
+    fn txs(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         self.regs.sp = self.regs.x;
     }
 
@@ -868,6 +896,7 @@ impl Cpu {
     }
 
     fn rts(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         self.regs.pc = self.pull_word(mem) + 1;
     }
 
@@ -911,14 +940,16 @@ impl Cpu {
     }
 
     fn brk(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         let pc = self.regs.pc;
         self.push_word(mem, pc + 1);
         self.php(mem);
-        self.sei();
+        self.sei(mem);
         self.regs.pc = mem.read_word(BRK_VECTOR);
     }
 
     fn rti(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
         let status = self.pull_byte(mem);
         let pc = self.pull_word(mem);
 
@@ -926,7 +957,9 @@ impl Cpu {
         self.regs.pc = pc;
     }
 
-    fn nop(&mut self) {}
+    fn nop(&mut self, mem: &mut impl Memory) {
+        self.dummy_read(mem);
+    }
 
     ///////////////////////////
     // Unofficial Instructions
@@ -1026,7 +1059,7 @@ impl Cpu {
     // Used by "Super Cars (U)"
     fn lax(&mut self, mem: &mut impl Memory, am: AddressMode) {
         self.lda(mem, am);
-        self.tax();
+        self.tax(mem);
     }
 
     // Equivalent to ASL value then ORA value

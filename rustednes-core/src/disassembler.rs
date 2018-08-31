@@ -128,31 +128,31 @@ impl Disassembler {
         self.dis_instruction("eor", mem, am)
     }
 
-    fn sec(&mut self) -> String {
+    fn sec(&mut self, _mem: &mut impl Memory) -> String {
         "sec".into()
     }
 
-    fn clc(&mut self) -> String {
+    fn clc(&mut self, _mem: &mut impl Memory) -> String {
         "clc".into()
     }
 
-    fn sei(&mut self) -> String {
+    fn sei(&mut self, _mem: &mut impl Memory) -> String {
         "sei".into()
     }
 
-    fn cli(&mut self) -> String {
+    fn cli(&mut self, _mem: &mut impl Memory) -> String {
         "cli".into()
     }
 
-    fn sed(&mut self) -> String {
+    fn sed(&mut self, _mem: &mut impl Memory) -> String {
         "sed".into()
     }
 
-    fn cld(&mut self) -> String {
+    fn cld(&mut self, _mem: &mut impl Memory) -> String {
         "cld".into()
     }
 
-    fn clv(&mut self) -> String {
+    fn clv(&mut self, _mem: &mut impl Memory) -> String {
         "clv".into()
     }
 
@@ -220,43 +220,43 @@ impl Disassembler {
         self.dis_instruction("dec", mem, am)
     }
 
-    fn inx(&mut self) -> String {
+    fn inx(&mut self, _mem: &mut impl Memory) -> String {
         "inx".into()
     }
 
-    fn iny(&mut self) -> String {
+    fn iny(&mut self, _mem: &mut impl Memory) -> String {
         "iny".into()
     }
 
-    fn dex(&mut self) -> String {
+    fn dex(&mut self, _mem: &mut impl Memory) -> String {
         "dex".into()
     }
 
-    fn dey(&mut self) -> String {
+    fn dey(&mut self, _mem: &mut impl Memory) -> String {
         "dey".into()
     }
 
-    fn tax(&mut self) -> String {
+    fn tax(&mut self, _mem: &mut impl Memory) -> String {
         "tax".into()
     }
 
-    fn txa(&mut self) -> String {
+    fn txa(&mut self, _mem: &mut impl Memory) -> String {
         "txa".into()
     }
 
-    fn tay(&mut self) -> String {
+    fn tay(&mut self, _mem: &mut impl Memory) -> String {
         "tay".into()
     }
 
-    fn tya(&mut self) -> String {
+    fn tya(&mut self, _mem: &mut impl Memory) -> String {
         "tya".into()
     }
 
-    fn tsx(&mut self) -> String {
+    fn tsx(&mut self, _mem: &mut impl Memory) -> String {
         "tsx".into()
     }
 
-    fn txs(&mut self) -> String {
+    fn txs(&mut self, _mem: &mut impl Memory) -> String {
         "txs".into()
     }
 
@@ -308,7 +308,7 @@ impl Disassembler {
         "rti".into()
     }
 
-    fn nop(&mut self) -> String {
+    fn nop(&mut self, _mem: &mut impl Memory) -> String {
         "nop".into()
     }
 
