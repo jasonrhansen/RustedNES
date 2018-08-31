@@ -24,11 +24,8 @@ pub struct State {
 impl Nes {
     pub fn new(cartridge: Cartridge) -> Nes {
         let mapper = Rc::new(RefCell::new(mapper::create_mapper(cartridge)));
-
-        let mut cpu = Cpu::new();
-
-        let interconnect = Interconnect::new(mapper, &mut cpu as *mut Cpu);
-
+        let cpu = Cpu::new();
+        let interconnect = Interconnect::new(mapper);
         let mut nes = Nes { interconnect, cpu };
 
         nes.reset();
@@ -71,14 +68,14 @@ impl Nes {
     }
 
     pub fn add_cheat(&mut self, cheat: Cheat) {
-        self.interconnect.cheats.insert(cheat.address(), cheat);
+        self.interconnect.add_cheat(cheat);
     }
 
     pub fn remove_cheat(&mut self, cheat: Cheat) {
-        self.interconnect.cheats.remove(&cheat.address());
+        self.interconnect.remove_cheat(cheat);
     }
 
     pub fn clear_cheats(&mut self) {
-        self.interconnect.cheats.clear();
+        self.interconnect.clear_cheats();
     }
 }

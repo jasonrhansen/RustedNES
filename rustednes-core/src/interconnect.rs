@@ -17,7 +17,7 @@ use game_genie::Cheat;
 
 use serde_bytes;
 
-const OAMDMA_ADDRESS: u16 = 0x4014;
+pub const OAMDMA_ADDRESS: u16 = 0x4014;
 
 pub struct Interconnect {
     pub ram: Ram,
@@ -25,8 +25,9 @@ pub struct Interconnect {
     pub apu: Apu,
     pub input: Input,
     pub mapper: Rc<RefCell<Box<Mapper>>>,
-    pub cpu: *mut Cpu,
-    pub cheats: HashMap<u16, Cheat>,
+    dma_cycles: u32,
+
+    cheats: HashMap<u16, Cheat>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -37,18 +38,19 @@ pub struct State {
     pub apu: apu::State,
     pub input: input::State,
     pub mapper: mapper::State,
+    pub dma_cycles: u32,
 }
 
 impl Interconnect {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>, cpu: *mut Cpu) -> Self {
+    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Self {
         Interconnect {
             ram: Ram::new(),
             ppu: Ppu::new(mapper.clone()),
             apu: Apu::new(mapper.clone()),
             input: Input::new(),
             mapper,
-            cpu,
             cheats: HashMap::new(),
+            dma_cycles: 0,
         }
     }
 
@@ -60,6 +62,7 @@ impl Interconnect {
             apu: self.apu.get_state(),
             input: self.input.get_state(),
             mapper: mapper.get_state(),
+            dma_cycles: self.dma_cycles,
         }
     }
 
@@ -70,6 +73,7 @@ impl Interconnect {
         self.input.apply_state(&state.input);
         let mut mapper = self.mapper.borrow_mut();
         mapper.apply_state(&state.mapper);
+        self.dma_cycles = state.dma_cycles;
     }
 
     fn handle_oam_dma(&mut self, addr_hi: u8) {
@@ -79,15 +83,12 @@ impl Interconnect {
             self.write_byte(OAMDATA_ADDRESS, val);
         }
 
-        unsafe {
-            let cpu = &mut *self.cpu;
-            // FIXME: An extra cycle should be added on an odd CPU cycle
-            // http://wiki.nesdev.com/w/index.php/PPU_registers#OAMDMA
-            // Currently we don't know what cycle we're on at this point
-            // because the instruction cycles get added after this function
-            // gets called.
-            cpu.cycles += 513;
-        }
+        // FIXME: An extra cycle should be added on an odd CPU cycle
+        // http://wiki.nesdev.com/w/index.php/PPU_registers#OAMDMA
+        // Currently we don't know what cycle we're on at this point
+        // because the instruction cycles get added after this function
+        // gets called.
+        self.dma_cycles += 513;
     }
 }
 
@@ -96,7 +97,7 @@ impl Memory for Interconnect {
         let byte = if address < 0x2000 {
             self.ram.read_byte(address)
         } else if address < 0x4000 {
-            self.ppu.read_byte(address)
+            self.ppu.read_byte(address & 0x2007)
         } else if address < 0x4016 {
             self.apu.read_byte(address)
         } else if address < 0x4018 {
@@ -142,6 +143,9 @@ impl Interconnect {
         video_frame_sink: &mut VideoSink,
         audio_frame_sink: &mut AudioSink,
     ) {
+        let cycles = cycles + self.dma_cycles;
+        self.dma_cycles = 0;
+
         for _ in 0..cycles {
             // 3 PPU cycles per CPU cycle
             for _ in 0..3 {
@@ -161,5 +165,17 @@ impl Interconnect {
         self.input = Input::new();
         let mut mapper = self.mapper.borrow_mut();
         mapper.reset();
+    }
+
+    pub fn add_cheat(&mut self, cheat: Cheat) {
+        self.cheats.insert(cheat.address(), cheat);
+    }
+
+    pub fn remove_cheat(&mut self, cheat: Cheat) {
+        self.cheats.remove(&cheat.address());
+    }
+
+    pub fn clear_cheats(&mut self) {
+        self.cheats.clear();
     }
 }
