@@ -8,7 +8,7 @@ license = "MIT/Apache-2.0"
 [dependencies]
 clap = "2.0.0"
 combine = "2.2.0"
-minifb = "0.10.3"
+minifb = "0.11"
 rustednes-core = { path = "../rustednes-core" }
 time = "0.1"
 cpal = "0.4.6"
