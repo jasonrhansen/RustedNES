@@ -1,9 +1,9 @@
-use cartridge;
-use cartridge::{Cartridge, Mirroring, PRG_ROM_BANK_SIZE};
-use mapper;
-use mapper::Mapper;
-use memory::Memory;
-use ppu::Vram;
+use crate::cartridge::{self, Cartridge, Mirroring, PRG_ROM_BANK_SIZE};
+use crate::mapper::{self, Mapper};
+use crate::memory::Memory;
+use crate::ppu::Vram;
+
+use serde_derive::{Deserialize, Serialize};
 
 pub struct Mapper1 {
     cartridge: Cartridge,
@@ -30,18 +30,17 @@ impl Regs {
     }
 }
 
-
 #[derive(Debug, Copy, Clone, Deserialize, Serialize)]
 enum PrgRomMode {
-    Switch32Kb,    // Switch 32 KB at $8000, ignoring low bit of bank number
-    FixFirstBank,  // Fix first bank at $8000 and switch 16 KB bank at $C000
-    FixLastBank,   // Fix last bank at $C000 and switch 16 KB bank at $8000
+    Switch32Kb,   // Switch 32 KB at $8000, ignoring low bit of bank number
+    FixFirstBank, // Fix first bank at $8000 and switch 16 KB bank at $C000
+    FixLastBank,  // Fix last bank at $C000 and switch 16 KB bank at $8000
 }
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize)]
 enum ChrRomMode {
-    Switch8Kb,     // Switch 8 KB at a time
-    Switch4Kb,     // Switch two separate 4 KB banks
+    Switch8Kb, // Switch 8 KB at a time
+    Switch4Kb, // Switch two separate 4 KB banks
 }
 
 #[derive(Deserialize, Serialize)]
@@ -91,12 +90,11 @@ impl Mapper1 {
             };
         } else if address < 0xC000 {
             self.regs.chr_bank_0 = shift & 0x1F;
-        } else if address <  0xE000 {
+        } else if address < 0xE000 {
             self.regs.chr_bank_1 = shift & 0x1F;
         } else {
             self.regs.prg_bank = shift & 0x0F;
         }
-
     }
 
     fn prg_rom_bank_first(&self) -> u8 {
@@ -111,13 +109,13 @@ impl Mapper1 {
         match self.prg_rom_mode() {
             PrgRomMode::Switch32Kb => (self.regs.prg_bank & 0xFE) | 0x01,
             PrgRomMode::FixFirstBank => self.regs.prg_bank,
-            PrgRomMode::FixLastBank =>  self.cartridge.prg_rom_num_banks - 1,
+            PrgRomMode::FixLastBank => self.cartridge.prg_rom_num_banks - 1,
         }
     }
 
     fn prg_rom_address(&self, bank: u8, address: u16) -> usize {
-        (bank as usize * PRG_ROM_BANK_SIZE as usize) |
-            (address as usize & (PRG_ROM_BANK_SIZE as usize - 1))
+        (bank as usize * PRG_ROM_BANK_SIZE as usize)
+            | (address as usize & (PRG_ROM_BANK_SIZE as usize - 1))
     }
 
     fn chr_address(&self, address: u16) -> usize {
@@ -129,7 +127,7 @@ impl Mapper1 {
                     self.regs.chr_bank_1
                 };
                 (bank as usize * 0x1000) | (address as usize & 0x0FFF)
-            },
+            }
             ChrRomMode::Switch8Kb => {
                 let bank = self.regs.chr_bank_0;
                 (bank as usize * 0x2000) | (address as usize & 0x1FFF)
@@ -216,13 +214,11 @@ impl Mapper for Mapper1 {
     }
 
     fn get_state(&self) -> mapper::State {
-        mapper::State::State1(
-            State {
-                cartridge: self.cartridge.get_state(),
-                shift: self.shift,
-                regs: self.regs,
-            }
-        )
+        mapper::State::State1(State {
+            cartridge: self.cartridge.get_state(),
+            shift: self.shift,
+            regs: self.regs,
+        })
     }
 
     fn apply_state(&mut self, state: &mapper::State) {
@@ -231,7 +227,7 @@ impl Mapper for Mapper1 {
                 self.cartridge.apply_state(&state.cartridge);
                 self.shift = state.shift;
                 self.regs = state.regs;
-            },
+            }
             _ => panic!("Invalid mapper state enum variant in apply_state"),
         }
     }

@@ -1,41 +1,26 @@
-use std::alloc::System;
-
 #[global_allocator]
 static GLOBAL: System = System;
 
-
-#[macro_use]
-extern crate clap;
-extern crate combine;
-extern crate cpal;
-extern crate futures;
-extern crate minifb;
-extern crate rustednes_core;
-extern crate serde;
-extern crate serde_json;
-extern crate time;
-
-#[cfg(not(windows))]
-extern crate liner;
+use crate::argparse::*;
+use crate::audio_driver::*;
+use crate::cpal_driver::*;
+use crate::emulator::*;
+use crate::null_audio_driver::*;
+use crate::system_time_source::*;
 
 use rustednes_core::apu::SAMPLE_RATE;
-
-use argparse::*;
-use audio_driver::*;
-use cpal_driver::*;
-use emulator::*;
-use null_audio_driver::*;
 use rustednes_core::cartridge::*;
+
+use std::alloc::System;
 use std::fs::File;
-use system_time_source::*;
 
 mod argparse;
-mod command;
-mod emulator;
-mod cpal_driver;
-mod system_time_source;
 mod audio_driver;
+mod command;
+mod cpal_driver;
+mod emulator;
 mod null_audio_driver;
+mod system_time_source;
 
 fn main() {
     let config = parse_args();
@@ -44,7 +29,7 @@ fn main() {
         Ok(rom) => {
             println!("{:?}", rom);
             run_rom(rom, config);
-        },
+        }
         Err(e) => println!("Error: {}", e),
     }
 }
@@ -62,12 +47,11 @@ fn run_rom(rom: Cartridge, config: CommandLineConfig) {
         println!("Audio sample rate: {}", audio_driver.sample_rate());
         Emulator::new(rom, audio_driver.sink(), time_source)
     } else {
-        let audio_driver = Box::new(NullAudioDriver{});
-        let time_source = Box::new(SystemTimeSource{});
+        let audio_driver = Box::new(NullAudioDriver {});
+        let time_source = Box::new(SystemTimeSource {});
         println!("Audio disabled");
         Emulator::new(rom, audio_driver.sink(), time_source)
     };
 
     emulator.run(config.debug);
 }
-

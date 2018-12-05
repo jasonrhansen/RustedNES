@@ -1,21 +1,19 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::collections::HashMap;
-
-use apu;
-use apu::Apu;
-use cpu::Cpu;
-use input;
-use input::Input;
-use mapper;
-use mapper::Mapper;
-use memory::{Memory, Ram};
-use ppu;
-use ppu::{Ppu, OAMDATA_ADDRESS};
-use sink::*;
-use game_genie::Cheat;
+use crate::apu;
+use crate::apu::Apu;
+use crate::cpu::Cpu;
+use crate::game_genie::Cheat;
+use crate::input::{self, Input};
+use crate::mapper::{self, Mapper};
+use crate::memory::{Memory, Ram};
+use crate::ppu::{self, Ppu, OAMDATA_ADDRESS};
+use crate::sink::*;
 
 use serde_bytes;
+use serde_derive::{Deserialize, Serialize};
+
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 pub const OAMDMA_ADDRESS: u16 = 0x4014;
 
@@ -112,7 +110,7 @@ impl Memory for Interconnect {
             if compare.is_none() || compare.unwrap() == byte {
                 return cheat.data();
             }
-        }    
+        }
 
         byte
     }

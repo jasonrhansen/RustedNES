@@ -1,5 +1,6 @@
-use memory::Memory;
-use cpu::{AddressMode, Register8};
+use crate::cpu::{AddressMode, Register8};
+use crate::memory::Memory;
+use crate::opcode;
 
 pub struct Disassembler {
     pub pc: u16,
@@ -7,9 +8,7 @@ pub struct Disassembler {
 
 impl Disassembler {
     pub fn new(pc: u16) -> Disassembler {
-        Disassembler {
-            pc,
-        }
+        Disassembler { pc }
     }
 
     pub fn disassemble_next<M: Memory>(&mut self, mem: &mut M) -> String {
@@ -40,29 +39,21 @@ impl Disassembler {
     }
 
     fn dis_am<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
-        use cpu::AddressMode::*;
+        use crate::cpu::AddressMode::*;
         match am {
             Immediate => format!("#{}", self.dis_pc_byte(mem)).into(),
             Absolute => self.dis_pc_word(mem),
             ZeroPage => self.dis_pc_byte(mem),
-            AbsoluteIndexed(reg) => {
-                format!("{},{}", self.dis_pc_word(mem), self.dis_reg(reg))
-            },
-            ZeroPageIndexed(reg) => {
-                format!("{},{}", self.dis_pc_byte(mem), self.dis_reg(reg))
-            },
-            IndexedIndirect(reg) => {
-                format!("({},{})", self.dis_pc_byte(mem), self.dis_reg(reg))
-            },
-            IndirectIndexed(reg) => {
-                format!("({}),{}", self.dis_pc_byte(mem), self.dis_reg(reg))
-            },
+            AbsoluteIndexed(reg) => format!("{},{}", self.dis_pc_word(mem), self.dis_reg(reg)),
+            ZeroPageIndexed(reg) => format!("{},{}", self.dis_pc_byte(mem), self.dis_reg(reg)),
+            IndexedIndirect(reg) => format!("({},{})", self.dis_pc_byte(mem), self.dis_reg(reg)),
+            IndirectIndexed(reg) => format!("({}),{}", self.dis_pc_byte(mem), self.dis_reg(reg)),
             Register(reg) => self.dis_reg(reg),
         }
     }
 
     fn dis_reg(&self, r: Register8) -> String {
-        use cpu::Register8::*;
+        use crate::cpu::Register8::*;
         match r {
             A => "a".into(),
             X => "x".into(),
@@ -72,7 +63,12 @@ impl Disassembler {
         }
     }
 
-    fn dis_instruction<M: Memory>(&mut self, instruction: &str, mem: &mut M, am: AddressMode) -> String {
+    fn dis_instruction<M: Memory>(
+        &mut self,
+        instruction: &str,
+        mem: &mut M,
+        am: AddressMode,
+    ) -> String {
         format!("{} {}", instruction, self.dis_am(mem, am)).into()
     }
 
@@ -388,4 +384,3 @@ impl Disassembler {
         self.dis_instruction("sxa", mem, AddressMode::AbsoluteIndexed(Register8::Y))
     }
 }
-

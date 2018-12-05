@@ -1,9 +1,8 @@
-use cartridge;
-use cartridge::{Cartridge, PRG_ROM_BANK_SIZE};
-use mapper;
-use mapper::Mapper;
-use memory::Memory;
-use ppu::Vram;
+use crate::cartridge::{self, Cartridge, PRG_ROM_BANK_SIZE};
+use crate::mapper::{self, Mapper};
+use crate::memory::Memory;
+use crate::ppu::Vram;
+use serde_derive::{Deserialize, Serialize};
 
 pub struct Mapper0 {
     cartridge: Cartridge,
@@ -11,9 +10,7 @@ pub struct Mapper0 {
 
 impl Mapper0 {
     pub fn new(cartridge: Cartridge) -> Self {
-        Mapper0 {
-            cartridge,
-        }
+        Mapper0 { cartridge }
     }
 
     fn mirror_address(&self, address: u16) -> u16 {
@@ -65,18 +62,16 @@ impl Mapper for Mapper0 {
     }
 
     fn get_state(&self) -> mapper::State {
-        mapper::State::State0(
-            State {
-                cartridge: self.cartridge.get_state(),
-            }
-        )
+        mapper::State::State0(State {
+            cartridge: self.cartridge.get_state(),
+        })
     }
 
     fn apply_state(&mut self, state: &mapper::State) {
         match state {
             &mapper::State::State0(ref state) => {
                 self.cartridge.apply_state(&state.cartridge);
-            },
+            }
             _ => panic!("Invalid mapper state enum variant in apply_state"),
         }
     }

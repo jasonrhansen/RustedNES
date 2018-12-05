@@ -1,9 +1,12 @@
-use audio_driver::AudioDriver;
+use crate::audio_driver::AudioDriver;
+
+use rustednes_core::sink::AudioSink;
+use rustednes_core::time_source::TimeSource;
+
 use cpal::{default_endpoint, EventLoop, UnknownTypeBuffer, Voice};
 use futures::stream::Stream;
 use futures::task::{self, Executor, Run};
-use rustednes_core::sink::AudioSink;
-use rustednes_core::time_source::TimeSource;
+
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
@@ -92,7 +95,7 @@ impl CpalDriver {
     pub fn new(desired_sample_rate: u32) -> Result<CpalDriver, CpalDriverError> {
         let endpoint = default_endpoint().expect("Failed to get audio endpoint");
 
-        let compare_sample_rates = |x: u32, y:u32| -> Ordering {
+        let compare_sample_rates = |x: u32, y: u32| -> Ordering {
             if x < desired_sample_rate && y > desired_sample_rate {
                 return Ordering::Greater;
             } else if x > desired_sample_rate && y < desired_sample_rate {
@@ -104,7 +107,8 @@ impl CpalDriver {
             }
         };
 
-        let format = endpoint.supported_formats()
+        let format = endpoint
+            .supported_formats()
             .expect("Failed to get supported format list for endpoint")
             .filter(|format| format.channels.len() == 2)
             .min_by(|x, y| compare_sample_rates(x.samples_rate.0, y.samples_rate.0))
@@ -116,7 +120,8 @@ impl CpalDriver {
 
         let event_loop = EventLoop::new();
 
-        let (mut voice, stream) = Voice::new(&endpoint, &format, &event_loop).expect("Failed to create voice");
+        let (mut voice, stream) =
+            Voice::new(&endpoint, &format, &event_loop).expect("Failed to create voice");
         voice.play();
 
         let mut resampler = LinearResampler::new(desired_sample_rate, sample_rate);
@@ -124,7 +129,6 @@ impl CpalDriver {
         let read_sample_buffer = sample_buffer.clone();
         task::spawn(stream.for_each(move |output_buffer| {
             let mut read_ring_buffer = read_sample_buffer.lock().unwrap();
-
 
             match output_buffer {
                 UnknownTypeBuffer::I16(mut buffer) => {
@@ -134,15 +138,16 @@ impl CpalDriver {
                             *out = val;
                         }
                     }
-                },
+                }
                 UnknownTypeBuffer::U16(mut buffer) => {
                     for sample in buffer.chunks_mut(format.channels.len()) {
-                        let val = ((resampler.next(&mut *read_ring_buffer) * 32768.0) + 32768.0) as u16;
+                        let val =
+                            ((resampler.next(&mut *read_ring_buffer) * 32768.0) + 32768.0) as u16;
                         for out in sample.iter_mut() {
                             *out = val;
                         }
                     }
-                },
+                }
                 UnknownTypeBuffer::F32(mut buffer) => {
                     for sample in buffer.chunks_mut(format.channels.len()) {
                         let val = resampler.next(&mut *read_ring_buffer);
@@ -150,11 +155,12 @@ impl CpalDriver {
                             *out = val;
                         }
                     }
-                },
+                }
             }
 
             Ok(())
-        })).execute(Arc::new(CpalDriverExecutor));
+        }))
+        .execute(Arc::new(CpalDriverExecutor));
 
         let join_handle = thread::spawn(move || {
             event_loop.run();
@@ -168,7 +174,6 @@ impl CpalDriver {
             _join_handle: join_handle,
         })
     }
-
 
     pub fn time_source(&self) -> Box<TimeSource> {
         Box::new(CpalDriverTimeSource {
@@ -228,8 +233,12 @@ impl LinearResampler {
             ((a * ((denom - num) as f32) + b * (num as f32)) / (denom as f32))
         }
 
-        let ret = interpolate(self.current_from_sample, self.next_from_sample,
-                              self.from_fract_pos, self.to_sample_rate);
+        let ret = interpolate(
+            self.current_from_sample,
+            self.next_from_sample,
+            self.from_fract_pos,
+            self.to_sample_rate,
+        );
 
         self.from_fract_pos += self.from_sample_rate;
         while self.from_fract_pos > self.to_sample_rate {

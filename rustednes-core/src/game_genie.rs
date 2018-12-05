@@ -27,7 +27,11 @@ impl Cheat {
 
 impl fmt::Debug for Cheat {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Cheat {{ address: 0x{:04x}, data: 0x{:02x}, compare: {} }}", self.address, self.data,
+        write!(
+            f,
+            "Cheat {{ address: 0x{:04x}, data: 0x{:02x}, compare: {} }}",
+            self.address,
+            self.data,
             if let Some(c) = self.compare {
                 format!("0x{:02x}", c)
             } else {
@@ -50,35 +54,30 @@ fn decode(code: &[u8]) -> Result<Cheat, String> {
 
     let n = n;
 
-    let address = 0x8000 + 
-              ((n[3] as u16 & 7) << 12)
-            | ((n[5] as u16 & 7) << 8) | ((n[4] as u16 & 8) << 8)
-            | ((n[2] as u16 & 7) << 4) | ((n[1] as u16 & 8) << 4)
-            |  (n[4] as u16 & 7)       |  (n[3] as u16 & 8);
+    let address = 0x8000 + ((n[3] as u16 & 7) << 12)
+        | ((n[5] as u16 & 7) << 8)
+        | ((n[4] as u16 & 8) << 8)
+        | ((n[2] as u16 & 7) << 4)
+        | ((n[1] as u16 & 8) << 4)
+        | (n[4] as u16 & 7)
+        | (n[3] as u16 & 8);
 
     let (data, compare) = if len == 8 {
         (
-            ((n[1] & 7) << 4) | ((n[0] & 8) << 4)
-           | (n[0] & 7)       |  (n[7] & 8),
-
-
-            Some(((n[7] & 7) << 4) | ((n[6] & 8) << 4)
-                | (n[6] & 7)       |  (n[5] & 8))
+            ((n[1] & 7) << 4) | ((n[0] & 8) << 4) | (n[0] & 7) | (n[7] & 8),
+            Some(((n[7] & 7) << 4) | ((n[6] & 8) << 4) | (n[6] & 7) | (n[5] & 8)),
         )
-
     } else {
         (
-            ((n[1] & 7) << 4) | ((n[0] & 8) << 4)
-           | (n[0] & 7)       |  (n[5] & 8),
-
-           None
+            ((n[1] & 7) << 4) | ((n[0] & 8) << 4) | (n[0] & 7) | (n[5] & 8),
+            None,
         )
     };
 
     Ok(Cheat {
         address,
         data,
-        compare
+        compare,
     })
 }
 
@@ -100,14 +99,14 @@ fn decode_byte(byte: u8) -> Result<u8, String> {
         'S' => Ok(0xD),
         'V' => Ok(0xE),
         'N' => Ok(0xF),
-        c  => Err(format!("Invalid code byte {}", c)),
+        c => Err(format!("Invalid code byte {}", c)),
     }
 }
 
 #[test]
 fn test_valid_cheats() {
     let tests = [
-        ("GOSSIP",   0xD1DD, 0x14, None),
+        ("GOSSIP", 0xD1DD, 0x14, None),
         ("ZEXPYGLA", 0x94A7, 0x02, Some(0x03)),
         ("NTEINNYK", 0xDF07, 0xEF, Some(0x4F)),
         ("GXVUZGVG", 0xB4EA, 0x24, Some(0xC6)),
@@ -115,22 +114,22 @@ fn test_valid_cheats() {
     ];
 
     for (code, address, data, compare) in tests.iter() {
-        assert_eq!(Cheat::from_code(code.as_bytes()).unwrap(), 
-            Cheat {address: *address, data: *data, compare: *compare});
+        assert_eq!(
+            Cheat::from_code(code.as_bytes()).unwrap(),
+            Cheat {
+                address: *address,
+                data: *data,
+                compare: *compare
+            }
+        );
     }
 }
 
 #[test]
 fn test_invalid_cheats() {
-    let tests = [
-        "GOSSI",
-        "GOSSIPP",
-        "BBBBBB",
-        "CCCCCCCC",
-    ];
-
+    let tests = ["GOSSI", "GOSSIPP", "BBBBBB", "CCCCCCCC"];
 
     for code in tests.iter() {
-        assert!(Cheat::from_code(code.as_bytes()).is_err()) 
+        assert!(Cheat::from_code(code.as_bytes()).is_err())
     }
 }

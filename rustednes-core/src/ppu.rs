@@ -1,15 +1,17 @@
+use crate::cpu::{Cpu, Interrupt};
+use crate::mapper::Mapper;
+use crate::memory::Memory;
+use crate::sink::*;
+
+use bit_reverse::ParallelReverse;
+use bitflags::bitflags;
+use serde_bytes;
+use serde_derive::{Deserialize, Serialize};
+
 use std::cell::RefCell;
 use std::default::Default;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
-
-use bit_reverse::ParallelReverse;
-use serde_bytes;
-
-use cpu::{Cpu, Interrupt};
-use mapper::Mapper;
-use memory::Memory;
-use sink::*;
 
 pub const SCREEN_WIDTH: usize = 256;
 pub const SCREEN_HEIGHT: usize = 240;
@@ -248,7 +250,8 @@ impl Ppu {
     fn write_oam_byte(&mut self, val: u8) {
         // Ignore writes during rendering
         // http://wiki.nesdev.com/w/index.php/PPU_registers#OAM_data_.28.242004.29_.3C.3E_read.2Fwrite
-        if self.rendering_enabled() && VISIBLE_START_SCANLINE <= self.scanline
+        if self.rendering_enabled()
+            && VISIBLE_START_SCANLINE <= self.scanline
             && self.scanline <= VISIBLE_END_SCANLINE
         {
             return;
@@ -276,7 +279,8 @@ impl Ppu {
             }
             WriteToggle::SecondWrite => {
                 // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242005_second_write_.28w_is_1.29
-                self.regs.t = (self.regs.t & 0x0C1F) | (((value & 0x07) as u16) << 12)
+                self.regs.t = (self.regs.t & 0x0C1F)
+                    | (((value & 0x07) as u16) << 12)
                     | (((value & 0xF8) as u16) << 2);
                 self.regs.w = WriteToggle::FirstWrite;
             }
@@ -469,7 +473,8 @@ impl Ppu {
                     row = 7 - row;
                 }
 
-                (sprite.tile_index as u16) * 16 + self.regs.ppu_ctrl.sprite_pattern_table_address()
+                (sprite.tile_index as u16) * 16
+                    + self.regs.ppu_ctrl.sprite_pattern_table_address()
                     + row
             }
             SpriteSize::Size8x16 => {
@@ -681,7 +686,8 @@ impl Ppu {
                 }
             }
 
-            if self.scanline == PRE_RENDER_SCANLINE && 280 <= scanline_cycle
+            if self.scanline == PRE_RENDER_SCANLINE
+                && 280 <= scanline_cycle
                 && scanline_cycle <= 304
             {
                 // Copy bits related to vertical position from t to v
@@ -805,8 +811,10 @@ impl Memory for Ppu {
         // Writes to the following registers are ignored if earlier than
         // ~29658 CPU clocks after reset: PPUCTRL, PPUMASK, PPUSCROLL, PPUADDR
         if self.cycles < 3 * 29658
-            && (address == PPUCTRL_ADDRESS || address == PPUMASK_ADDRESS
-                || address == PPUSCROLL_ADDRESS || address == PPUADDR_ADDRESS)
+            && (address == PPUCTRL_ADDRESS
+                || address == PPUMASK_ADDRESS
+                || address == PPUSCROLL_ADDRESS
+                || address == PPUADDR_ADDRESS)
         {
             return;
         }

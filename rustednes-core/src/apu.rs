@@ -1,12 +1,16 @@
-use cpu::{Cpu, Interrupt, CPU_FREQUENCY};
-use mapper::Mapper;
-use memory::Memory;
-use sink::*;
+use crate::cpu::{Cpu, Interrupt, CPU_FREQUENCY};
+use crate::mapper::Mapper;
+use crate::memory::Memory;
+use crate::sink::*;
+
+use lazy_static::lazy_static;
+use serde_derive::{Deserialize, Serialize};
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub const SAMPLE_RATE: u32 = 44_100;
+pub const CYCLES_PER_SAMPLE: u64 = 41;
+pub const SAMPLE_RATE: u32 = (CPU_FREQUENCY / CYCLES_PER_SAMPLE) as u32;
 
 static DUTY_CYCLE_TABLE: &[[u8; 8]] = &[
     [0, 1, 0, 0, 0, 0, 0, 0],
@@ -15,11 +19,13 @@ static DUTY_CYCLE_TABLE: &[[u8; 8]] = &[
     [1, 0, 0, 1, 1, 1, 1, 1],
 ];
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static LENGTH_TABLE: &[u8] = &[
     10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
     12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
 ];
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static TRIANGLE_TABLE: &[u8] = &[
     15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0,
      0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
@@ -59,7 +65,6 @@ pub struct Apu {
     noise: Noise,
     dmc: Dmc,
     frame_counter: FrameCounter,
-    cycles_per_sample: f64,
 
     mapper: Rc<RefCell<Box<Mapper>>>,
 
@@ -89,12 +94,11 @@ impl Apu {
             noise: Noise::new(),
             dmc: Dmc::new(),
             frame_counter: FrameCounter::new(),
-            cycles_per_sample: (CPU_FREQUENCY as f64) / (SAMPLE_RATE as f64),
             mapper,
             filter: Box::new(
                 LowPassFilter::new(0.815686)
-                .chain(HighPassFilter::new(0.996039))
-                .chain(HighPassFilter::new(0.999835))
+                    .chain(HighPassFilter::new(0.996039))
+                    .chain(HighPassFilter::new(0.999835)),
             ),
             settings: Settings {
                 pulse_1_enabled: true,
@@ -152,9 +156,7 @@ impl Apu {
             self.step_frame_counter(cpu);
         }
 
-        let s1 = ((cycle_1 as f64) / self.cycles_per_sample) as u64;
-        let s2 = ((cycle_2 as f64) / self.cycles_per_sample) as u64;
-        if s1 != s2 {
+        if cycle_2 % CYCLES_PER_SAMPLE == 0 {
             let mut sample = self.generate_sample();
             if self.settings.filter_enabled {
                 sample = self.filter.step(sample);
@@ -601,9 +603,11 @@ impl Pulse {
     }
 
     fn output(&self) -> u8 {
-        if !self.enabled || self.length_counter.count == 0
+        if !self.enabled
+            || self.length_counter.count == 0
             || DUTY_CYCLE_TABLE[self.duty_mode as usize][self.duty_cycle as usize] == 0
-            || self.timer_period < 8 || self.timer_period > 0x7FF
+            || self.timer_period < 8
+            || self.timer_period > 0x7FF
         {
             0
         } else if self.envelope.enabled {
@@ -911,14 +915,12 @@ impl FrameCounter {
 trait Filter {
     fn step(&mut self, sample: f32) -> f32;
 
-    fn chain<U>(self, other: U) -> FilterChain<Self, U> where
-        Self: Sized, 
-        U: Filter
+    fn chain<U>(self, other: U) -> FilterChain<Self, U>
+    where
+        Self: Sized,
+        U: Filter,
     {
-        FilterChain {
-            a: self, 
-            b: other
-        }
+        FilterChain { a: self, b: other }
     }
 }
 
@@ -927,11 +929,12 @@ struct FilterChain<A, B> {
     b: B,
 }
 
-impl<A, B> Filter for FilterChain<A, B> where
+impl<A, B> Filter for FilterChain<A, B>
+where
     A: Filter,
-    B: Filter 
+    B: Filter,
 {
-     fn step(&mut self, sample: f32) -> f32 {
+    fn step(&mut self, sample: f32) -> f32 {
         self.b.step(self.a.step(sample))
     }
 }
@@ -943,10 +946,7 @@ struct LowPassFilter {
 
 impl LowPassFilter {
     fn new(k: f32) -> LowPassFilter {
-        LowPassFilter {
-            last_out: 0.0,
-            k,
-        }
+        LowPassFilter { last_out: 0.0, k }
     }
 }
 

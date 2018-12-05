@@ -1,9 +1,9 @@
-use cartridge;
-use cartridge::{Cartridge, Mirroring};
-use mapper;
-use mapper::Mapper;
-use memory::Memory;
-use ppu::Vram;
+use crate::cartridge::{self, Cartridge, Mirroring};
+use crate::mapper::{self, Mapper};
+use crate::memory::Memory;
+use crate::ppu::Vram;
+
+use serde_derive::{Deserialize, Serialize};
 
 pub struct Mapper9 {
     cartridge: Cartridge,
@@ -130,6 +130,9 @@ impl Mapper for Mapper9 {
     fn ppu_read_byte(&mut self, vram: &mut Vram, address: u16) -> u8 {
         if address < 0x2000 {
             let chr_addr = self.chr_address(address);
+            let value = self.cartridge.chr[chr_addr as usize];
+
+            // Latch should be updated AFTER the byte is fetched
             if address == 0x0FD8 {
                 self.latch_0 = 0xFD;
             } else if address == 0x0FE8 {
@@ -139,7 +142,8 @@ impl Mapper for Mapper9 {
             } else if 0x1FE8 <= address && address <= 0x1FEF {
                 self.latch_1 = 0xFE;
             }
-            self.cartridge.chr[chr_addr as usize]
+
+            value
         } else {
             vram.read_byte(self.mirror_address(address) - 0x2000)
         }
@@ -169,21 +173,19 @@ impl Mapper for Mapper9 {
     }
 
     fn get_state(&self) -> mapper::State {
-        mapper::State::State9(
-            State {
-                cartridge: self.cartridge.get_state(),
-                latch_0: self.latch_0,
-                latch_1: self.latch_1,
-                prg_rom_switchable_bank: self.prg_rom_switchable_bank,
-                prg_rom_fixed_bank_1: self.prg_rom_fixed_bank_1,
-                prg_rom_fixed_bank_2: self.prg_rom_fixed_bank_2,
-                prg_rom_fixed_bank_3: self.prg_rom_fixed_bank_3,
-                chr_fd_0000_bank: self.chr_fd_0000_bank,
-                chr_fe_0000_bank: self.chr_fe_0000_bank,
-                chr_fd_1000_bank: self.chr_fd_1000_bank,
-                chr_fe_1000_bank: self.chr_fe_1000_bank,
-            }
-        )
+        mapper::State::State9(State {
+            cartridge: self.cartridge.get_state(),
+            latch_0: self.latch_0,
+            latch_1: self.latch_1,
+            prg_rom_switchable_bank: self.prg_rom_switchable_bank,
+            prg_rom_fixed_bank_1: self.prg_rom_fixed_bank_1,
+            prg_rom_fixed_bank_2: self.prg_rom_fixed_bank_2,
+            prg_rom_fixed_bank_3: self.prg_rom_fixed_bank_3,
+            chr_fd_0000_bank: self.chr_fd_0000_bank,
+            chr_fe_0000_bank: self.chr_fe_0000_bank,
+            chr_fd_1000_bank: self.chr_fd_1000_bank,
+            chr_fe_1000_bank: self.chr_fe_1000_bank,
+        })
     }
 
     fn apply_state(&mut self, state: &mapper::State) {
@@ -200,7 +202,7 @@ impl Mapper for Mapper9 {
                 self.chr_fe_0000_bank = state.chr_fe_0000_bank;
                 self.chr_fd_1000_bank = state.chr_fd_1000_bank;
                 self.chr_fe_1000_bank = state.chr_fe_1000_bank;
-            },
+            }
             _ => panic!("Invalid mapper state enum variant in apply_state"),
         }
     }

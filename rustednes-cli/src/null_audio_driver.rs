@@ -1,11 +1,12 @@
-use audio_driver::AudioDriver;
+use crate::audio_driver::AudioDriver;
+
 use rustednes_core::sink::AudioSink;
 
 pub struct NullAudioDriver;
 
 impl AudioDriver for NullAudioDriver {
     fn sink(&self) -> Box<AudioSink> {
-        Box::new(NullAudioSink{})
+        Box::new(NullAudioSink {})
     }
 
     fn sample_rate(&self) -> u32 {

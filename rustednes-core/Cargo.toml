@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Jason Rodney Hansen <jasonrodneyhansen@gmail.com>"]
 description = "The core of RustedNES, an NES (Nintendo Entertainment System) emulator"
 license = "MIT/Apache-2.0"
+edition = "2018"
 
 [dependencies]
 bitflags = "1.0"

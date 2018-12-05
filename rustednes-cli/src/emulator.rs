@@ -1,5 +1,5 @@
-use command::*;
-use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
+use crate::command::*;
+
 use rustednes_core::cartridge::Cartridge;
 use rustednes_core::cpu::CPU_FREQUENCY;
 use rustednes_core::disassembler::Disassembler;
@@ -10,7 +10,10 @@ use rustednes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use rustednes_core::serialize;
 use rustednes_core::sink::*;
 use rustednes_core::time_source::TimeSource;
+
+use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
 use serde_json;
+
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -53,8 +56,11 @@ pub struct Emulator {
 }
 
 impl Emulator {
-    pub fn new(cartridge: Cartridge, audio_frame_sink: Box<AudioSink>,
-               time_source: Box<TimeSource>) -> Emulator {
+    pub fn new(
+        cartridge: Cartridge,
+        audio_frame_sink: Box<AudioSink>,
+        time_source: Box<TimeSource>,
+    ) -> Emulator {
         let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
         let _stdin_thread = thread::spawn(move || {
@@ -62,15 +68,18 @@ impl Emulator {
         });
 
         Emulator {
-            window: Window::new("RustedNES",
-                                SCREEN_WIDTH, SCREEN_HEIGHT,
-                                WindowOptions {
-                                    borderless: false,
-                                    title: true,
-                                    resize: false,
-                                    scale: Scale::X2,
-                                }
-            ).unwrap(),
+            window: Window::new(
+                "RustedNES",
+                SCREEN_WIDTH,
+                SCREEN_HEIGHT,
+                WindowOptions {
+                    borderless: false,
+                    title: true,
+                    resize: false,
+                    scale: Scale::X2,
+                },
+            )
+            .unwrap(),
 
             nes: Nes::new(cartridge),
             mode: Mode::Running,
@@ -116,14 +125,14 @@ impl Emulator {
                     Mode::Running => {
                         let mut start_debugger = false;
                         while self.emulated_cycles < target_cycles && !start_debugger {
-                            let (_cycles, trigger_watchpoint) =
-                                self.step(&mut video_frame_sink);
+                            let (_cycles, trigger_watchpoint) = self.step(&mut video_frame_sink);
 
                             self.emulated_instructions += 1;
 
-                            if trigger_watchpoint ||
-                                (self.breakpoints.len() != 0 &&
-                                    self.breakpoints.contains(&self.nes.cpu.regs().pc)) {
+                            if trigger_watchpoint
+                                || (self.breakpoints.len() != 0
+                                    && self.breakpoints.contains(&self.nes.cpu.regs().pc))
+                            {
                                 start_debugger = true;
                             }
                         }
@@ -131,7 +140,7 @@ impl Emulator {
                         if start_debugger {
                             self.start_debugger();
                         }
-                    },
+                    }
                     Mode::Debugging => {
                         if self.run_debugger_commands(&mut video_frame_sink) {
                             break;
@@ -184,7 +193,8 @@ impl Emulator {
                     }
 
                     if self.window.is_key_pressed(Key::Key1, KeyRepeat::No) {
-                        self.serialized = serde_json::to_string(&serialize::get_state(&self.nes)).ok();
+                        self.serialized =
+                            serde_json::to_string(&serialize::get_state(&self.nes)).ok();
                     }
 
                     if self.window.is_key_pressed(Key::F1, KeyRepeat::No) {
@@ -201,10 +211,10 @@ impl Emulator {
         }
     }
 
-    fn step(&mut self,
-            video_frame_sink: &mut VideoSink) -> (u32, bool) {
-        let (cycles, trigger_watchpoint) =
-            self.nes.step(video_frame_sink, self.audio_frame_sink.as_mut());
+    fn step(&mut self, video_frame_sink: &mut VideoSink) -> (u32, bool) {
+        let (cycles, trigger_watchpoint) = self
+            .nes
+            .step(video_frame_sink, self.audio_frame_sink.as_mut());
 
         self.emulated_cycles += cycles as u64;
 
@@ -214,22 +224,14 @@ impl Emulator {
     fn read_input_keys(&mut self) {
         let game_pad_1 = &mut self.nes.interconnect.input.game_pad_1;
 
-        game_pad_1.set_button_pressed(Button::A,
-                                      self.window.is_key_down(Key::X));
-        game_pad_1.set_button_pressed(Button::B,
-                                      self.window.is_key_down(Key::Z));
-        game_pad_1.set_button_pressed(Button::Select,
-                                      self.window.is_key_down(Key::Space));
-        game_pad_1.set_button_pressed(Button::Start,
-                                      self.window.is_key_down(Key::Enter));
-        game_pad_1.set_button_pressed(Button::Up,
-                                      self.window.is_key_down(Key::Up));
-        game_pad_1.set_button_pressed(Button::Down,
-                                      self.window.is_key_down(Key::Down));
-        game_pad_1.set_button_pressed(Button::Left,
-                                      self.window.is_key_down(Key::Left));
-        game_pad_1.set_button_pressed(Button::Right,
-                                      self.window.is_key_down(Key::Right));
+        game_pad_1.set_button_pressed(Button::A, self.window.is_key_down(Key::X));
+        game_pad_1.set_button_pressed(Button::B, self.window.is_key_down(Key::Z));
+        game_pad_1.set_button_pressed(Button::Select, self.window.is_key_down(Key::Space));
+        game_pad_1.set_button_pressed(Button::Start, self.window.is_key_down(Key::Enter));
+        game_pad_1.set_button_pressed(Button::Up, self.window.is_key_down(Key::Up));
+        game_pad_1.set_button_pressed(Button::Down, self.window.is_key_down(Key::Down));
+        game_pad_1.set_button_pressed(Button::Left, self.window.is_key_down(Key::Left));
+        game_pad_1.set_button_pressed(Button::Right, self.window.is_key_down(Key::Right));
     }
 
     fn start_debugger(&mut self) {
@@ -245,13 +247,12 @@ impl Emulator {
 
     fn run_debugger_commands(&mut self, video_frame_sink: &mut VideoSink) -> bool {
         while let Ok(command_string) = self.stdin_receiver.try_recv() {
-            let command =
-                match (command_string.parse(), self.last_command.clone()) {
-                    (Ok(Command::Repeat), Some(c)) => Ok(c),
-                    (Ok(Command::Repeat), None) => Err("No last command".into()),
-                    (Ok(c), _) => Ok(c),
-                    (Err(e), _) => Err(e),
-                };
+            let command = match (command_string.parse(), self.last_command.clone()) {
+                (Ok(Command::Repeat), Some(c)) => Ok(c),
+                (Ok(Command::Repeat), None) => Err("No last command".into()),
+                (Ok(c), _) => Ok(c),
+                (Err(e), _) => Err(e),
+            };
 
             if let Ok(command) = command {
                 match command {
@@ -266,24 +267,25 @@ impl Emulator {
                         println!("sp: 0x{:02x}", regs.sp);
                         println!("status: 0x{:02x}", status);
                         println!("Flags: {:?}", flags);
-                    },
+                    }
                     Command::Step(count) => {
                         for _ in 0..count {
-                            self.nes.step(video_frame_sink, self.audio_frame_sink.as_mut());
+                            self.nes
+                                .step(video_frame_sink, self.audio_frame_sink.as_mut());
                             self.emulated_instructions += 1;
                             self.cursor = self.nes.cpu.regs().pc;
                             print!("{} 0x{:04x}  ", self.emulated_instructions, self.cursor);
                             self.disassemble_instruction();
                         }
-                    },
+                    }
                     Command::Continue => {
                         self.mode = Mode::Running;
-                        self.start_time_ns = self.time_source.time_ns() -
-                            (self.emulated_cycles * CPU_CYCLE_TIME_NS);
-                    },
+                        self.start_time_ns =
+                            self.time_source.time_ns() - (self.emulated_cycles * CPU_CYCLE_TIME_NS);
+                    }
                     Command::Goto(address) => {
                         self.cursor = address;
-                    },
+                    }
                     Command::ShowMem(address) => {
                         if let Some(address) = address {
                             self.cursor = address;
@@ -305,7 +307,7 @@ impl Emulator {
                             }
                             println!();
                         }
-                    },
+                    }
                     Command::ShowPpuMem(address) => {
                         let mut cursor = address;
 
@@ -323,7 +325,7 @@ impl Emulator {
                             }
                             println!();
                         }
-                    },
+                    }
                     Command::ShowStack => {
                         let sp = self.nes.cpu.regs().sp;
                         let addr = 0x0100 | sp as u16;
@@ -332,54 +334,54 @@ impl Emulator {
                             let byte = self.nes.interconnect.read_byte(addr + i);
                             println!("0x{:04x}  {:02x}", addr + i, byte);
                         }
-                    },
+                    }
                     Command::Disassemble(count) => {
                         for _ in 0..count {
                             self.cursor = self.disassemble_instruction();
                         }
-                    },
+                    }
                     Command::Label => {
                         for (label, address) in self.labels.iter() {
                             println!(".{}: 0x{:04x}", label, address);
                         }
-                    },
+                    }
                     Command::AddLabel(ref label, address) => {
                         self.labels.insert(label.clone(), address);
-                    },
+                    }
                     Command::RemoveLabel(ref label) => {
                         if let None = self.labels.remove(label) {
                             println!("Label .{} doesn't exist", label);
                         }
-                    },
+                    }
                     Command::Breakpoint => {
                         for address in self.breakpoints.iter() {
                             println!("* 0x{:04x}", address);
                         }
-                    },
+                    }
                     Command::AddBreakpoint(address) => {
                         self.breakpoints.insert(address);
-                    },
+                    }
                     Command::RemoveBreakpoint(address) => {
                         if !self.breakpoints.remove(&address) {
                             println!("Breakpoint at 0x{:04x} doesn't exist", address);
                         }
-                    },
+                    }
                     Command::Watchpoint => {
                         for address in self.nes.cpu.watchpoints.iter() {
                             println!("* 0x{:04x}", address);
                         }
-                    },
+                    }
                     Command::AddWatchpoint(address) => {
                         self.nes.cpu.watchpoints.insert(address);
-                    },
+                    }
                     Command::RemoveWatchpoint(address) => {
                         if !self.nes.cpu.watchpoints.remove(&address) {
                             println!("Watchpoint at 0x{:04x} doesn't exist", address);
                         }
-                    },
+                    }
                     Command::Exit => {
                         return true;
-                    },
+                    }
                     Command::Repeat => unreachable!(),
                 }
 
@@ -402,7 +404,9 @@ impl Emulator {
     }
 
     fn print_cursor(&self) {
-        self.prompt_sender.send(format!("(rustednes-debug 0x{:04x}) > ", self.cursor)).unwrap();
+        self.prompt_sender
+            .send(format!("(rustednes-debug 0x{:04x}) > ", self.cursor))
+            .unwrap();
     }
 
     fn print_labels_at_cursor(&mut self) {
@@ -419,8 +423,7 @@ fn input_loop(stdin_sender: Sender<String>, prompt_receiver: Receiver<String>) {
     let mut con = liner::Context::new();
     loop {
         if let Ok(prompt) = prompt_receiver.recv() {
-            let res = con.read_line(prompt,
-                                    &mut |_| {});
+            let res = con.read_line(prompt, &mut |_| {});
             if let Ok(res) = res {
                 stdin_sender.send(res.as_str().into()).unwrap();
                 con.history.push(res.into()).unwrap();

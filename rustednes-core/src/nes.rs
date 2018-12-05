@@ -1,14 +1,16 @@
+use crate::cartridge::Cartridge;
+use crate::cpu;
+use crate::cpu::Cpu;
+use crate::game_genie::Cheat;
+use crate::interconnect;
+use crate::interconnect::Interconnect;
+use crate::mapper;
+use crate::sink::*;
+
+use serde_derive::{Deserialize, Serialize};
+
 use std::cell::RefCell;
 use std::rc::Rc;
-
-use cartridge::Cartridge;
-use cpu;
-use cpu::Cpu;
-use interconnect;
-use interconnect::Interconnect;
-use mapper;
-use sink::*;
-use game_genie::Cheat;
 
 pub struct Nes {
     pub interconnect: Interconnect,

@@ -1,4 +1,6 @@
-use memory::Memory;
+use crate::memory::Memory;
+
+use serde_derive::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Deserialize, Serialize)]
 pub enum Button {
@@ -38,7 +40,7 @@ impl GamePad {
             left_pressed: false,
             right_pressed: false,
 
-            strobe_state: StrobeState { button: Button::A }
+            strobe_state: StrobeState { button: Button::A },
         }
     }
 

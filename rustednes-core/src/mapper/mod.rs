@@ -13,10 +13,12 @@ use self::mapper3::Mapper3;
 use self::mapper4::Mapper4;
 use self::mapper7::Mapper7;
 use self::mapper9::Mapper9;
-use super::ppu::Vram;
 use super::cartridge::Cartridge;
 use super::cpu::Cpu;
 use super::ppu::Ppu;
+use super::ppu::Vram;
+
+use serde_derive::{Deserialize, Serialize};
 
 use std::ptr;
 
@@ -51,7 +53,7 @@ pub fn create_mapper(cartridge: Cartridge) -> Box<Mapper> {
         4 => Box::new(Mapper4::new(cartridge)),
         7 => Box::new(Mapper7::new(cartridge)),
         9 => Box::new(Mapper9::new(cartridge)),
-        _ => panic!("Unsupported mapper number: {}", cartridge.mapper)
+        _ => panic!("Unsupported mapper number: {}", cartridge.mapper),
     }
 }
 

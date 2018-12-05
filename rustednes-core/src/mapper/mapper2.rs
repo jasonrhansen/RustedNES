@@ -1,9 +1,8 @@
-use cartridge;
-use cartridge::{Cartridge, PRG_ROM_BANK_SIZE};
-use mapper;
-use mapper::Mapper;
-use memory::Memory;
-use ppu::Vram;
+use crate::cartridge::{self, Cartridge, PRG_ROM_BANK_SIZE};
+use crate::mapper::{self, Mapper};
+use crate::memory::Memory;
+use crate::ppu::Vram;
+use serde_derive::{Deserialize, Serialize};
 
 pub struct Mapper2 {
     cartridge: Cartridge,
@@ -25,8 +24,8 @@ impl Mapper2 {
     }
 
     fn prg_rom_address(bank: u8, address: u16) -> usize {
-        (bank as usize * PRG_ROM_BANK_SIZE as usize) |
-            (address as usize & (PRG_ROM_BANK_SIZE as usize - 1))
+        (bank as usize * PRG_ROM_BANK_SIZE as usize)
+            | (address as usize & (PRG_ROM_BANK_SIZE as usize - 1))
     }
 
     fn mirror_address(&self, address: u16) -> u16 {
@@ -56,7 +55,8 @@ impl Mapper for Mapper2 {
 
     fn prg_write_byte(&mut self, address: u16, value: u8) {
         if address >= 0x8000 {
-            self.switchable_bank = ((value as usize) % (self.cartridge.prg_rom_num_banks) as usize) as u8;
+            self.switchable_bank =
+                ((value as usize) % (self.cartridge.prg_rom_num_banks) as usize) as u8;
         }
     }
 
@@ -81,12 +81,10 @@ impl Mapper for Mapper2 {
     }
 
     fn get_state(&self) -> mapper::State {
-        mapper::State::State2(
-            State {
-                cartridge: self.cartridge.get_state(),
-                switchable_bank: self.switchable_bank,
-            }
-        )
+        mapper::State::State2(State {
+            cartridge: self.cartridge.get_state(),
+            switchable_bank: self.switchable_bank,
+        })
     }
 
     fn apply_state(&mut self, state: &mapper::State) {
@@ -94,7 +92,7 @@ impl Mapper for Mapper2 {
             &mapper::State::State2(ref state) => {
                 self.cartridge.apply_state(&state.cartridge);
                 self.switchable_bank = state.switchable_bank;
-            },
+            }
             _ => panic!("Invalid mapper state enum variant in apply_state"),
         }
     }

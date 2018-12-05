@@ -5,8 +5,7 @@ pub trait Memory {
     fn write_byte(&mut self, address: u16, value: u8);
 
     fn read_word(&mut self, address: u16) -> u16 {
-        self.read_byte(address) as u16 |
-            ((self.read_byte(address + 1) as u16) << 8)
+        self.read_byte(address) as u16 | ((self.read_byte(address + 1) as u16) << 8)
     }
 
     fn write_word(&mut self, address: u16, value: u16) {
@@ -18,12 +17,14 @@ pub trait Memory {
 // 2KB internal RAM
 const RAM_SIZE: usize = 0x0800;
 
-pub struct Ram { bytes: [u8; RAM_SIZE] }
+pub struct Ram {
+    bytes: [u8; RAM_SIZE],
+}
 
 impl Ram {
     pub fn new() -> Self {
         Ram {
-           bytes: [0; RAM_SIZE],
+            bytes: [0; RAM_SIZE],
         }
     }
 }
@@ -53,4 +54,3 @@ impl DerefMut for Ram {
         &mut self.bytes
     }
 }
-

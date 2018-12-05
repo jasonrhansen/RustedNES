@@ -1,10 +1,13 @@
-use memory::Memory;
+use crate::memory::Memory;
+use crate::opcode;
+
+use serde_derive::{Deserialize, Serialize};
+
 use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
 pub const CPU_FREQUENCY: u64 = 1_789_773;
-
 
 #[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
 pub enum Interrupt {
@@ -19,6 +22,7 @@ const BRK_VECTOR: u16 = 0xFFFE;
 
 // The number of cycles that each opcode takes.
 // This doesn't include additional cycles for page crossing.
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static OPCODE_CYCLES: &[u8] = &[
     7, 6, 2, 8, 3, 3, 5, 5, 3, 2, 2, 2, 4, 4, 6, 6,
     2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
@@ -40,14 +44,14 @@ static OPCODE_CYCLES: &[u8] = &[
 
 #[derive(Copy, Clone, Deserialize, Serialize)]
 pub struct Flags {
-    c: bool,    // Carry
-    z: bool,    // Zero
-    i: bool,    // Interrupt inhibit
-    d: bool,    // Decimal (not used on NES)
-    b: bool,    // Break Command
-    e: bool,    // Expansion
-    v: bool,    // Overflow
-    n: bool,    // Negative
+    c: bool, // Carry
+    z: bool, // Zero
+    i: bool, // Interrupt inhibit
+    d: bool, // Decimal (not used on NES)
+    b: bool, // Break Command
+    e: bool, // Expansion
+    v: bool, // Overflow
+    n: bool, // Negative
 }
 
 impl Flags {
@@ -67,14 +71,14 @@ impl Flags {
 
 impl Into<u8> for Flags {
     fn into(self) -> u8 {
-         (self.c as u8) |
-        ((self.z as u8) << 1) |
-        ((self.i as u8) << 2) |
-        ((self.d as u8) << 3) |
-        ((self.b as u8) << 4) |
-        ((self.e as u8) << 5) |
-        ((self.v as u8) << 6) |
-        ((self.n as u8) << 7)
+        (self.c as u8)
+            | ((self.z as u8) << 1)
+            | ((self.i as u8) << 2)
+            | ((self.d as u8) << 3)
+            | ((self.b as u8) << 4)
+            | ((self.e as u8) << 5)
+            | ((self.v as u8) << 6)
+            | ((self.n as u8) << 7)
     }
 }
 
@@ -95,9 +99,18 @@ impl From<u8> for Flags {
 
 impl Debug for Flags {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "N: {}, V: {}, e: {}, b: {}, d: {}, I: {}, Z: {}, C: {}",
-               self.n as u8, self.v as u8, self.e as u8, self.b as u8,
-               self.d as u8, self.i as u8, self.z as u8, self.c as u8)
+        write!(
+            f,
+            "N: {}, V: {}, e: {}, b: {}, d: {}, I: {}, Z: {}, C: {}",
+            self.n as u8,
+            self.v as u8,
+            self.e as u8,
+            self.b as u8,
+            self.d as u8,
+            self.i as u8,
+            self.z as u8,
+            self.c as u8
+        )
     }
 }
 
@@ -124,8 +137,11 @@ impl Regs {
 
 impl Debug for Regs {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "pc: {:04X}, a: {:02X}, x: {:02X}, y: {:02X}, sp: {:02X}",
-               self.pc, self.a, self.x, self.y, self.sp)
+        write!(
+            f,
+            "pc: {:04X}, a: {:02X}, x: {:02X}, y: {:02X}, sp: {:02X}",
+            self.pc, self.a, self.x, self.y, self.sp
+        )
     }
 }
 
@@ -259,7 +275,6 @@ impl Cpu {
         self.watchpoints.len() != 0 && self.watchpoints.contains(&addr)
     }
 
-
     #[inline(always)]
     fn dummy_read(&mut self, mem: &mut impl Memory) {
         let pc = self.regs.pc;
@@ -350,7 +365,7 @@ impl Cpu {
             Register(reg) => {
                 self.dummy_read(mem);
                 (self.get_register(reg), None)
-            },
+            }
         }
     }
 
@@ -987,7 +1002,7 @@ impl Cpu {
         self.set_zero_negative(a);
 
         self.flags.c = (a & 0x40) != 0;
-        self.flags.v = ((a  ^ (a << 1)) & 0x40) != 0;
+        self.flags.v = ((a ^ (a << 1)) & 0x40) != 0;
     }
 
     // Sets X to {(A AND X) - #value without borrow}, and updates NZC

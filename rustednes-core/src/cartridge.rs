@@ -1,12 +1,13 @@
+use byteorder::{BigEndian, ReadBytesExt};
+use serde_bytes;
+use serde_derive::{Deserialize, Serialize};
+
 use std::cmp::max;
 use std::error::Error;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
-use byteorder::{ReadBytesExt, BigEndian};
-
-use serde_bytes;
 
 // ROM must begin with this constant ("NES" followed by MS-DOS end-of-file)
 const MAGIC_CONSTANT: u32 = 0x4e45531a;
@@ -30,8 +31,12 @@ impl Mirroring {
         match *self {
             Mirroring::Horizontal => {
                 let address = address & 0x2BFF;
-                if address < 0x2800 { address } else { address - 0x0400 }
-            },
+                if address < 0x2800 {
+                    address
+                } else {
+                    address - 0x0400
+                }
+            }
             Mirroring::Vertical => address & 0x27FF,
             Mirroring::OneScreenLower => address & 0x23FF,
             Mirroring::OneScreenUpper => (address & 0x27FF) | 0x0400,
@@ -127,8 +132,7 @@ impl Cartridge {
         let flags6 = r.read_u8()?;
         let flags7 = r.read_u8()?;
 
-        let prg_ram_size =
-            max(1, r.read_u8()?) as usize * PRG_RAM_BANK_SIZE as usize;
+        let prg_ram_size = max(1, r.read_u8()?) as usize * PRG_RAM_BANK_SIZE as usize;
 
         // Skip the rest of the header
         // TODO: Implement NEW 2.0
@@ -152,7 +156,6 @@ impl Cartridge {
         } else {
             Mirroring::Horizontal
         };
-
 
         let mut prg_rom = vec![0u8; prg_rom_size];
         r.read_exact(&mut prg_rom[..])?;

@@ -1,10 +1,10 @@
-use cartridge;
-use cartridge::{Cartridge, Mirroring};
-use mapper;
-use mapper::Mapper;
-use memory::Memory;
-use ppu::{self, Ppu, Vram};
-use cpu::{Cpu, Interrupt};
+use crate::cartridge::{self, Cartridge, Mirroring};
+use crate::cpu::{Cpu, Interrupt};
+use crate::mapper::{self, Mapper};
+use crate::memory::Memory;
+use crate::ppu::{self, Ppu, Vram};
+
+use serde_derive::{Deserialize, Serialize};
 
 pub struct Mapper4 {
     cartridge: Cartridge,
@@ -25,14 +25,14 @@ pub struct Mapper4 {
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize)]
 pub enum PrgRomMode {
-    Zero,       // $8000-$9FFF swappable, $C000-$DFFF fixed to second-last bank
-    One,        // $C000-$DFFF swappable, $8000-$9FFF fixed to second-last bank
+    Zero, // $8000-$9FFF swappable, $C000-$DFFF fixed to second-last bank
+    One,  // $C000-$DFFF swappable, $8000-$9FFF fixed to second-last bank
 }
 
 #[derive(Debug, Copy, Clone, Deserialize, Serialize)]
 pub enum ChrA12Inversion {
-    Zero,       // Two 2 KB banks at $0000-$0FFF, four 1 KB banks at $1000-$1FFF
-    One,        // Two 2 KB banks at $1000-$1FFF, four 1 KB banks at $0000-$0FFF
+    Zero, // Two 2 KB banks at $0000-$0FFF, four 1 KB banks at $1000-$1FFF
+    One,  // Two 2 KB banks at $1000-$1FFF, four 1 KB banks at $0000-$0FFF
 }
 
 #[derive(Deserialize, Serialize)]
@@ -54,7 +54,7 @@ impl Mapper4 {
         let mut m = Mapper4 {
             cartridge,
             next_bank_register: 0,
-            bank_registers: [0, 0, 0, 0 , 0, 0, 0, 1],
+            bank_registers: [0, 0, 0, 0, 0, 0, 0, 1],
             prg_rom_mode: PrgRomMode::Zero,
             chr_a12_inversion: ChrA12Inversion::Zero,
             irq_enable: false,
@@ -118,17 +118,20 @@ impl Mapper4 {
 
     fn update_banks(&mut self) {
         self.prg_rom_bank_offsets[1] = self.prg_bank_address(self.bank_registers[7] & 0x3F);
-        self.prg_rom_bank_offsets[3] = self.prg_bank_address(self.cartridge.prg_rom_num_banks * 2 - 1);
+        self.prg_rom_bank_offsets[3] =
+            self.prg_bank_address(self.cartridge.prg_rom_num_banks * 2 - 1);
 
         match self.prg_rom_mode {
             PrgRomMode::Zero => {
                 self.prg_rom_bank_offsets[0] = self.prg_bank_address(self.bank_registers[6] & 0x3F);
-                self.prg_rom_bank_offsets[2] =  self.prg_bank_address(self.cartridge.prg_rom_num_banks * 2 - 2);
-            },
+                self.prg_rom_bank_offsets[2] =
+                    self.prg_bank_address(self.cartridge.prg_rom_num_banks * 2 - 2);
+            }
             PrgRomMode::One => {
-                self.prg_rom_bank_offsets[0] =  self.prg_bank_address(self.cartridge.prg_rom_num_banks * 2 - 2);
+                self.prg_rom_bank_offsets[0] =
+                    self.prg_bank_address(self.cartridge.prg_rom_num_banks * 2 - 2);
                 self.prg_rom_bank_offsets[2] = self.prg_bank_address(self.bank_registers[6] & 0x3F);
-            },
+            }
         }
 
         match self.chr_a12_inversion {
@@ -141,7 +144,7 @@ impl Mapper4 {
                 self.chr_bank_offsets[5] = self.chr_bank_address(self.bank_registers[3]);
                 self.chr_bank_offsets[6] = self.chr_bank_address(self.bank_registers[4]);
                 self.chr_bank_offsets[7] = self.chr_bank_address(self.bank_registers[5]);
-            },
+            }
             ChrA12Inversion::One => {
                 self.chr_bank_offsets[0] = self.chr_bank_address(self.bank_registers[2]);
                 self.chr_bank_offsets[1] = self.chr_bank_address(self.bank_registers[3]);
@@ -151,7 +154,7 @@ impl Mapper4 {
                 self.chr_bank_offsets[5] = self.chr_bank_address(self.bank_registers[0] | 0x01);
                 self.chr_bank_offsets[6] = self.chr_bank_address(self.bank_registers[1] & 0xFE);
                 self.chr_bank_offsets[7] = self.chr_bank_address(self.bank_registers[1] | 0x01);
-            },
+            }
         }
     }
 
@@ -172,7 +175,8 @@ impl Mapper4 {
     }
 
     fn read_prg_rom(&self, address: u16) -> u8 {
-        let addr = self.prg_rom_bank_offsets[(address as usize - 0x8000) / 0x2000] | (address as usize & 0x1FFF);
+        let addr = self.prg_rom_bank_offsets[(address as usize - 0x8000) / 0x2000]
+            | (address as usize & 0x1FFF);
         self.cartridge.prg_rom[addr]
     }
 
@@ -249,13 +253,16 @@ impl Mapper for Mapper4 {
     }
 
     fn step(&mut self, cpu: &mut Cpu, ppu: &Ppu) {
-        if ppu.rendering_enabled() && ppu.scanline <= ppu::VISIBLE_END_SCANLINE && ppu.scanline_cycle() == 260 {
+        if ppu.rendering_enabled()
+            && ppu.scanline <= ppu::VISIBLE_END_SCANLINE
+            && ppu.scanline_cycle() == 260
+        {
             self.handle_scanline(cpu);
         }
     }
 
     fn sram(&mut self) -> *mut &[u8] {
-        self.cartridge.prg_ram.as_mut_ptr() as *mut _        
+        self.cartridge.prg_ram.as_mut_ptr() as *mut _
     }
 
     fn sram_size(&self) -> usize {
@@ -265,7 +272,7 @@ impl Mapper for Mapper4 {
     fn reset(&mut self) {
         self.cartridge.mirroring = self.cartridge.default_mirroring;
         self.next_bank_register = 0;
-        self.bank_registers = [0, 0, 0, 0 , 0, 0, 0, 1];
+        self.bank_registers = [0, 0, 0, 0, 0, 0, 0, 1];
         self.prg_rom_mode = PrgRomMode::Zero;
         self.chr_a12_inversion = ChrA12Inversion::Zero;
         self.irq_enable = false;
@@ -277,20 +284,18 @@ impl Mapper for Mapper4 {
     }
 
     fn get_state(&self) -> mapper::State {
-        mapper::State::State4(
-            State {
-                cartridge: self.cartridge.get_state(),
-                next_bank_register: self.next_bank_register,
-                bank_registers: self.bank_registers,
-                prg_rom_mode: self.prg_rom_mode,
-                chr_a12_inversion: self.chr_a12_inversion,
-                irq_enable: self.irq_enable,
-                irq_counter: self.irq_counter,
-                irq_counter_reload_value: self.irq_counter_reload_value,
-                prg_rom_bank_offsets: self.prg_rom_bank_offsets,
-                chr_bank_offsets: self.chr_bank_offsets,
-            }
-        )
+        mapper::State::State4(State {
+            cartridge: self.cartridge.get_state(),
+            next_bank_register: self.next_bank_register,
+            bank_registers: self.bank_registers,
+            prg_rom_mode: self.prg_rom_mode,
+            chr_a12_inversion: self.chr_a12_inversion,
+            irq_enable: self.irq_enable,
+            irq_counter: self.irq_counter,
+            irq_counter_reload_value: self.irq_counter_reload_value,
+            prg_rom_bank_offsets: self.prg_rom_bank_offsets,
+            chr_bank_offsets: self.chr_bank_offsets,
+        })
     }
 
     fn apply_state(&mut self, state: &mapper::State) {
@@ -306,7 +311,7 @@ impl Mapper for Mapper4 {
                 self.irq_counter_reload_value = state.irq_counter_reload_value;
                 self.prg_rom_bank_offsets = state.prg_rom_bank_offsets;
                 self.chr_bank_offsets = state.chr_bank_offsets;
-            },
+            }
             _ => panic!("Invalid mapper state enum variant in apply_state"),
         }
     }

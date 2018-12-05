@@ -1,6 +1,8 @@
 use super::nes;
 use super::nes::Nes;
 
+use serde_derive::{Deserialize, Serialize};
+
 #[derive(Deserialize, Serialize)]
 pub enum VersionedState {
     Version1(nes::State),

@@ -1,4 +1,4 @@
-use clap::{App, Arg};
+use clap::{crate_authors, crate_version, App, Arg};
 
 pub struct CommandLineConfig {
     pub rom_path: String,
@@ -11,19 +11,22 @@ pub fn parse_args() -> CommandLineConfig {
         .version(crate_version!())
         .author(crate_authors!())
         .about("A CLI frontend to the RustedNES emulator")
-        .arg(Arg::with_name("ROM")
-            .help("The name of the ROM to load")
-            .required(true)
-            .index(1)
+        .arg(
+            Arg::with_name("ROM")
+                .help("The name of the ROM to load")
+                .required(true)
+                .index(1),
         )
-        .arg(Arg::with_name("debug")
-            .help("Start in debug mode")
-            .long("debug")
-            .short("d")
+        .arg(
+            Arg::with_name("debug")
+                .help("Start in debug mode")
+                .long("debug")
+                .short("d"),
         )
-        .arg(Arg::with_name("noaudio")
-            .help("Disable audio")
-            .long("noaudio")
+        .arg(
+            Arg::with_name("noaudio")
+                .help("Disable audio")
+                .long("noaudio"),
         );
 
     let matches = app.get_matches();
