@@ -115,45 +115,41 @@ impl Emulator {
         let mut pixel_buffer = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
 
         while self.window.is_open() && !self.window.is_key_down(Key::Escape) {
-            let frame_rendered = {
-                let mut video_frame_sink = Xrgb8888VideoSink::new(&mut pixel_buffer);
+            let mut video_frame_sink = Xrgb8888VideoSink::new(&mut pixel_buffer);
 
-                let target_time_ns = self.time_source.time_ns() - self.start_time_ns;
-                let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
+            let target_time_ns = self.time_source.time_ns() - self.start_time_ns;
+            let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
 
-                match self.mode {
-                    Mode::Running => {
-                        let mut start_debugger = false;
-                        while self.emulated_cycles < target_cycles && !start_debugger {
-                            let (_cycles, trigger_watchpoint) = self.step(&mut video_frame_sink);
+            match self.mode {
+                Mode::Running => {
+                    let mut start_debugger = false;
+                    while self.emulated_cycles < target_cycles && !start_debugger {
+                        let (_cycles, trigger_watchpoint) = self.step(&mut video_frame_sink);
 
-                            self.emulated_instructions += 1;
+                        self.emulated_instructions += 1;
 
-                            if trigger_watchpoint
-                                || (self.breakpoints.len() != 0
-                                    && self.breakpoints.contains(&self.nes.cpu.regs().pc))
-                            {
-                                start_debugger = true;
-                            }
-                        }
-
-                        if start_debugger {
-                            self.start_debugger();
+                        if trigger_watchpoint
+                            || (self.breakpoints.len() != 0
+                                && self.breakpoints.contains(&self.nes.cpu.regs().pc))
+                        {
+                            start_debugger = true;
                         }
                     }
-                    Mode::Debugging => {
-                        if self.run_debugger_commands(&mut video_frame_sink) {
-                            break;
-                        }
 
-                        self.window.update();
+                    if start_debugger {
+                        self.start_debugger();
                     }
                 }
+                Mode::Debugging => {
+                    if self.run_debugger_commands(&mut video_frame_sink) {
+                        break;
+                    }
 
-                video_frame_sink.frame_written()
-            };
+                    self.window.update();
+                }
+            }
 
-            if frame_rendered {
+            if video_frame_sink.frame_written() {
                 self.window.update_with_buffer(&pixel_buffer).unwrap();
 
                 if self.mode == Mode::Running {

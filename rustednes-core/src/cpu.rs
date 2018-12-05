@@ -1,5 +1,4 @@
 use crate::memory::Memory;
-use crate::opcode;
 
 use serde_derive::{Deserialize, Serialize};
 
@@ -277,22 +276,19 @@ impl Cpu {
 
     #[inline(always)]
     fn dummy_read(&mut self, mem: &mut impl Memory) {
-        let pc = self.regs.pc;
-        mem.read_byte(pc);
+        mem.read_byte(self.regs.pc);
     }
 
     #[inline(always)]
     fn next_pc_byte(&mut self, mem: &mut impl Memory) -> u8 {
-        let pc = self.regs.pc;
-        let b = mem.read_byte(pc);
+        let b = mem.read_byte(self.regs.pc);
         self.regs.pc += 1;
         b
     }
 
     #[inline(always)]
     fn next_pc_word(&mut self, mem: &mut impl Memory) -> u16 {
-        let pc = self.regs.pc;
-        let w = mem.read_word(pc);
+        let w = mem.read_word(self.regs.pc);
         self.regs.pc += 2;
         w
     }
@@ -493,48 +489,45 @@ impl Cpu {
     }
 
     fn add_value(&mut self, value: u8) {
-        let a = self.regs.a;
-        let result = a as u32 + value as u32 + self.flags.c as u32;
+        let result = self.regs.a as u32 + value as u32 + self.flags.c as u32;
 
         self.flags.c = (result & 0x100) != 0;
         let result = result as u8;
-        self.flags.v = ((a & 0x80) == (value & 0x80)) && (a & 0x80 != result & 0x80);
+        self.flags.v =
+            ((self.regs.a & 0x80) == (value & 0x80)) && (self.regs.a & 0x80 != result & 0x80);
         self.set_zero_negative(result);
 
         self.regs.a = result;
     }
 
     fn sub_value(&mut self, value: u8) {
-        let a = self.regs.a;
-        let result = a as i32 - value as i32 - (!self.flags.c) as i32;
+        let result = self.regs.a as i32 - value as i32 - (!self.flags.c) as i32;
 
         self.flags.c = result >= 0;
 
         let result = result as u8;
-        self.flags.v = ((a ^ value) & 0x80 != 0) && (((a ^ result) & 0x80) != 0);
+        self.flags.v =
+            ((self.regs.a ^ value) & 0x80 != 0) && (((self.regs.a ^ result) & 0x80) != 0);
         self.set_zero_negative(result);
 
         self.regs.a = result;
     }
 
     fn and_value(&mut self, value: u8) -> u8 {
-        let a = self.regs.a;
-        let result = value & a;
+        let result = value & self.regs.a;
         self.set_zero_negative(result);
         self.regs.a = result;
         result
     }
 
     fn ora_value(&mut self, value: u8) {
-        let a = self.regs.a;
-        let result = value | a;
+        let result = value | self.regs.a;
         self.set_zero_negative(result);
         self.regs.a = result;
     }
 
     fn eor_value(&mut self, value: u8) {
-        let a = self.regs.a;
-        let result = value ^ a;
+        let result = value ^ self.regs.a;
         self.set_zero_negative(result);
         self.regs.a = result;
     }
@@ -767,43 +760,35 @@ impl Cpu {
     }
 
     fn bmi(&mut self, mem: &mut impl Memory) {
-        let cond = self.flags.n;
-        self.branch(mem, cond);
+        self.branch(mem, self.flags.n);
     }
 
     fn bpl(&mut self, mem: &mut impl Memory) {
-        let cond = !self.flags.n;
-        self.branch(mem, cond);
+        self.branch(mem, !self.flags.n);
     }
 
     fn bcc(&mut self, mem: &mut impl Memory) {
-        let cond = !self.flags.c;
-        self.branch(mem, cond);
+        self.branch(mem, !self.flags.c);
     }
 
     fn bcs(&mut self, mem: &mut impl Memory) {
-        let cond = self.flags.c;
-        self.branch(mem, cond);
+        self.branch(mem, self.flags.c);
     }
 
     fn beq(&mut self, mem: &mut impl Memory) {
-        let cond = self.flags.z;
-        self.branch(mem, cond);
+        self.branch(mem, self.flags.z);
     }
 
     fn bne(&mut self, mem: &mut impl Memory) {
-        let cond = !self.flags.z;
-        self.branch(mem, cond);
+        self.branch(mem, !self.flags.z);
     }
 
     fn bvs(&mut self, mem: &mut impl Memory) {
-        let cond = self.flags.v;
-        self.branch(mem, cond);
+        self.branch(mem, self.flags.v);
     }
 
     fn bvc(&mut self, mem: &mut impl Memory) {
-        let cond = !self.flags.v;
-        self.branch(mem, cond);
+        self.branch(mem, !self.flags.v);
     }
 
     fn cmp(&mut self, mem: &mut impl Memory, am: AddressMode) {
@@ -865,37 +850,32 @@ impl Cpu {
 
     fn tax(&mut self, mem: &mut impl Memory) {
         self.dummy_read(mem);
-        let a = self.regs.a;
-        self.set_zero_negative(a);
-        self.regs.x = a;
+        self.set_zero_negative(self.regs.a);
+        self.regs.x = self.regs.a;
     }
 
     fn txa(&mut self, mem: &mut impl Memory) {
         self.dummy_read(mem);
-        let x = self.regs.x;
-        self.set_zero_negative(x);
-        self.regs.a = x;
+        self.set_zero_negative(self.regs.x);
+        self.regs.a = self.regs.x;
     }
 
     fn tay(&mut self, mem: &mut impl Memory) {
         self.dummy_read(mem);
-        let a = self.regs.a;
-        self.set_zero_negative(a);
-        self.regs.y = a;
+        self.set_zero_negative(self.regs.a);
+        self.regs.y = self.regs.a;
     }
 
     fn tya(&mut self, mem: &mut impl Memory) {
         self.dummy_read(mem);
-        let y = self.regs.y;
-        self.set_zero_negative(y);
-        self.regs.a = y;
+        self.set_zero_negative(self.regs.y);
+        self.regs.a = self.regs.y;
     }
 
     fn tsx(&mut self, mem: &mut impl Memory) {
         self.dummy_read(mem);
-        let s = self.regs.sp;
-        self.set_zero_negative(s);
-        self.regs.x = s;
+        self.set_zero_negative(self.regs.sp);
+        self.regs.x = self.regs.sp;
     }
 
     fn txs(&mut self, mem: &mut impl Memory) {
@@ -916,8 +896,7 @@ impl Cpu {
     }
 
     fn pha(&mut self, mem: &mut impl Memory) {
-        let a = self.regs.a;
-        self.push_byte(mem, a);
+        self.push_byte(mem, self.regs.a);
     }
 
     fn pla(&mut self, mem: &mut impl Memory) {
@@ -956,8 +935,7 @@ impl Cpu {
 
     fn brk(&mut self, mem: &mut impl Memory) {
         self.dummy_read(mem);
-        let pc = self.regs.pc;
-        self.push_word(mem, pc + 1);
+        self.push_word(mem, self.regs.pc + 1);
         self.php(mem);
         self.sei(mem);
         self.regs.pc = mem.read_word(BRK_VECTOR);
@@ -988,19 +966,16 @@ impl Cpu {
     // Does AND #i, setting N and Z flags based on the result. Then it copies N (bit 7) to C
     fn anc(&mut self, mem: &mut impl Memory) {
         self.and(mem, AddressMode::Immediate);
-        let n = self.flags.n;
-        self.flags.c = n;
+        self.flags.c = self.flags.n;
     }
 
     fn arr(&mut self, mem: &mut impl Memory) {
         let imm = self.next_pc_byte(mem);
 
-        let a = self.regs.a;
-        self.regs.a = ((self.flags.c as u8) << 7) | ((a & imm) >> 1);
-        let a = self.regs.a;
+        self.regs.a = ((self.flags.c as u8) << 7) | ((self.regs.a & imm) >> 1);
 
+        let a = self.regs.a;
         self.set_zero_negative(a);
-
         self.flags.c = (a & 0x40) != 0;
         self.flags.v = ((a ^ (a << 1)) & 0x40) != 0;
     }
@@ -1017,9 +992,7 @@ impl Cpu {
 
     // Stores the bitwise AND of A and X. As with STA and STX, no flags are affected.
     fn sax(&mut self, mem: &mut impl Memory, am: AddressMode) {
-        let a = self.regs.a;
-        let x = self.regs.x;
-        self.store(mem, am, a & x);
+        self.store(mem, am, self.regs.a & self.regs.x);
     }
 
     // Equivalent to DEC value then CMP value
@@ -1065,10 +1038,7 @@ impl Cpu {
     // This instruction can be unpredictable.
     // See http://visual6502.org/wiki/index.php?title=6502_Opcode_8B_%28XAA,_ANE%29
     fn xaa(&mut self, mem: &mut impl Memory) {
-        let imm = self.next_pc_byte(mem);
-        let a = self.regs.a;
-        let x = self.regs.x;
-        self.regs.a = a & x & imm;
+        self.regs.a = self.regs.a & self.regs.x & self.next_pc_byte(mem);
     }
 
     // Used by "Super Cars (U)"
@@ -1088,10 +1058,8 @@ impl Cpu {
     // Unstable in certain matters on real CPU
     fn ahx(&mut self, mem: &mut impl Memory, am: AddressMode) {
         if let (_, Some(addr)) = self.load(mem, am) {
-            let a = self.regs.a;
-            let x = self.regs.x;
             let h = (addr >> 8) as u8;
-            mem.write_byte(addr, a & h & x);
+            mem.write_byte(addr, self.regs.a & h & self.regs.x);
         }
     }
 
