@@ -1,7 +1,7 @@
 use crate::cartridge::{self, Cartridge, Mirroring};
 use crate::mapper::{self, Mapper};
 use crate::memory::Memory;
-use crate::ppu::{Ppu, Vram};
+use crate::ppu::Vram;
 
 use serde_derive::{Deserialize, Serialize};
 

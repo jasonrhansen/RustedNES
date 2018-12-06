@@ -1,6 +1,5 @@
 use crate::cpu::{AddressMode, Register8};
 use crate::memory::Memory;
-use crate::opcode;
 
 pub struct Disassembler {
     pub pc: u16,
