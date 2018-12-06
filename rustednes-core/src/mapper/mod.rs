@@ -31,7 +31,7 @@ pub trait Mapper {
     // Called for every PPU cycle. Most mappers don't need to do anything.
     fn step(&mut self, _cpu: &mut Cpu, _ppu: &Ppu) {}
 
-    fn sram(&mut self) -> *mut &[u8] {
+    fn sram(&mut self) -> *mut u8 {
         ptr::null_mut()
     }
 

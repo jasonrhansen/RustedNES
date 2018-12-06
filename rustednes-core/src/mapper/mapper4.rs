@@ -261,7 +261,7 @@ impl Mapper for Mapper4 {
         }
     }
 
-    fn sram(&mut self) -> *mut &[u8] {
+    fn sram(&mut self) -> *mut u8 {
         self.cartridge.prg_ram.as_mut_ptr() as *mut _
     }
 
