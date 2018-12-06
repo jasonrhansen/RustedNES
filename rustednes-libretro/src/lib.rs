@@ -15,14 +15,14 @@ mod system_info;
 
 use libc::*;
 
+use rustednes_core::apu::SAMPLE_RATE;
 use rustednes_core::cartridge::*;
+use rustednes_core::game_genie::Cheat;
 use rustednes_core::input::*;
 use rustednes_core::nes::*;
 use rustednes_core::ppu::*;
-use rustednes_core::apu::SAMPLE_RATE;
 use rustednes_core::serialize;
 use rustednes_core::sink::*;
-use rustednes_core::game_genie::Cheat;
 
 use callbacks::*;
 use game_info::*;
@@ -31,10 +31,10 @@ use retro::*;
 use system_av_info::*;
 use system_info::*;
 
+use std::ffi::CStr;
 use std::io::Cursor;
 use std::slice;
 use std::{mem, ptr};
-use std::ffi::CStr;
 
 const DISPLAY_PIXELS: usize = SCREEN_WIDTH * SCREEN_HEIGHT;
 
@@ -157,15 +157,24 @@ impl Context {
                     Some(fb) => match fb.format {
                         0 => (
                             fb.data,
-                            Box::new(Xrgb1555VideoSink::new(slice::from_raw_parts_mut(fb.data as *mut _, (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u16>()))),
+                            Box::new(Xrgb1555VideoSink::new(slice::from_raw_parts_mut(
+                                fb.data as *mut _,
+                                (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u16>(),
+                            ))),
                         ),
                         1 => (
                             fb.data,
-                            Box::new(Xrgb8888VideoSink::new(slice::from_raw_parts_mut(fb.data as *mut _, (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u32>()))),
+                            Box::new(Xrgb8888VideoSink::new(slice::from_raw_parts_mut(
+                                fb.data as *mut _,
+                                (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u32>(),
+                            ))),
                         ),
                         2 => (
                             fb.data,
-                            Box::new(Rgb565VideoSink::new(slice::from_raw_parts_mut(fb.data as *mut _, (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u16>()))),
+                            Box::new(Rgb565VideoSink::new(slice::from_raw_parts_mut(
+                                fb.data as *mut _,
+                                (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u16>(),
+                            ))),
                         ),
                         _ => panic!(
                             "Host returned framebuffer with unrecognized pixel format format"
@@ -225,10 +234,8 @@ impl Context {
     }
 
     unsafe fn handle_game_pad(game_pad: &mut GamePad, index: u32) {
-        game_pad
-            .set_button_pressed(Button::A, CALLBACKS.joypad_button(JoypadButton::A, index));
-        game_pad
-            .set_button_pressed(Button::B, CALLBACKS.joypad_button(JoypadButton::B, index));
+        game_pad.set_button_pressed(Button::A, CALLBACKS.joypad_button(JoypadButton::A, index));
+        game_pad.set_button_pressed(Button::B, CALLBACKS.joypad_button(JoypadButton::B, index));
         game_pad.set_button_pressed(
             Button::Start,
             CALLBACKS.joypad_button(JoypadButton::Start, index),
@@ -254,10 +261,7 @@ impl Context {
             Button::Right,
             left_x > ANALOG_THRESHOLD || joypad_right_pressed,
         );
-        game_pad.set_button_pressed(
-            Button::Up,
-            left_y < -ANALOG_THRESHOLD || joypad_up_pressed,
-        );
+        game_pad.set_button_pressed(Button::Up, left_y < -ANALOG_THRESHOLD || joypad_up_pressed);
         game_pad.set_button_pressed(
             Button::Down,
             left_y > ANALOG_THRESHOLD || joypad_down_pressed,
@@ -380,17 +384,13 @@ pub unsafe extern "C" fn retro_get_region() -> u32 {
 pub unsafe extern "C" fn retro_get_memory_data(id: u32) -> *mut c_void {
     if let Some(ref mut system) = (*CONTEXT).system {
         match id & MEMORY_MASK {
-            MEMORY_SYSTEM_RAM => {
-                system.nes.interconnect.ram.as_mut_ptr() as *mut _
-            }
-            MEMORY_VIDEO_RAM => {
-                system.nes.interconnect.ppu.mem.vram.as_mut_ptr() as *mut _
-            }
+            MEMORY_SYSTEM_RAM => system.nes.interconnect.ram.as_mut_ptr() as *mut _,
+            MEMORY_VIDEO_RAM => system.nes.interconnect.ppu.mem.vram.as_mut_ptr() as *mut _,
             MEMORY_SAVE_RAM => {
                 let mut mapper = system.nes.interconnect.mapper.borrow_mut();
                 mapper.sram() as *mut _
             }
-            _ => ptr::null_mut()
+            _ => ptr::null_mut(),
         }
     } else {
         ptr::null_mut()
@@ -401,17 +401,13 @@ pub unsafe extern "C" fn retro_get_memory_data(id: u32) -> *mut c_void {
 pub unsafe extern "C" fn retro_get_memory_size(id: u32) -> size_t {
     if let Some(ref mut system) = (*CONTEXT).system {
         match id & MEMORY_MASK {
-            MEMORY_SYSTEM_RAM => {
-                system.nes.interconnect.ram.len()
-            }
-            MEMORY_VIDEO_RAM => {
-                system.nes.interconnect.ppu.mem.vram.len()
-            }
+            MEMORY_SYSTEM_RAM => system.nes.interconnect.ram.len(),
+            MEMORY_VIDEO_RAM => system.nes.interconnect.ppu.mem.vram.len(),
             MEMORY_SAVE_RAM => {
                 let mut mapper = system.nes.interconnect.mapper.borrow_mut();
                 mapper.sram_size()
             }
-            _ => 0
+            _ => 0,
         }
     } else {
         0
@@ -447,7 +443,9 @@ pub unsafe extern "C" fn retro_serialize(data: *mut c_void, size: size_t) -> boo
 
             return true;
         } else {
-            println!("Couldn't serialize. Size of serialize buffer is smaller than the serialized data");
+            println!(
+                "Couldn't serialize. Size of serialize buffer is smaller than the serialized data"
+            );
         }
     }
 
@@ -465,7 +463,7 @@ pub unsafe extern "C" fn retro_unserialize(data: *const c_void, size: size_t) ->
             Err(e) => {
                 println!("Unable to deserialize data. {:?}", e);
             }
-        }    
+        }
     }
 
     false
