@@ -3,10 +3,6 @@ use crate::audio_driver::AudioDriver;
 use rustednes_core::sink::AudioSink;
 use rustednes_core::time_source::TimeSource;
 
-use cpal::{default_endpoint, EventLoop, UnknownTypeBuffer, Voice};
-use futures::stream::Stream;
-use futures::task::{self, Executor, Run};
-
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
@@ -75,25 +71,16 @@ impl TimeSource for CpalDriverTimeSource {
     }
 }
 
-struct CpalDriverExecutor;
-
-impl Executor for CpalDriverExecutor {
-    fn execute(&self, r: Run) {
-        r.run();
-    }
-}
-
 pub struct CpalDriver {
     sample_buffer: Arc<Mutex<SampleBuffer>>,
     sample_rate: u32,
 
-    _voice: Voice,
     _join_handle: JoinHandle<()>,
 }
 
 impl CpalDriver {
     pub fn new(desired_sample_rate: u32) -> Result<CpalDriver, CpalDriverError> {
-        let endpoint = default_endpoint().expect("Failed to get audio endpoint");
+        let device = cpal::default_output_device().expect("Failed to get default output device");
 
         let compare_sample_rates = |x: u32, y: u32| -> Ordering {
             if x < desired_sample_rate && y > desired_sample_rate {
@@ -107,70 +94,77 @@ impl CpalDriver {
             }
         };
 
-        let format = endpoint
-            .supported_formats()
-            .expect("Failed to get supported format list for endpoint")
-            .filter(|format| format.channels.len() == 2)
-            .min_by(|x, y| compare_sample_rates(x.samples_rate.0, y.samples_rate.0))
+        let format = device
+            .supported_output_formats()
+            .expect("Failed to get supported format list for device")
+            .filter(|format| format.channels == 2)
+            .min_by(|x, y| compare_sample_rates(x.min_sample_rate.0, y.min_sample_rate.0))
             .expect("Failed to find format with 2 channels");
 
-        let sample_rate = format.samples_rate.0;
+        let format = cpal::Format {
+            channels: format.channels,
+            sample_rate: format.min_sample_rate,
+            data_type: format.data_type,
+        };
+
+        let sample_rate = format.sample_rate.0;
 
         let sample_buffer = Arc::new(Mutex::new(SampleBuffer::new()));
 
-        let event_loop = EventLoop::new();
+        let event_loop = cpal::EventLoop::new();
 
-        let (mut voice, stream) =
-            Voice::new(&endpoint, &format, &event_loop).expect("Failed to create voice");
-        voice.play();
+        let stream_id = event_loop.build_output_stream(&device, &format).unwrap();
+        event_loop.play_stream(stream_id.clone());
 
         let mut resampler = LinearResampler::new(desired_sample_rate, sample_rate);
 
         let read_sample_buffer = sample_buffer.clone();
-        task::spawn(stream.for_each(move |output_buffer| {
-            let mut read_ring_buffer = read_sample_buffer.lock().unwrap();
-
-            match output_buffer {
-                UnknownTypeBuffer::I16(mut buffer) => {
-                    for sample in buffer.chunks_mut(format.channels.len()) {
-                        let val = (resampler.next(&mut *read_ring_buffer) * 32768.0) as i16;
-                        for out in sample.iter_mut() {
-                            *out = val;
-                        }
-                    }
-                }
-                UnknownTypeBuffer::U16(mut buffer) => {
-                    for sample in buffer.chunks_mut(format.channels.len()) {
-                        let val =
-                            ((resampler.next(&mut *read_ring_buffer) * 32768.0) + 32768.0) as u16;
-                        for out in sample.iter_mut() {
-                            *out = val;
-                        }
-                    }
-                }
-                UnknownTypeBuffer::F32(mut buffer) => {
-                    for sample in buffer.chunks_mut(format.channels.len()) {
-                        let val = resampler.next(&mut *read_ring_buffer);
-                        for out in sample.iter_mut() {
-                            *out = val;
-                        }
-                    }
-                }
-            }
-
-            Ok(())
-        }))
-        .execute(Arc::new(CpalDriverExecutor));
 
         let join_handle = thread::spawn(move || {
-            event_loop.run();
+            event_loop.run(move |_, data| {
+                let mut read_ring_buffer = read_sample_buffer.lock().unwrap();
+
+                match data {
+                    cpal::StreamData::Output {
+                        buffer: cpal::UnknownTypeOutputBuffer::I16(mut buffer),
+                    } => {
+                        for sample in buffer.chunks_mut(format.channels as usize) {
+                            let val = (resampler.next(&mut *read_ring_buffer) * 32768.0) as i16;
+                            for out in sample.iter_mut() {
+                                *out = val;
+                            }
+                        }
+                    }
+                    cpal::StreamData::Output {
+                        buffer: cpal::UnknownTypeOutputBuffer::U16(mut buffer),
+                    } => {
+                        for sample in buffer.chunks_mut(format.channels as usize) {
+                            let val = ((resampler.next(&mut *read_ring_buffer) * 32768.0) + 32768.0)
+                                as u16;
+                            for out in sample.iter_mut() {
+                                *out = val;
+                            }
+                        }
+                    }
+                    cpal::StreamData::Output {
+                        buffer: cpal::UnknownTypeOutputBuffer::F32(mut buffer),
+                    } => {
+                        for sample in buffer.chunks_mut(format.channels as usize) {
+                            let val = resampler.next(&mut *read_ring_buffer);
+                            for out in sample.iter_mut() {
+                                *out = val;
+                            }
+                        }
+                    }
+                    _ => (),
+                }
+            });
         });
 
         Ok(CpalDriver {
             sample_buffer,
             sample_rate,
 
-            _voice: voice,
             _join_handle: join_handle,
         })
     }
