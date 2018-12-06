@@ -62,10 +62,10 @@ pub enum PixelFormat {
     Rgb565 = 2,
 }
 
-pub const MEMORY_ACCESS_WRITE: c_uint = 1 << 0;
+pub const MEMORY_ACCESS_WRITE: c_uint = 1;
 pub const MEMORY_ACCESS_READ: c_uint = 1 << 1;
 
-pub const MEMORY_TYPE_CACHED: c_uint = 1 << 0;
+pub const MEMORY_TYPE_CACHED: c_uint = 1;
 
 #[repr(C)]
 pub struct Framebuffer {

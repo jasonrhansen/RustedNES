@@ -133,7 +133,7 @@ impl Context {
             },
             timing: SystemTiming {
                 fps: 60.1,
-                sample_rate: SAMPLE_RATE as f64,
+                sample_rate: f64::from(SAMPLE_RATE),
             },
         }
     }
