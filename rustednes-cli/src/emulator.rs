@@ -414,8 +414,6 @@ impl Emulator {
 
 #[cfg(not(windows))]
 fn input_loop(stdin_sender: Sender<String>, prompt_receiver: Receiver<String>) {
-    use liner;
-
     let mut con = liner::Context::new();
     loop {
         if let Ok(prompt) = prompt_receiver.recv() {
