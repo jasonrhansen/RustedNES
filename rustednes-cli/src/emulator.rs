@@ -250,144 +250,157 @@ impl Emulator {
                 (Err(e), _) => Err(e),
             };
 
-            if let Ok(command) = command {
-                match command {
-                    Command::ShowRegs => {
-                        let regs = self.nes.cpu.regs();
-                        let flags = self.nes.cpu.flags();
-                        let status: u8 = flags.into();
-                        println!("pc: 0x{:04x}", regs.pc);
-                        println!("a: 0x{:02x}", regs.a);
-                        println!("x: 0x{:02x}", regs.x);
-                        println!("y: 0x{:02x}", regs.y);
-                        println!("sp: 0x{:02x}", regs.sp);
-                        println!("status: 0x{:02x}", status);
-                        println!("Flags: {:?}", flags);
-                    }
-                    Command::Step(count) => {
-                        for _ in 0..count {
-                            self.nes
-                                .step(video_frame_sink, self.audio_frame_sink.as_mut());
-                            self.emulated_instructions += 1;
-                            self.cursor = self.nes.cpu.regs().pc;
-                            print!("{} 0x{:04x}  ", self.emulated_instructions, self.cursor);
-                            self.disassemble_instruction();
-                        }
-                    }
-                    Command::Continue => {
-                        self.mode = Mode::Running;
-                        self.start_time_ns =
-                            self.time_source.time_ns() - (self.emulated_cycles * CPU_CYCLE_TIME_NS);
-                    }
-                    Command::Goto(address) => {
-                        self.cursor = address;
-                    }
-                    Command::ShowMem(address) => {
-                        if let Some(address) = address {
-                            self.cursor = address;
-                        }
-
-                        self.print_labels_at_cursor();
-
-                        const NUM_ROWS: u32 = 16;
-                        const NUM_COLS: u32 = 16;
-                        for _ in 0..NUM_ROWS {
-                            print!("0x{:04x}  ", self.cursor);
-                            for x in 0..NUM_COLS {
-                                let byte = self.nes.interconnect.read_byte(self.cursor);
-                                self.cursor = self.cursor.wrapping_add(1);
-                                print!("{:02x}", byte);
-                                if x < NUM_COLS - 1 {
-                                    print!(" ");
-                                }
-                            }
-                            println!();
-                        }
-                    }
-                    Command::ShowPpuMem(address) => {
-                        let mut cursor = address;
-
-                        const NUM_ROWS: u32 = 16;
-                        const NUM_COLS: u32 = 16;
-                        for _ in 0..NUM_ROWS {
-                            print!("0x{:04x}  ", cursor);
-                            for x in 0..NUM_COLS {
-                                let byte = self.nes.interconnect.ppu.mem.read_byte(cursor);
-                                cursor = (cursor + 1) % 0x4000;
-                                print!("{:02x}", byte);
-                                if x < NUM_COLS - 1 {
-                                    print!(" ");
-                                }
-                            }
-                            println!();
-                        }
-                    }
-                    Command::ShowStack => {
-                        let sp = self.nes.cpu.regs().sp;
-                        let addr = 0x0100 | sp as u16;
-
-                        for i in 0..min(10, 0x01FF - addr + 1) {
-                            let byte = self.nes.interconnect.read_byte(addr + i);
-                            println!("0x{:04x}  {:02x}", addr + i, byte);
-                        }
-                    }
-                    Command::Disassemble(count) => {
-                        for _ in 0..count {
-                            self.cursor = self.disassemble_instruction();
-                        }
-                    }
-                    Command::Label => {
-                        for (label, address) in self.labels.iter() {
-                            println!(".{}: 0x{:04x}", label, address);
-                        }
-                    }
-                    Command::AddLabel(ref label, address) => {
-                        self.labels.insert(label.clone(), address);
-                    }
-                    Command::RemoveLabel(ref label) => {
-                        if let None = self.labels.remove(label) {
-                            println!("Label .{} doesn't exist", label);
-                        }
-                    }
-                    Command::Breakpoint => {
-                        for address in self.breakpoints.iter() {
-                            println!("* 0x{:04x}", address);
-                        }
-                    }
-                    Command::AddBreakpoint(address) => {
-                        self.breakpoints.insert(address);
-                    }
-                    Command::RemoveBreakpoint(address) => {
-                        if !self.breakpoints.remove(&address) {
-                            println!("Breakpoint at 0x{:04x} doesn't exist", address);
-                        }
-                    }
-                    Command::Watchpoint => {
-                        for address in self.nes.cpu.watchpoints.iter() {
-                            println!("* 0x{:04x}", address);
-                        }
-                    }
-                    Command::AddWatchpoint(address) => {
-                        self.nes.cpu.watchpoints.insert(address);
-                    }
-                    Command::RemoveWatchpoint(address) => {
-                        if !self.nes.cpu.watchpoints.remove(&address) {
-                            println!("Watchpoint at 0x{:04x} doesn't exist", address);
-                        }
-                    }
-                    Command::Exit => {
+            match command {
+                Ok(command) => {
+                    if self.run_debugger_command(command, video_frame_sink) {
                         return true;
                     }
-                    Command::Repeat => unreachable!(),
                 }
-
-                self.last_command = Some(command);
+                Err(e) => {
+                    println!("{}", e);
+                }
             }
 
             if self.mode == Mode::Debugging {
                 self.print_cursor();
             }
         }
+
+        false
+    }
+
+    fn run_debugger_command(&mut self, command: Command, video_frame_sink: &mut VideoSink) -> bool {
+        match command {
+            Command::ShowRegs => {
+                let regs = self.nes.cpu.regs();
+                let flags = self.nes.cpu.flags();
+                let status: u8 = flags.into();
+                println!("pc: 0x{:04x}", regs.pc);
+                println!("a: 0x{:02x}", regs.a);
+                println!("x: 0x{:02x}", regs.x);
+                println!("y: 0x{:02x}", regs.y);
+                println!("sp: 0x{:02x}", regs.sp);
+                println!("status: 0x{:02x}", status);
+                println!("Flags: {:?}", flags);
+            }
+            Command::Step(count) => {
+                for _ in 0..count {
+                    self.nes
+                        .step(video_frame_sink, self.audio_frame_sink.as_mut());
+                    self.emulated_instructions += 1;
+                    self.cursor = self.nes.cpu.regs().pc;
+                    print!("{} 0x{:04x}  ", self.emulated_instructions, self.cursor);
+                    self.disassemble_instruction();
+                }
+            }
+            Command::Continue => {
+                self.mode = Mode::Running;
+                self.start_time_ns =
+                    self.time_source.time_ns() - (self.emulated_cycles * CPU_CYCLE_TIME_NS);
+            }
+            Command::Goto(address) => {
+                self.cursor = address;
+            }
+            Command::ShowMem(address) => {
+                if let Some(address) = address {
+                    self.cursor = address;
+                }
+
+                self.print_labels_at_cursor();
+
+                const NUM_ROWS: u32 = 16;
+                const NUM_COLS: u32 = 16;
+                for _ in 0..NUM_ROWS {
+                    print!("0x{:04x}  ", self.cursor);
+                    for x in 0..NUM_COLS {
+                        let byte = self.nes.interconnect.read_byte(self.cursor);
+                        self.cursor = self.cursor.wrapping_add(1);
+                        print!("{:02x}", byte);
+                        if x < NUM_COLS - 1 {
+                            print!(" ");
+                        }
+                    }
+                    println!();
+                }
+            }
+            Command::ShowPpuMem(address) => {
+                let mut cursor = address;
+
+                const NUM_ROWS: u32 = 16;
+                const NUM_COLS: u32 = 16;
+                for _ in 0..NUM_ROWS {
+                    print!("0x{:04x}  ", cursor);
+                    for x in 0..NUM_COLS {
+                        let byte = self.nes.interconnect.ppu.mem.read_byte(cursor);
+                        cursor = (cursor + 1) % 0x4000;
+                        print!("{:02x}", byte);
+                        if x < NUM_COLS - 1 {
+                            print!(" ");
+                        }
+                    }
+                    println!();
+                }
+            }
+            Command::ShowStack => {
+                let sp = self.nes.cpu.regs().sp;
+                let addr = 0x0100 | sp as u16;
+
+                for i in 0..min(10, 0x01FF - addr + 1) {
+                    let byte = self.nes.interconnect.read_byte(addr + i);
+                    println!("0x{:04x}  {:02x}", addr + i, byte);
+                }
+            }
+            Command::Disassemble(count) => {
+                for _ in 0..count {
+                    self.cursor = self.disassemble_instruction();
+                }
+            }
+            Command::Label => {
+                for (label, address) in self.labels.iter() {
+                    println!(".{}: 0x{:04x}", label, address);
+                }
+            }
+            Command::AddLabel(ref label, address) => {
+                self.labels.insert(label.clone(), address);
+            }
+            Command::RemoveLabel(ref label) => {
+                if let None = self.labels.remove(label) {
+                    println!("Label .{} doesn't exist", label);
+                }
+            }
+            Command::Breakpoint => {
+                for address in self.breakpoints.iter() {
+                    println!("* 0x{:04x}", address);
+                }
+            }
+            Command::AddBreakpoint(address) => {
+                self.breakpoints.insert(address);
+            }
+            Command::RemoveBreakpoint(address) => {
+                if !self.breakpoints.remove(&address) {
+                    println!("Breakpoint at 0x{:04x} doesn't exist", address);
+                }
+            }
+            Command::Watchpoint => {
+                for address in self.nes.cpu.watchpoints.iter() {
+                    println!("* 0x{:04x}", address);
+                }
+            }
+            Command::AddWatchpoint(address) => {
+                self.nes.cpu.watchpoints.insert(address);
+            }
+            Command::RemoveWatchpoint(address) => {
+                if !self.nes.cpu.watchpoints.remove(&address) {
+                    println!("Watchpoint at 0x{:04x} doesn't exist", address);
+                }
+            }
+            Command::Exit => {
+                return true;
+            }
+            Command::Repeat => unreachable!(),
+        }
+
+        self.last_command = Some(command);
 
         false
     }

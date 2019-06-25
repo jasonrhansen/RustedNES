@@ -1,11 +1,10 @@
-// Based on command.rs from https://github.com/emu-rs/rustual-boy
-
-use combine::char::{alpha_num, digit, hex_digit, space, spaces, string};
-use combine::primitives::{ParseResult, Stream};
-use combine::{choice, eof, many1, optional, parser, r#try, value, Parser};
-
-use std::borrow::Cow;
-use std::str::{self, FromStr};
+use nom::branch::alt;
+use nom::bytes::complete::tag;
+use nom::character::complete::{alphanumeric1, digit1, space0, space1};
+use nom::combinator::{all_consuming, map, map_res, opt};
+use nom::sequence::{preceded, tuple};
+use nom::IResult;
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub enum Command {
@@ -31,184 +30,128 @@ pub enum Command {
 }
 
 impl FromStr for Command {
-    type Err = Cow<'static, str>;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match parser(command).parse(s) {
-            Ok((c, _)) => Ok(c),
-            err => Err(format!("Unable to parse command: {:?}", err).into()),
-        }
+        let (_, command) =
+            command(s).map_err(|err| format!("Unable to parse command: {:?}", err))?;
+        Ok(command)
     }
 }
 
-fn command<I: Stream<Item = char>>(input: I) -> ParseResult<Command, I> {
-    let show_regs = choice([r#try(string("showregs")), r#try(string("r"))])
-        .map(|_| Command::ShowRegs)
-        .boxed();
-
-    let step = (
-        choice([r#try(string("step")), r#try(string("s"))]),
-        optional((spaces(), u16_()).map(|x| x.1)),
-    )
-        .map(|(_, count)| Command::Step(count.unwrap_or(1)))
-        .boxed();
-
-    let continue_ = choice([r#try(string("continue")), r#try(string("c"))])
-        .map(|_| Command::Continue)
-        .boxed();
-
-    let goto = (
-        choice([r#try(string("goto")), r#try(string("g"))]),
-        spaces(),
-        u16_hex(),
-    )
-        .map(|(_, _, addr)| Command::Goto(addr))
-        .boxed();
-
-    let show_mem = (
-        choice([r#try(string("showmem")), r#try(string("m"))]),
-        optional((spaces(), u16_hex()).map(|x| x.1)),
-    )
-        .map(|(_, addr)| Command::ShowMem(addr))
-        .boxed();
-
-    let show_ppu_mem = (
-        choice([r#try(string("showppumem")), r#try(string("pm"))]),
-        space(),
-        u16_hex(),
-    )
-        .map(|(_, _, addr)| Command::ShowPpuMem(addr))
-        .boxed();
-
-    let show_stack = choice([r#try(string("showstack")), r#try(string("ss"))])
-        .map(|_| Command::ShowStack)
-        .boxed();
-
-    let disassemble = (
-        choice([r#try(string("disassemble")), r#try(string("d"))]),
-        optional((spaces(), u16_()).map(|x| x.1)),
-    )
-        .map(|(_, count)| Command::Disassemble(count.unwrap_or(4)))
-        .boxed();
-
-    let label = choice([r#try(string("label")), r#try(string("l"))])
-        .map(|_| Command::Label)
-        .boxed();
-
-    let add_label = (
-        choice([r#try(string("addlabel")), r#try(string("al"))]),
-        space(),
-        label_name(),
-        space(),
-        u16_hex(),
-    )
-        .map(|(_, _, name, _, addr)| Command::AddLabel(name, addr))
-        .boxed();
-
-    let remove_label = (
-        choice([r#try(string("removelabel")), r#try(string("rl"))]),
-        space(),
-        label_name(),
-    )
-        .map(|(_, _, name)| Command::RemoveLabel(name))
-        .boxed();
-
-    let breakpoint = choice([r#try(string("breakpoint")), r#try(string("b"))])
-        .map(|_| Command::Breakpoint)
-        .boxed();
-
-    let add_breakpoint = (
-        choice([r#try(string("addbreakpoint")), r#try(string("ab"))]),
-        space(),
-        u16_hex(),
-    )
-        .map(|(_, _, addr)| Command::AddBreakpoint(addr))
-        .boxed();
-
-    let remove_breakpoint = (
-        choice([r#try(string("removebreakpoint")), r#try(string("rb"))]),
-        space(),
-        u16_hex(),
-    )
-        .map(|(_, _, addr)| Command::RemoveBreakpoint(addr))
-        .boxed();
-
-    let watchpoint = choice([r#try(string("watchpoint")), r#try(string("w"))])
-        .map(|_| Command::Watchpoint)
-        .boxed();
-
-    let add_watchpoint = (
-        choice([r#try(string("addwatchpoint")), r#try(string("aw"))]),
-        space(),
-        u16_hex(),
-    )
-        .map(|(_, _, addr)| Command::AddWatchpoint(addr))
-        .boxed();
-
-    let remove_watchpoint = (
-        choice([r#try(string("removewatchpoint")), r#try(string("rw"))]),
-        space(),
-        u16_hex(),
-    )
-        .map(|(_, _, addr)| Command::RemoveWatchpoint(addr))
-        .boxed();
-
-    let exit = choice([
-        r#try(string("exit")),
-        r#try(string("quit")),
-        r#try(string("e")),
-        r#try(string("x")),
-        r#try(string("q")),
-    ])
-    .map(|_| Command::Exit)
-    .boxed();
-
-    let repeat = value(Command::Repeat).boxed();
-
-    choice(
-        vec![
-            show_regs,
-            step,
-            continue_,
-            goto,
-            show_mem,
-            show_ppu_mem,
-            show_stack,
-            disassemble,
-            label,
-            add_label,
-            remove_label,
-            breakpoint,
-            add_breakpoint,
-            remove_breakpoint,
-            watchpoint,
-            add_watchpoint,
-            remove_watchpoint,
-            exit,
-            repeat,
-        ]
-        .into_iter()
-        .map(|parser| (parser, eof()).map(|x| x.0))
-        .map(|parser| r#try(parser))
-        .collect::<Vec<_>>(),
-    )
-    .parse_stream(input)
+fn u16_(input: &str) -> IResult<&str, u16> {
+    map_res(digit1, |s: &str| s.parse::<u16>())(input)
 }
 
-fn u16_<'a, I: Stream<Item = char> + 'a>() -> Box<Parser<Input = I, Output = u16> + 'a> {
-    many1(digit())
-        .and_then(|s: String| s.parse::<u16>())
-        .boxed()
+fn u16_hex(input: &str) -> IResult<&str, u16> {
+    let prefix = alt((tag("0x"), tag("$")));
+    let digits = map_res(digit1, |s: &str| u16::from_str_radix(&s, 16));
+    preceded(opt(prefix), digits)(input)
 }
 
-fn u16_hex<'a, I: Stream<Item = char> + 'a>() -> Box<Parser<Input = I, Output = u16> + 'a> {
-    let hex_prefix = choice([r#try(string("0x")), r#try(string("$"))]);
-    (optional(hex_prefix), many1(hex_digit()))
-        .map(|x| x.1)
-        .and_then(|s: String| u16::from_str_radix(&s, 16))
-        .boxed()
-}
+fn command(input: &str) -> IResult<&str, Command> {
+    let show_regs = all_consuming(alt((tag("showregs"), tag("r"))));
 
-fn label_name<'a, I: Stream<Item = char> + 'a>() -> Box<Parser<Input = I, Output = String> + 'a> {
-    many1::<String, _>(alpha_num()).boxed()
+    let step = all_consuming(preceded(
+        alt((tag("step"), tag("s"))),
+        opt(preceded(space1, u16_)),
+    ));
+
+    let continue_ = all_consuming(alt((tag("continue"), tag("c"))));
+
+    let goto = all_consuming(preceded(
+        alt((tag("goto"), tag("g"))),
+        preceded(space1, u16_hex),
+    ));
+
+    let show_mem = all_consuming(preceded(
+        alt((tag("showmem"), tag("m"))),
+        opt(preceded(space1, u16_hex)),
+    ));
+
+    let show_ppu_mem = all_consuming(preceded(
+        alt((tag("showppumem"), tag("pm"))),
+        preceded(space1, u16_hex),
+    ));
+
+    let show_stack = all_consuming(alt((tag("showstack"), tag("ss"))));
+
+    let disassemble = all_consuming(preceded(
+        alt((tag("disassemble"), tag("d"))),
+        opt(preceded(space1, u16_)),
+    ));
+
+    let label = all_consuming(alt((tag("label"), tag("l"))));
+
+    let add_label = all_consuming(preceded(
+        alt((tag("addlabel"), tag("al"))),
+        tuple((preceded(space1, alphanumeric1), preceded(space1, u16_hex))),
+    ));
+
+    let remove_label = all_consuming(preceded(
+        alt((tag("removelabel"), tag("rl"))),
+        preceded(space1, alphanumeric1),
+    ));
+
+    let breakpoint = all_consuming(alt((tag("breakpoint"), tag("b"))));
+
+    let add_breakpoint = all_consuming(preceded(
+        alt((tag("addbreakpoint"), tag("ab"))),
+        preceded(space1, u16_hex),
+    ));
+
+    let remove_breakpoint = all_consuming(preceded(
+        alt((tag("removebreakpoint"), tag("rb"))),
+        preceded(space1, u16_hex),
+    ));
+
+    let watchpoint = all_consuming(alt((tag("watchpoint"), tag("w"))));
+
+    let add_watchpoint = all_consuming(preceded(
+        alt((tag("addwatchpoint"), tag("aw"))),
+        preceded(space1, u16_hex),
+    ));
+
+    let remove_watchpoint = all_consuming(preceded(
+        alt((tag("removewatchpoint"), tag("rw"))),
+        preceded(space1, u16_hex),
+    ));
+
+    let exit = all_consuming(alt((
+        tag("exit"),
+        tag("quit"),
+        tag("e"),
+        tag("x"),
+        tag("q"),
+    )));
+
+    let repeat = all_consuming(space0);
+
+    let commands = alt((
+        map(show_regs, |_| Command::ShowRegs),
+        map(step, |count| Command::Step(count.unwrap_or(1))),
+        map(continue_, |_| Command::Continue),
+        map(goto, Command::Goto),
+        map(show_mem, Command::ShowMem),
+        map(show_ppu_mem, Command::ShowPpuMem),
+        map(show_stack, |_| Command::ShowStack),
+        map(disassemble, |count| {
+            Command::Disassemble(count.unwrap_or(4))
+        }),
+        map(label, |_| Command::Label),
+        map(add_label, |(name, addr)| {
+            Command::AddLabel(name.into(), addr)
+        }),
+        map(remove_label, |name: &str| Command::RemoveLabel(name.into())),
+        map(breakpoint, |_| Command::Breakpoint),
+        map(add_breakpoint, Command::AddBreakpoint),
+        map(remove_breakpoint, Command::RemoveBreakpoint),
+        map(watchpoint, |_| Command::Watchpoint),
+        map(add_watchpoint, Command::AddWatchpoint),
+        map(remove_watchpoint, Command::RemoveWatchpoint),
+        map(exit, |_| Command::Exit),
+        map(repeat, |_| Command::Repeat),
+    ));
+
+    commands(input)
 }
