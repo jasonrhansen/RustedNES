@@ -10,7 +10,7 @@ name = "rustednes_libretro"
 crate-type = ["cdylib"]
 
 [dependencies]
-libc = "0.2.*"
+libc = "0.2.58"
 rustednes-core = { path="../rustednes-core" }
 serde = "1.0"
-serde_cbor = "0.8.2"
+serde_cbor = "0.9.0"
