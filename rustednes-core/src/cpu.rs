@@ -21,7 +21,7 @@ const BRK_VECTOR: u16 = 0xFFFE;
 
 // The number of cycles that each opcode takes.
 // This doesn't include additional cycles for page crossing.
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 static OPCODE_CYCLES: &[u8] = &[
     7, 6, 2, 8, 3, 3, 5, 5, 3, 2, 2, 2, 4, 4, 6, 6,
     2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
@@ -41,7 +41,7 @@ static OPCODE_CYCLES: &[u8] = &[
     2, 5, 2, 8, 4, 4, 6, 6, 2, 4, 2, 7, 4, 4, 7, 7,
 ];
 
-#[derive(Copy, Clone, Deserialize, Serialize)]
+#[derive(Copy, Clone, Default, Deserialize, Serialize)]
 pub struct Flags {
     c: bool, // Carry
     z: bool, // Zero
@@ -51,21 +51,6 @@ pub struct Flags {
     e: bool, // Expansion
     v: bool, // Overflow
     n: bool, // Negative
-}
-
-impl Flags {
-    pub fn new() -> Flags {
-        Flags {
-            c: false,
-            z: false,
-            i: false,
-            d: false,
-            b: false,
-            e: false,
-            v: false,
-            n: false,
-        }
-    }
 }
 
 impl Into<u8> for Flags {
@@ -113,25 +98,13 @@ impl Debug for Flags {
     }
 }
 
-#[derive(Copy, Clone, Deserialize, Serialize)]
+#[derive(Copy, Clone, Default, Deserialize, Serialize)]
 pub struct Regs {
     pub pc: u16,
     pub a: u8,
     pub x: u8,
     pub y: u8,
     pub sp: u8,
-}
-
-impl Regs {
-    fn new() -> Regs {
-        Regs {
-            pc: 0,
-            a: 0,
-            x: 0,
-            y: 0,
-            sp: 0,
-        }
-    }
 }
 
 impl Debug for Regs {
@@ -169,6 +142,7 @@ fn mem_pages_same(m1: u16, m2: u16) -> bool {
     (m1 & 0xFF00) == (m2 & 0xFF00)
 }
 
+#[derive(Default)]
 pub struct Cpu {
     pub cycles: u64,
     stall_cycles: u8,
@@ -190,18 +164,8 @@ pub struct State {
 }
 
 impl Cpu {
-    pub fn new() -> Cpu {
-        let cpu = Cpu {
-            cycles: 0,
-            stall_cycles: 0,
-            regs: Regs::new(),
-            flags: Flags::new(),
-            interrupt: None,
-            watchpoints: HashSet::new(),
-            trigger_watchpoint: false,
-        };
-
-        cpu
+    pub fn new() -> Self {
+        Default::default()
     }
 
     pub fn get_state(&self) -> State {
@@ -271,7 +235,7 @@ impl Cpu {
     }
 
     fn check_watchpoints(&self, addr: u16) -> bool {
-        self.watchpoints.len() != 0 && self.watchpoints.contains(&addr)
+        !self.watchpoints.is_empty() && self.watchpoints.contains(&addr)
     }
 
     #[inline(always)]
@@ -1066,7 +1030,7 @@ impl Cpu {
     // Some unofficial write instructions have an internal bus conflict that causes strange behaviors.
     fn unofficial_strange_write(&mut self, mem: &mut impl Memory, value: u8, index: u8) {
         let base = self.next_pc_word(mem);
-        let addr = base + index as u16;;
+        let addr = base + index as u16;
 
         let result = value & ((base >> 8) + 1) as u8;
 

@@ -43,9 +43,9 @@ pub struct Emulator {
     prompt_sender: Sender<String>,
     stdin_receiver: Receiver<String>,
 
-    audio_frame_sink: Box<AudioSink>,
+    audio_frame_sink: Box<dyn AudioSink>,
 
-    time_source: Box<TimeSource>,
+    time_source: Box<dyn TimeSource>,
     start_time_ns: u64,
 
     emulated_cycles: u64,
@@ -58,8 +58,8 @@ pub struct Emulator {
 impl Emulator {
     pub fn new(
         cartridge: Cartridge,
-        audio_frame_sink: Box<AudioSink>,
-        time_source: Box<TimeSource>,
+        audio_frame_sink: Box<dyn AudioSink>,
+        time_source: Box<dyn TimeSource>,
     ) -> Emulator {
         let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
@@ -207,7 +207,7 @@ impl Emulator {
         }
     }
 
-    fn step(&mut self, video_frame_sink: &mut VideoSink) -> (u32, bool) {
+    fn step(&mut self, video_frame_sink: &mut dyn VideoSink) -> (u32, bool) {
         let (cycles, trigger_watchpoint) = self
             .nes
             .step(video_frame_sink, self.audio_frame_sink.as_mut());
@@ -241,7 +241,7 @@ impl Emulator {
         self.print_cursor();
     }
 
-    fn run_debugger_commands(&mut self, video_frame_sink: &mut VideoSink) -> bool {
+    fn run_debugger_commands(&mut self, video_frame_sink: &mut dyn VideoSink) -> bool {
         while let Ok(command_string) = self.stdin_receiver.try_recv() {
             let command = match (command_string.parse(), self.last_command.clone()) {
                 (Ok(Command::Repeat), Some(c)) => Ok(c),
@@ -269,7 +269,11 @@ impl Emulator {
         false
     }
 
-    fn run_debugger_command(&mut self, command: Command, video_frame_sink: &mut VideoSink) -> bool {
+    fn run_debugger_command(
+        &mut self,
+        command: Command,
+        video_frame_sink: &mut dyn VideoSink,
+    ) -> bool {
         match command {
             Command::ShowRegs => {
                 let regs = self.nes.cpu.regs();

@@ -5,7 +5,7 @@ use rustednes_core::sink::AudioSink;
 pub struct NullAudioDriver;
 
 impl AudioDriver for NullAudioDriver {
-    fn sink(&self) -> Box<AudioSink> {
+    fn sink(&self) -> Box<dyn AudioSink> {
         Box::new(NullAudioSink {})
     }
 

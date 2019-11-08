@@ -160,25 +160,23 @@ impl Mapper for Mapper1 {
             // Do nothing
         } else if address < 0x8000 {
             self.cartridge.prg_ram[(address - 0x6000) as usize] = value
-        } else {
-            if (value & 0x80) == 0 {
-                // If a 1 has been shifted into bit 0, it's time to write to a register
-                let is_last_shift = (self.shift & 0x01) != 0;
+        } else if (value & 0x80) == 0 {
+            // If a 1 has been shifted into bit 0, it's time to write to a register
+            let is_last_shift = (self.shift & 0x01) != 0;
 
-                // Bit 0 of the value gets shifted into the shift
-                // register from the left, starting at bit 4.
-                self.shift = (self.shift >> 1) | ((value & 0x01) << 4);
+            // Bit 0 of the value gets shifted into the shift
+            // register from the left, starting at bit 4.
+            self.shift = (self.shift >> 1) | ((value & 0x01) << 4);
 
-                if is_last_shift {
-                    let shift = self.shift;
-                    self.write_register(address, shift);
-                    self.shift = SHIFT_REGISTER_DEFAULT;
-                }
-            } else {
-                // Writing a value with bit 7 set clears the shift register to its initial state
+            if is_last_shift {
+                let shift = self.shift;
+                self.write_register(address, shift);
                 self.shift = SHIFT_REGISTER_DEFAULT;
-                self.regs.control |= 0x0C;
             }
+        } else {
+            // Writing a value with bit 7 set clears the shift register to its initial state
+            self.shift = SHIFT_REGISTER_DEFAULT;
+            self.regs.control |= 0x0C;
         }
     }
 
@@ -223,7 +221,7 @@ impl Mapper for Mapper1 {
 
     fn apply_state(&mut self, state: &mapper::State) {
         match state {
-            &mapper::State::State1(ref state) => {
+            mapper::State::State1(state) => {
                 self.cartridge.apply_state(&state.cartridge);
                 self.shift = state.shift;
                 self.regs = state.regs;

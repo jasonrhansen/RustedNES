@@ -215,6 +215,7 @@ impl<'a> VideoSink for Xrgb8888VideoSink<'a> {
     }
 }
 
+#[allow(clippy::unreadable_literal)]
 static XRGB8888_PALETTE: &[u32] = &[
     0x666666, 0x002A88, 0x1412A7, 0x3B00A4, 0x5C007E, 0x6E0040, 0x6C0600, 0x561D00, 0x333500,
     0x0B4800, 0x005200, 0x004F08, 0x00404D, 0x000000, 0x000000, 0x000000, 0xADADAD, 0x155FD9,
@@ -256,7 +257,7 @@ lazy_static! {
             let r = ((color >> 16) & 0xFF) as u32;
             let g = ((color >> 8) & 0xFF) as u32;
             let b = (color & 0xFF) as u32;
-            palette[n] = 0xFF000000 | (b << 16) | (g << 8) | r;
+            palette[n] = 0xFF00_0000 | (b << 16) | (g << 8) | r;
         }
         palette
     };

@@ -88,7 +88,7 @@ impl Mapper for Mapper7 {
 
     fn apply_state(&mut self, state: &mapper::State) {
         match state {
-            &mapper::State::State7(ref state) => {
+            mapper::State::State7(state) => {
                 self.cartridge.apply_state(&state.cartridge);
                 self.prg_rom_bank = state.prg_rom_bank;
             }

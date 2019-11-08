@@ -40,7 +40,7 @@ impl Disassembler {
     fn dis_am<M: Memory>(&mut self, mem: &mut M, am: AddressMode) -> String {
         use crate::cpu::AddressMode::*;
         match am {
-            Immediate => format!("#{}", self.dis_pc_byte(mem)).into(),
+            Immediate => format!("#{}", self.dis_pc_byte(mem)),
             Absolute => self.dis_pc_word(mem),
             ZeroPage => self.dis_pc_byte(mem),
             AbsoluteIndexed(reg) => format!("{},{}", self.dis_pc_word(mem), self.dis_reg(reg)),
@@ -68,11 +68,11 @@ impl Disassembler {
         mem: &mut M,
         am: AddressMode,
     ) -> String {
-        format!("{} {}", instruction, self.dis_am(mem, am)).into()
+        format!("{} {}", instruction, self.dis_am(mem, am))
     }
 
     fn dis_branch<M: Memory>(&mut self, instruction: &str, mem: &mut M) -> String {
-        format!("{} {}", instruction, self.next_pc_byte(mem) as i8).into()
+        format!("{} {}", instruction, self.next_pc_byte(mem) as i8)
     }
 
     ///////////////////
@@ -152,11 +152,11 @@ impl Disassembler {
     }
 
     fn jmp<M: Memory>(&mut self, mem: &mut M) -> String {
-        format!("jmp {}", self.dis_pc_word(mem)).into()
+        format!("jmp {}", self.dis_pc_word(mem))
     }
 
     fn jmpi<M: Memory>(&mut self, mem: &mut M) -> String {
-        format!("jmp ({})", self.dis_pc_word(mem)).into()
+        format!("jmp ({})", self.dis_pc_word(mem))
     }
 
     fn bmi<M: Memory>(&mut self, mem: &mut M) -> String {
@@ -256,7 +256,7 @@ impl Disassembler {
     }
 
     fn jsr<M: Memory>(&mut self, mem: &mut M) -> String {
-        format!("jsr {}", self.dis_pc_word(mem)).into()
+        format!("jsr {}", self.dis_pc_word(mem))
     }
 
     fn rts<M: Memory>(&mut self, _: &mut M) -> String {
@@ -352,7 +352,7 @@ impl Disassembler {
     }
 
     fn skb<M: Memory>(&mut self, mem: &mut M) -> String {
-        format!("skb {}", self.dis_pc_byte(mem)).into()
+        format!("skb {}", self.dis_pc_byte(mem))
     }
 
     fn ign(&mut self, mem: &mut impl Memory, am: AddressMode) -> String {

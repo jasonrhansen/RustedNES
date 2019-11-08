@@ -14,7 +14,13 @@ pub enum Button {
     Right,
 }
 
-#[derive(Copy, Clone, Deserialize, Serialize)]
+impl Default for Button {
+    fn default() -> Self {
+        Button::A
+    }
+}
+
+#[derive(Copy, Clone, Default, Deserialize, Serialize)]
 pub struct GamePad {
     a_pressed: bool,
     b_pressed: bool,
@@ -29,21 +35,6 @@ pub struct GamePad {
 }
 
 impl GamePad {
-    fn new() -> GamePad {
-        GamePad {
-            a_pressed: false,
-            b_pressed: false,
-            select_pressed: false,
-            start_pressed: false,
-            up_pressed: false,
-            down_pressed: false,
-            left_pressed: false,
-            right_pressed: false,
-
-            strobe_state: StrobeState { button: Button::A },
-        }
-    }
-
     pub fn set_button_pressed(&mut self, button: Button, pressed: bool) {
         match button {
             Button::A => self.a_pressed = pressed,
@@ -77,7 +68,7 @@ impl GamePad {
     }
 }
 
-#[derive(Copy, Clone, Deserialize, Serialize)]
+#[derive(Copy, Clone, Default, Deserialize, Serialize)]
 struct StrobeState {
     button: Button,
 }
@@ -97,10 +88,11 @@ impl StrobeState {
     }
 
     fn reset(&mut self) {
-        self.button = Button::A;
+        self.button = Button::default();
     }
 }
 
+#[derive(Default)]
 pub struct Input {
     pub game_pad_1: GamePad,
     pub game_pad_2: GamePad,
@@ -113,11 +105,8 @@ pub struct State {
 }
 
 impl Input {
-    pub fn new() -> Input {
-        Input {
-            game_pad_1: GamePad::new(),
-            game_pad_2: GamePad::new(),
-        }
+    pub fn new() -> Self {
+        Default::default()
     }
 
     pub fn get_state(&self) -> State {

@@ -227,12 +227,10 @@ impl Mapper for Mapper4 {
             } else {
                 self.irq_counter = 0;
             }
+        } else if address & 0x01 == 0 {
+            self.irq_enable = false;
         } else {
-            if address & 0x01 == 0 {
-                self.irq_enable = false;
-            } else {
-                self.irq_enable = true;
-            }
+            self.irq_enable = true;
         }
     }
 
@@ -300,7 +298,7 @@ impl Mapper for Mapper4 {
 
     fn apply_state(&mut self, state: &mapper::State) {
         match state {
-            &mapper::State::State4(ref state) => {
+            mapper::State::State4(state) => {
                 self.cartridge.apply_state(&state.cartridge);
                 self.next_bank_register = state.next_bank_register;
                 self.bank_registers = state.bank_registers;

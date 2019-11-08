@@ -44,7 +44,7 @@ pub trait Mapper {
     fn apply_state(&mut self, state: &State);
 }
 
-pub fn create_mapper(cartridge: Cartridge) -> Box<Mapper> {
+pub fn create_mapper(cartridge: Cartridge) -> Box<dyn Mapper> {
     match cartridge.mapper {
         0 => Box::new(Mapper0::new(cartridge)),
         1 => Box::new(Mapper1::new(cartridge)),

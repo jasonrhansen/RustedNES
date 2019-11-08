@@ -126,7 +126,7 @@ pub struct State {
 }
 
 impl Ppu {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Ppu {
+    pub fn new(mapper: Rc<RefCell<Box<dyn Mapper>>>) -> Ppu {
         Ppu {
             cycles: 0,
             regs: Regs::new(),
@@ -642,7 +642,7 @@ impl Ppu {
         self.cycles - self.scanline_start_cycle
     }
 
-    pub fn step(&mut self, cpu: &mut Cpu, video_frame_sink: &mut VideoSink) {
+    pub fn step(&mut self, cpu: &mut Cpu, video_frame_sink: &mut dyn VideoSink) {
         let scanline_cycle = self.scanline_cycle();
 
         let on_visible_scanline =
@@ -696,37 +696,37 @@ impl Ppu {
         }
 
         // Handle sprites
-        if self.rendering_enabled() {
-            if on_visible_scanline {
-                if on_visible_cycle {
-                    self.update_sprite_rendering_registers();
-                }
+        if self.rendering_enabled() && on_visible_scanline {
+            if on_visible_cycle {
+                self.update_sprite_rendering_registers();
+            }
 
-                match scanline_cycle {
-                    1...64 => {
-                        if scanline_cycle == 1 {
-                            self.sprite_evaluation_init();
-                        }
-                        if scanline_cycle % 2 == 0 {
-                            self.oam.secondary[((scanline_cycle / 2) - 1) as usize] = 0xFF;
-                        }
+            match scanline_cycle {
+                1..=64 => {
+                    if scanline_cycle == 1 {
+                        self.sprite_evaluation_init();
                     }
-                    65...256 => {
-                        if scanline_cycle % 2 == 1 {
-                            self.sprite_evaluation_read_byte();
-                        } else {
-                            self.sprite_evaluation_write_byte();
-                        }
+                    if scanline_cycle % 2 == 0 {
+                        self.oam.secondary[((scanline_cycle / 2) - 1) as usize] = 0xFF;
                     }
-                    _ => (),
                 }
+                65..=256 => {
+                    if scanline_cycle % 2 == 1 {
+                        self.sprite_evaluation_read_byte();
+                    } else {
+                        self.sprite_evaluation_write_byte();
+                    }
+                }
+                _ => (),
             }
         }
 
-        if on_visible_scanline && 257 <= scanline_cycle && scanline_cycle <= 320 {
-            if scanline_cycle % 8 == 0 {
-                self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
-            }
+        if on_visible_scanline
+            && 257 <= scanline_cycle
+            && scanline_cycle <= 320
+            && scanline_cycle % 8 == 0
+        {
+            self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
         }
 
         match self.scanline {
@@ -860,7 +860,7 @@ struct PpuCtrl {
 }
 
 impl PpuCtrl {
-    fn vram_address_increment(&self) -> VramAddressIncrement {
+    fn vram_address_increment(self) -> VramAddressIncrement {
         if (self.val & 0x04) == 0 {
             VramAddressIncrement::Add1Across
         } else {
@@ -869,7 +869,7 @@ impl PpuCtrl {
     }
 
     // For 8x8 sprites (ignored in 8x16 mode)
-    fn sprite_pattern_table_address(&self) -> u16 {
+    fn sprite_pattern_table_address(self) -> u16 {
         if (self.val & 0x08) == 0 {
             0x0000
         } else {
@@ -877,7 +877,7 @@ impl PpuCtrl {
         }
     }
 
-    fn background_pattern_table_address(&self) -> u16 {
+    fn background_pattern_table_address(self) -> u16 {
         if (self.val & 0x10) == 0 {
             0x0000
         } else {
@@ -885,7 +885,7 @@ impl PpuCtrl {
         }
     }
 
-    fn sprite_size(&self) -> SpriteSize {
+    fn sprite_size(self) -> SpriteSize {
         if (self.val & 0x20) == 0 {
             SpriteSize::Size8x8
         } else {
@@ -914,7 +914,7 @@ bitflags! {
         const NONE                   = 0;
 
         // Greyscale (0: normal color, 1: produce a greyscale display)
-        const GREYSCALE              = 1 << 0;
+        const GREYSCALE              = 1;
 
         // 1: Show background in leftmost 8 pixels of screen, 0: Hide
         const SHOW_BACKGROUND_LEFT_8 = 1 << 1;
@@ -1161,11 +1161,11 @@ impl DerefMut for PaletteRam {
 pub struct MemMap {
     pub vram: Vram,
     palette_ram: PaletteRam,
-    mapper: Rc<RefCell<Box<Mapper>>>,
+    mapper: Rc<RefCell<Box<dyn Mapper>>>,
 }
 
 impl MemMap {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Self {
+    pub fn new(mapper: Rc<RefCell<Box<dyn Mapper>>>) -> Self {
         MemMap {
             vram: Vram::new(),
             palette_ram: PaletteRam::new(),
@@ -1218,11 +1218,11 @@ enum SpritePriority {
 pub struct SpriteAttributes(u8);
 
 impl SpriteAttributes {
-    fn palette(&self) -> u8 {
+    fn palette(self) -> u8 {
         (self.0 & 0x03) | 0x04
     }
 
-    fn priority(&self) -> SpritePriority {
+    fn priority(self) -> SpritePriority {
         if self.0 & 0x20 == 0 {
             SpritePriority::InFrontOfBackground
         } else {
@@ -1230,11 +1230,11 @@ impl SpriteAttributes {
         }
     }
 
-    fn flip_horizontally(&self) -> bool {
+    fn flip_horizontally(self) -> bool {
         self.0 & 0x40 == 0x40
     }
 
-    fn flip_vertically(&self) -> bool {
+    fn flip_vertically(self) -> bool {
         self.0 & 0x80 == 0x80
     }
 }
@@ -1257,11 +1257,11 @@ impl Sprite {
         }
     }
 
-    fn flip_horizontally(&self) -> bool {
+    fn flip_horizontally(self) -> bool {
         self.attributes.flip_horizontally()
     }
 
-    fn flip_vertically(&self) -> bool {
+    fn flip_vertically(self) -> bool {
         self.attributes.flip_vertically()
     }
 }

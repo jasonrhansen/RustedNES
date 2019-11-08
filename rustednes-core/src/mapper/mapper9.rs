@@ -66,12 +66,10 @@ impl Mapper9 {
             } else {
                 self.chr_fe_0000_bank
             }
+        } else if self.latch_1 == 0xFD {
+            self.chr_fd_1000_bank
         } else {
-            if self.latch_1 == 0xFD {
-                self.chr_fd_1000_bank
-            } else {
-                self.chr_fe_1000_bank
-            }
+            self.chr_fe_1000_bank
         };
 
         (bank as usize * 0x1000 as usize) | (address as usize & 0x0FFF)
@@ -118,12 +116,10 @@ impl Mapper for Mapper9 {
             self.chr_fd_1000_bank = value & 0x1F;
         } else if address < 0xF000 {
             self.chr_fe_1000_bank = value & 0x1F;
+        } else if value & 0x01 == 0 {
+            self.cartridge.mirroring = Mirroring::Vertical;
         } else {
-            if value & 0x01 == 0 {
-                self.cartridge.mirroring = Mirroring::Vertical;
-            } else {
-                self.cartridge.mirroring = Mirroring::Horizontal;
-            }
+            self.cartridge.mirroring = Mirroring::Horizontal;
         }
     }
 
@@ -161,9 +157,6 @@ impl Mapper for Mapper9 {
     fn reset(&mut self) {
         self.cartridge.mirroring = self.cartridge.default_mirroring;
         self.prg_rom_switchable_bank = 0;
-        self.prg_rom_fixed_bank_1;
-        self.prg_rom_fixed_bank_2;
-        self.prg_rom_fixed_bank_3;
         self.latch_0 = 0;
         self.latch_1 = 0;
         self.chr_fd_0000_bank = 0;
@@ -190,7 +183,7 @@ impl Mapper for Mapper9 {
 
     fn apply_state(&mut self, state: &mapper::State) {
         match state {
-            &mapper::State::State9(ref state) => {
+            mapper::State::State9(state) => {
                 self.cartridge.apply_state(&state.cartridge);
                 self.latch_0 = state.latch_0;
                 self.latch_1 = state.latch_1;

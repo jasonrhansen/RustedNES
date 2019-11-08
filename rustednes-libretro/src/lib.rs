@@ -151,50 +151,54 @@ impl Context {
             if let Some(ref mut system) = self.system {
                 Context::handle_input(system);
 
-                let (pixel_buffer_ptr, mut video_output_sink): (_, Box<VideoSink>) = match CALLBACKS
-                    .get_current_software_framebuffer(SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32)
-                {
-                    Some(fb) => match fb.format {
-                        0 => (
-                            fb.data,
-                            Box::new(Xrgb1555VideoSink::new(slice::from_raw_parts_mut(
-                                fb.data as *mut _,
-                                (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u16>(),
-                            ))),
-                        ),
-                        1 => (
-                            fb.data,
-                            Box::new(Xrgb8888VideoSink::new(slice::from_raw_parts_mut(
-                                fb.data as *mut _,
-                                (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u32>(),
-                            ))),
-                        ),
-                        2 => (
-                            fb.data,
-                            Box::new(Rgb565VideoSink::new(slice::from_raw_parts_mut(
-                                fb.data as *mut _,
-                                (fb.height as usize) * (fb.pitch as usize) / mem::size_of::<u16>(),
-                            ))),
-                        ),
-                        _ => panic!(
-                            "Host returned framebuffer with unrecognized pixel format format"
-                        ),
-                    },
-                    _ => match self.video_output_frame_buffer {
-                        OutputBuffer::Xrgb1555(ref mut buffer) => (
-                            buffer.as_mut_ptr() as *mut c_void,
-                            Box::new(Xrgb1555VideoSink::new(buffer)),
-                        ),
-                        OutputBuffer::Xrgb8888(ref mut buffer) => (
-                            buffer.as_mut_ptr() as *mut c_void,
-                            Box::new(Xrgb8888VideoSink::new(buffer)),
-                        ),
-                        OutputBuffer::Rgb565(ref mut buffer) => (
-                            buffer.as_mut_ptr() as *mut c_void,
-                            Box::new(Rgb565VideoSink::new(buffer)),
-                        ),
-                    },
-                };
+                let (pixel_buffer_ptr, mut video_output_sink): (_, Box<dyn VideoSink>) =
+                    match CALLBACKS
+                        .get_current_software_framebuffer(SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32)
+                    {
+                        Some(fb) => match fb.format {
+                            0 => (
+                                fb.data,
+                                Box::new(Xrgb1555VideoSink::new(slice::from_raw_parts_mut(
+                                    fb.data as *mut _,
+                                    (fb.height as usize) * (fb.pitch as usize)
+                                        / mem::size_of::<u16>(),
+                                ))),
+                            ),
+                            1 => (
+                                fb.data,
+                                Box::new(Xrgb8888VideoSink::new(slice::from_raw_parts_mut(
+                                    fb.data as *mut _,
+                                    (fb.height as usize) * (fb.pitch as usize)
+                                        / mem::size_of::<u32>(),
+                                ))),
+                            ),
+                            2 => (
+                                fb.data,
+                                Box::new(Rgb565VideoSink::new(slice::from_raw_parts_mut(
+                                    fb.data as *mut _,
+                                    (fb.height as usize) * (fb.pitch as usize)
+                                        / mem::size_of::<u16>(),
+                                ))),
+                            ),
+                            _ => panic!(
+                                "Host returned framebuffer with unrecognized pixel format format"
+                            ),
+                        },
+                        _ => match self.video_output_frame_buffer {
+                            OutputBuffer::Xrgb1555(ref mut buffer) => (
+                                buffer.as_mut_ptr() as *mut c_void,
+                                Box::new(Xrgb1555VideoSink::new(buffer)),
+                            ),
+                            OutputBuffer::Xrgb8888(ref mut buffer) => (
+                                buffer.as_mut_ptr() as *mut c_void,
+                                Box::new(Xrgb8888VideoSink::new(buffer)),
+                            ),
+                            OutputBuffer::Rgb565(ref mut buffer) => (
+                                buffer.as_mut_ptr() as *mut c_void,
+                                Box::new(Rgb565VideoSink::new(buffer)),
+                            ),
+                        },
+                    };
 
                 let rendered_audio_frames = {
                     let mut audio_output_sink = AudioSinkI16::new(&mut self.audio_frame_buffer);
@@ -404,7 +408,7 @@ pub unsafe extern "C" fn retro_get_memory_size(id: u32) -> size_t {
             MEMORY_SYSTEM_RAM => system.nes.interconnect.ram.len(),
             MEMORY_VIDEO_RAM => system.nes.interconnect.ppu.mem.vram.len(),
             MEMORY_SAVE_RAM => {
-                let mut mapper = system.nes.interconnect.mapper.borrow_mut();
+                let mapper = system.nes.interconnect.mapper.borrow_mut();
                 mapper.sram_size()
             }
             _ => 0,

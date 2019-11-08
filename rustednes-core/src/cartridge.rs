@@ -10,7 +10,7 @@ use std::io;
 use std::io::{Read, Seek, SeekFrom};
 
 // ROM must begin with this constant ("NES" followed by MS-DOS end-of-file)
-const MAGIC_CONSTANT: u32 = 0x4e45531a;
+const MAGIC_CONSTANT: u32 = 0x4e45_531a;
 
 pub const PRG_ROM_BANK_SIZE: u16 = 16 * 1024;
 pub const CHR_ROM_BANK_SIZE: u16 = 8 * 1024;
@@ -26,9 +26,9 @@ pub enum Mirroring {
 }
 
 impl Mirroring {
-    pub fn mirror_address(&self, address: u16) -> u16 {
+    pub fn mirror_address(self, address: u16) -> u16 {
         let address = address & 0x2FFF;
-        match *self {
+        match self {
             Mirroring::Horizontal => {
                 let address = address & 0x2BFF;
                 if address < 0x2800 {

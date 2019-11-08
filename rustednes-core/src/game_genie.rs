@@ -12,15 +12,15 @@ impl Cheat {
         decode(code)
     }
 
-    pub fn address(&self) -> u16 {
+    pub fn address(self) -> u16 {
         self.address
     }
 
-    pub fn data(&self) -> u8 {
+    pub fn data(self) -> u8 {
         self.data
     }
 
-    pub fn compare(&self) -> Option<u8> {
+    pub fn compare(self) -> Option<u8> {
         self.compare
     }
 }
@@ -35,7 +35,7 @@ impl fmt::Debug for Cheat {
             if let Some(c) = self.compare {
                 format!("0x{:02x}", c)
             } else {
-                format!("None")
+                "None".to_string()
             }
         )
     }
@@ -54,7 +54,7 @@ fn decode(code: &[u8]) -> Result<Cheat, String> {
 
     let n = n;
 
-    let address = 0x8000 + ((n[3] as u16 & 7) << 12)
+    let address = (0x8000 + ((n[3] as u16 & 7) << 12))
         | ((n[5] as u16 & 7) << 8)
         | ((n[4] as u16 & 8) << 8)
         | ((n[2] as u16 & 7) << 4)

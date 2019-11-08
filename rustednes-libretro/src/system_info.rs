@@ -17,6 +17,12 @@ pub struct SystemInfo {
 
 impl SystemInfo {
     pub fn new() -> SystemInfo {
+        Default::default()
+    }
+}
+
+impl Default for SystemInfo {
+    fn default() -> Self {
         SystemInfo {
             library_name: cstring!("RustedNES"),
             library_version: cstring!(env!("CARGO_PKG_VERSION")),

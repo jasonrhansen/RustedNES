@@ -89,7 +89,7 @@ impl Mapper for Mapper2 {
 
     fn apply_state(&mut self, state: &mapper::State) {
         match state {
-            &mapper::State::State2(ref state) => {
+            mapper::State::State2(state) => {
                 self.cartridge.apply_state(&state.cartridge);
                 self.switchable_bank = state.switchable_bank;
             }

@@ -19,13 +19,13 @@ static DUTY_CYCLE_TABLE: &[[u8; 8]] = &[
     [1, 0, 0, 1, 1, 1, 1, 1],
 ];
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 static LENGTH_TABLE: &[u8] = &[
     10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
     12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30,
 ];
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+#[rustfmt::skip]
 static TRIANGLE_TABLE: &[u8] = &[
     15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0,
      0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
@@ -42,16 +42,18 @@ static DMC_TABLE: &[u8] = &[
 lazy_static! {
     static ref PULSE_TABLE: [f32; 31] = {
         let mut pulse_table = [0f32; 31];
-        for n in 0..31 {
-            pulse_table[n] = (95.52 / (8128.0 / (n as f64) + 100.0)) as f32;
-        }
+        pulse_table
+            .iter_mut()
+            .enumerate()
+            .for_each(|(n, val)| *val = (95.52 / (8128.0 / (n as f64) + 100.0)) as f32);
         pulse_table
     };
     static ref TND_TABLE: [f32; 203] = {
         let mut tnd_table = [0f32; 203];
-        for n in 0..203 {
-            tnd_table[n] = (163.67 / (24329.0 / (n as f64) + 100.0)) as f32;
-        }
+        tnd_table
+            .iter_mut()
+            .enumerate()
+            .for_each(|(n, val)| *val = (163.67 / (24329.0 / (n as f64) + 100.0)) as f32);
         tnd_table
     };
 }
@@ -66,9 +68,9 @@ pub struct Apu {
     dmc: Dmc,
     frame_counter: FrameCounter,
 
-    mapper: Rc<RefCell<Box<Mapper>>>,
+    mapper: Rc<RefCell<Box<dyn Mapper>>>,
 
-    filter: Box<Filter>,
+    filter: Box<dyn Filter>,
 
     pub settings: Settings,
 }
@@ -85,7 +87,7 @@ pub struct State {
 }
 
 impl Apu {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Apu {
+    pub fn new(mapper: Rc<RefCell<Box<dyn Mapper>>>) -> Apu {
         Apu {
             cycles: 0,
             pulse_1: Pulse::new(SweepNegationType::OnesComplement),
@@ -96,9 +98,9 @@ impl Apu {
             frame_counter: FrameCounter::new(),
             mapper,
             filter: Box::new(
-                LowPassFilter::new(0.815686)
-                    .chain(HighPassFilter::new(0.996039))
-                    .chain(HighPassFilter::new(0.999835)),
+                LowPassFilter::new(0.815_686)
+                    .chain(HighPassFilter::new(0.996_039))
+                    .chain(HighPassFilter::new(0.999_835)),
             ),
             settings: Settings {
                 pulse_1_enabled: true,
@@ -143,7 +145,7 @@ impl Apu {
         self.frame_counter = state.frame_counter;
     }
 
-    pub fn step(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut AudioSink) {
+    pub fn step(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut dyn AudioSink) {
         let cycle_1 = self.cycles;
         self.cycles += 1;
         let cycle_2 = self.cycles;
@@ -831,7 +833,7 @@ impl Dmc {
         self.current_length = self.sample_length;
     }
 
-    fn step_timer(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<Box<Mapper>>>) {
+    fn step_timer(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<Box<dyn Mapper>>>) {
         if self.enable_flag {
             if self.irq_flag {
                 cpu.request_interrupt(Interrupt::Irq);
@@ -846,7 +848,7 @@ impl Dmc {
         }
     }
 
-    fn step_reader(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<Box<Mapper>>>) {
+    fn step_reader(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<Box<dyn Mapper>>>) {
         if self.current_length > 0 && self.bit_count == 0 {
             cpu.stall(4);
             let mut mapper = mapper.borrow_mut();
@@ -872,10 +874,8 @@ impl Dmc {
             if self.value < 126 {
                 self.value += 2;
             }
-        } else {
-            if self.value > 1 {
-                self.value -= 2;
-            }
+        } else if self.value > 1 {
+            self.value -= 2;
         }
 
         self.shift_register >>= 1;

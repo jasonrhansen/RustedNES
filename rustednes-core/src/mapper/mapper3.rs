@@ -80,7 +80,7 @@ impl Mapper for Mapper3 {
 
     fn apply_state(&mut self, state: &mapper::State) {
         match state {
-            &mapper::State::State3(ref state) => {
+            mapper::State::State3(state) => {
                 self.cartridge.apply_state(&state.cartridge);
                 self.chr_bank = state.chr_bank;
             }

@@ -22,7 +22,7 @@ pub struct Interconnect {
     pub ppu: Ppu,
     pub apu: Apu,
     pub input: Input,
-    pub mapper: Rc<RefCell<Box<Mapper>>>,
+    pub mapper: Rc<RefCell<Box<dyn Mapper>>>,
     dma_cycles: u32,
 
     cheats: HashMap<u16, Cheat>,
@@ -40,7 +40,7 @@ pub struct State {
 }
 
 impl Interconnect {
-    pub fn new(mapper: Rc<RefCell<Box<Mapper>>>) -> Self {
+    pub fn new(mapper: Rc<RefCell<Box<dyn Mapper>>>) -> Self {
         Interconnect {
             ram: Ram::new(),
             ppu: Ppu::new(mapper.clone()),
@@ -138,8 +138,8 @@ impl Interconnect {
         &mut self,
         cpu: &mut Cpu,
         cycles: u32,
-        video_frame_sink: &mut VideoSink,
-        audio_frame_sink: &mut AudioSink,
+        video_frame_sink: &mut dyn VideoSink,
+        audio_frame_sink: &mut dyn AudioSink,
     ) {
         let cycles = cycles + self.dma_cycles;
         self.dma_cycles = 0;
@@ -157,10 +157,10 @@ impl Interconnect {
     }
 
     pub fn reset(&mut self) {
-        self.ram = Ram::new();
+        self.ram = Ram::default();
         self.ppu.reset();
         self.apu.reset();
-        self.input = Input::new();
+        self.input = Input::default();
         let mut mapper = self.mapper.borrow_mut();
         mapper.reset();
     }

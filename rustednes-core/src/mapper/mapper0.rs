@@ -69,7 +69,7 @@ impl Mapper for Mapper0 {
 
     fn apply_state(&mut self, state: &mapper::State) {
         match state {
-            &mapper::State::State0(ref state) => {
+            mapper::State::State0(state) => {
                 self.cartridge.apply_state(&state.cartridge);
             }
             _ => panic!("Invalid mapper state enum variant in apply_state"),

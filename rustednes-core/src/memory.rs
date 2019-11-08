@@ -21,11 +21,17 @@ pub struct Ram {
     bytes: [u8; RAM_SIZE],
 }
 
-impl Ram {
-    pub fn new() -> Self {
+impl Default for Ram {
+    fn default() -> Self {
         Ram {
             bytes: [0; RAM_SIZE],
         }
+    }
+}
+
+impl Ram {
+    pub fn new() -> Self {
+        Default::default()
     }
 }
 
