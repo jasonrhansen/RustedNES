@@ -6,6 +6,8 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
+pub const OAMDATA_ADDRESS: u16 = 0x2004;
+pub const OAMDMA_ADDRESS: u16 = 0x4014;
 pub const CPU_FREQUENCY: u64 = 1_789_773;
 
 #[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
@@ -238,6 +240,23 @@ impl Cpu {
         !self.watchpoints.is_empty() && self.watchpoints.contains(&addr)
     }
 
+    fn handle_oam_dma(&mut self, mem: &mut impl Memory, addr_hi: u8) {
+        self.dummy_read(mem);
+        let start = (addr_hi as u16) << 8;
+        for i in 0..256 {
+            let val = mem.read_byte(start + i);
+            mem.write_byte(OAMDATA_ADDRESS, val);
+        }
+
+        // An extra cycle should be added on an odd CPU cycle
+        // http://wiki.nesdev.com/w/index.php/PPU_registers#OAMDMA
+        if self.cycles % 2 == 0 {
+            self.cycles += 513;
+        } else {
+            self.cycles += 514;
+        }
+    }
+
     #[inline(always)]
     fn dummy_read(&mut self, mem: &mut impl Memory) {
         mem.read_byte(self.regs.pc);
@@ -329,39 +348,48 @@ impl Cpu {
         }
     }
 
+    #[inline(always)]
+    fn write_byte(&mut self, mem: &mut impl Memory, address: u16, value: u8) {
+        if address == OAMDMA_ADDRESS {
+            self.handle_oam_dma(mem, value);
+        } else {
+            mem.write_byte(address, value);
+        }
+    }
+
     fn store(&mut self, mem: &mut impl Memory, am: AddressMode, val: u8) {
         use self::AddressMode::*;
         match am {
             Absolute => {
                 let addr = self.next_pc_word(mem);
-                mem.write_byte(addr, val);
+                self.write_byte(mem, addr, val);
             }
             ZeroPage => {
                 let addr = self.next_pc_byte(mem) as u16;
-                mem.write_byte(addr, val);
+                self.write_byte(mem, addr, val);
             }
             AbsoluteIndexed(reg) => {
                 let base = self.next_pc_word(mem);
                 let index = self.get_register(reg) as u16;
-                mem.write_byte(base + index, val);
+                self.write_byte(mem, base + index, val);
             }
             ZeroPageIndexed(reg) => {
                 let base = self.next_pc_byte(mem) as u16;
                 let index = self.get_register(reg) as u16;
                 let addr = (base + index) % 0x0100;
-                mem.write_byte(addr, val);
+                self.write_byte(mem, addr, val);
             }
             IndexedIndirect(reg) => {
                 let base = self.next_pc_byte(mem);
                 let index = self.get_register(reg);
                 let addr = self.load_word_zero_page(mem, base + index);
-                mem.write_byte(addr, val);
+                self.write_byte(mem, addr, val);
             }
             IndirectIndexed(reg) => {
                 let zp_offset = self.next_pc_byte(mem);
                 let base = self.load_word_zero_page(mem, zp_offset);
                 let index = self.get_register(reg) as u16;
-                mem.write_byte(base + index, val);
+                self.write_byte(mem, base + index, val);
             }
             Register(reg) => self.set_register(reg, val),
             _ => panic!("Invalid address mode for store: {:?}", am),

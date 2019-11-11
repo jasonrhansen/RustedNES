@@ -5,7 +5,7 @@ use crate::game_genie::Cheat;
 use crate::input::{self, Input};
 use crate::mapper::{self, Mapper};
 use crate::memory::{Memory, Ram};
-use crate::ppu::{self, Ppu, OAMDATA_ADDRESS};
+use crate::ppu::{self, Ppu};
 use crate::sink::*;
 
 use serde_bytes;
@@ -15,15 +15,12 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-pub const OAMDMA_ADDRESS: u16 = 0x4014;
-
 pub struct Interconnect {
     pub ram: Ram,
     pub ppu: Ppu,
     pub apu: Apu,
     pub input: Input,
     pub mapper: Rc<RefCell<Box<dyn Mapper>>>,
-    dma_cycles: u32,
 
     cheats: HashMap<u16, Cheat>,
 }
@@ -36,7 +33,6 @@ pub struct State {
     pub apu: apu::State,
     pub input: input::State,
     pub mapper: mapper::State,
-    pub dma_cycles: u32,
 }
 
 impl Interconnect {
@@ -48,7 +44,6 @@ impl Interconnect {
             input: Input::new(),
             mapper,
             cheats: HashMap::new(),
-            dma_cycles: 0,
         }
     }
 
@@ -60,7 +55,6 @@ impl Interconnect {
             apu: self.apu.get_state(),
             input: self.input.get_state(),
             mapper: mapper.get_state(),
-            dma_cycles: self.dma_cycles,
         }
     }
 
@@ -71,22 +65,6 @@ impl Interconnect {
         self.input.apply_state(&state.input);
         let mut mapper = self.mapper.borrow_mut();
         mapper.apply_state(&state.mapper);
-        self.dma_cycles = state.dma_cycles;
-    }
-
-    fn handle_oam_dma(&mut self, addr_hi: u8) {
-        let start = (addr_hi as u16) << 8;
-        for i in 0..256 {
-            let val = self.read_byte(start + i);
-            self.write_byte(OAMDATA_ADDRESS, val);
-        }
-
-        // FIXME: An extra cycle should be added on an odd CPU cycle
-        // http://wiki.nesdev.com/w/index.php/PPU_registers#OAMDMA
-        // Currently we don't know what cycle we're on at this point
-        // because the instruction cycles get added after this function
-        // gets called.
-        self.dma_cycles += 513;
     }
 }
 
@@ -120,8 +98,6 @@ impl Memory for Interconnect {
             self.ram.write_byte(address, value);
         } else if address < 0x4000 {
             self.ppu.write_byte(address, value);
-        } else if address == OAMDMA_ADDRESS {
-            self.handle_oam_dma(value);
         } else if address < 0x4016 || address == 0x4017 {
             self.apu.write_byte(address, value);
         } else if address < 0x4018 {
@@ -141,9 +117,6 @@ impl Interconnect {
         video_frame_sink: &mut dyn VideoSink,
         audio_frame_sink: &mut dyn AudioSink,
     ) {
-        let cycles = cycles + self.dma_cycles;
-        self.dma_cycles = 0;
-
         for _ in 0..cycles {
             // 3 PPU cycles per CPU cycle
             for _ in 0..3 {
