@@ -12,6 +12,8 @@ use rustednes_core::sink::*;
 use rustednes_core::time_source::TimeSource;
 
 use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 use serde_json;
 
 use std::cmp::min;
@@ -431,16 +433,35 @@ impl Emulator {
 
 #[cfg(not(windows))]
 fn input_loop(stdin_sender: Sender<String>, prompt_receiver: Receiver<String>) {
-    let mut con = liner::Context::new();
+    let history_filename = "history.txt";
+    let mut rl = Editor::<()>::new();
+    if rl.load_history(history_filename).is_err() {
+        println!("No previous history.");
+    }
     loop {
         if let Ok(prompt) = prompt_receiver.recv() {
-            let res = con.read_line(prompt, &mut |_| {});
-            if let Ok(res) = res {
-                stdin_sender.send(res.as_str().into()).unwrap();
-                con.history.push(res.into()).unwrap();
+            let readline = rl.readline(&prompt);
+            match readline {
+                Ok(line) => {
+                    rl.add_history_entry(line.as_str());
+                    stdin_sender.send(line.as_str().into()).unwrap();
+                }
+                Err(ReadlineError::Interrupted) => {
+                    println!("CTRL-C");
+                    break;
+                }
+                Err(ReadlineError::Eof) => {
+                    println!("CTRL-D");
+                    break;
+                }
+                Err(err) => {
+                    eprintln!("error: {:?}", err);
+                    break;
+                }
             }
         }
     }
+    rl.save_history(history_filename).unwrap();
 }
 
 #[cfg(windows)]
