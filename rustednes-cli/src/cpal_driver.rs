@@ -10,6 +10,10 @@ use std::iter::Iterator;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
+use cpal::traits::DeviceTrait;
+use cpal::traits::EventLoopTrait;
+use cpal::traits::HostTrait;
+
 pub type CpalDriverError = Cow<'static, str>;
 
 pub struct SampleBuffer {
@@ -80,7 +84,10 @@ pub struct CpalDriver {
 
 impl CpalDriver {
     pub fn new(desired_sample_rate: u32) -> Result<CpalDriver, CpalDriverError> {
-        let device = cpal::default_output_device().expect("Failed to get default output device");
+        let host = cpal::default_host();
+        let device = host
+            .default_output_device()
+            .expect("failed to get default output device");
 
         let compare_sample_rates = |x: u32, y: u32| -> Ordering {
             if x < desired_sample_rate && y > desired_sample_rate {
@@ -96,10 +103,10 @@ impl CpalDriver {
 
         let format = device
             .supported_output_formats()
-            .expect("Failed to get supported format list for device")
+            .expect("failed to get supported format list for device")
             .filter(|format| format.channels == 2)
             .min_by(|x, y| compare_sample_rates(x.min_sample_rate.0, y.min_sample_rate.0))
-            .expect("Failed to find format with 2 channels");
+            .expect("failed to find format with 2 channels");
 
         let format = cpal::Format {
             channels: format.channels,
@@ -111,20 +118,30 @@ impl CpalDriver {
 
         let sample_buffer = Arc::new(Mutex::new(SampleBuffer::new()));
 
-        let event_loop = cpal::EventLoop::new();
+        let event_loop = host.event_loop();
 
         let stream_id = event_loop.build_output_stream(&device, &format).unwrap();
-        event_loop.play_stream(stream_id.clone());
+        event_loop
+            .play_stream(stream_id)
+            .expect("failed to play stream");
 
         let mut resampler = LinearResampler::new(desired_sample_rate, sample_rate);
 
         let read_sample_buffer = sample_buffer.clone();
 
         let join_handle = thread::spawn(move || {
-            event_loop.run(move |_, data| {
+            event_loop.run(move |stream_id, stream_result| {
+                let stream_data = match stream_result {
+                    Ok(data) => data,
+                    Err(err) => {
+                        eprintln!("an error occurred on stream {:?}: {}", stream_id, err);
+                        return;
+                    }
+                };
+
                 let mut read_ring_buffer = read_sample_buffer.lock().unwrap();
 
-                match data {
+                match stream_data {
                     cpal::StreamData::Output {
                         buffer: cpal::UnknownTypeOutputBuffer::I16(mut buffer),
                     } => {
