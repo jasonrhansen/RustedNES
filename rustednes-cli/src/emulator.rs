@@ -431,7 +431,6 @@ impl Emulator {
     }
 }
 
-#[cfg(not(windows))]
 fn input_loop(stdin_sender: Sender<String>, prompt_receiver: Receiver<String>) {
     let history_filename = "history.txt";
     let mut rl = Editor::<()>::new();
@@ -462,19 +461,4 @@ fn input_loop(stdin_sender: Sender<String>, prompt_receiver: Receiver<String>) {
         }
     }
     rl.save_history(history_filename).unwrap();
-}
-
-#[cfg(windows)]
-fn input_loop(stdin_sender: Sender<String>, _prompt_receiver: Receiver<String>) {
-    loop {
-        stdin_sender.send(read_stdin()).unwrap();
-    }
-}
-
-#[cfg(windows)]
-fn read_stdin() -> String {
-    use std::io::stdin;
-    let mut input = String::new();
-    stdin().read_line(&mut input).unwrap();
-    input.trim().into()
 }
