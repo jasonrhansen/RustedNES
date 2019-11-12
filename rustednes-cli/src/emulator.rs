@@ -18,6 +18,9 @@ use serde_json;
 
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
+use std::fs::OpenOptions;
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time;
@@ -51,10 +54,11 @@ pub struct Emulator {
     start_time_ns: u64,
 
     emulated_cycles: u64,
-
     emulated_instructions: u64,
 
     serialized: Option<String>,
+
+    rom_path: PathBuf,
 }
 
 impl Emulator {
@@ -62,6 +66,7 @@ impl Emulator {
         cartridge: Cartridge,
         audio_frame_sink: Box<dyn AudioSink>,
         time_source: Box<dyn TimeSource>,
+        rom_path: PathBuf,
     ) -> Emulator {
         let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
@@ -104,6 +109,7 @@ impl Emulator {
             emulated_instructions: 0,
 
             serialized: None,
+            rom_path,
         }
     }
 
@@ -196,9 +202,17 @@ impl Emulator {
                     }
 
                     if self.window.is_key_pressed(Key::F1, KeyRepeat::No) {
+                        if self.serialized.is_none() {
+                            self.load_state_from_file();
+                        }
                         if let Some(ref s) = self.serialized {
-                            if let Ok(state) = serde_json::from_str(&s) {
-                                serialize::apply_state(&mut self.nes, state);
+                            match serde_json::from_str(&s) {
+                                Ok(state) => {
+                                    serialize::apply_state(&mut self.nes, state);
+                                }
+                                Err(e) => {
+                                    eprintln!("error applying save state: {}", e);
+                                }
                             }
                         }
                     }
@@ -207,6 +221,8 @@ impl Emulator {
 
             thread::sleep(time::Duration::from_millis(10));
         }
+
+        self.save_state_to_file();
     }
 
     fn step(&mut self, video_frame_sink: &mut dyn VideoSink) -> (u32, bool) {
@@ -428,6 +444,45 @@ impl Emulator {
         for (name, _) in self.labels.iter().filter(|x| *x.1 == self.cursor) {
             println!(".{}:", name);
         }
+    }
+
+    fn save_state_to_file(&mut self) {
+        if let Some(ref s) = self.serialized {
+            let save_file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(&self.save_state_file_path());
+            match save_file {
+                Ok(save_file) => {
+                    let mut save_writer = BufWriter::new(save_file);
+                    let _ = save_writer.write_all(s.as_bytes());
+                }
+                Err(e) => {
+                    eprintln!("unable to open file to save state: {}", e);
+                }
+            }
+        }
+    }
+
+    fn load_state_from_file(&mut self) {
+        let save_file = OpenOptions::new()
+            .read(true)
+            .write(false)
+            .create(false)
+            .open(&self.save_state_file_path());
+        if let Ok(save_file) = save_file {
+            println!("Loading save file");
+            let mut save_reader = BufReader::new(save_file);
+            let mut serialized = String::new();
+            let _ = save_reader.read_to_string(&mut serialized);
+            self.serialized = Some(serialized.trim_end().to_string());
+        }
+    }
+
+    fn save_state_file_path(&self) -> PathBuf {
+        let mut save_path = self.rom_path.clone();
+        save_path.set_extension("sav");
+        save_path
     }
 }
 
