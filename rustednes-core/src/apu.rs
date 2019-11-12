@@ -61,6 +61,8 @@ lazy_static! {
 pub struct Apu {
     cycles: u64,
 
+    last_sampled_cycles: u64,
+
     pulse_1: Pulse,
     pulse_2: Pulse,
     triangle: Triangle,
@@ -90,6 +92,7 @@ impl Apu {
     pub fn new(mapper: Rc<RefCell<Box<dyn Mapper>>>) -> Apu {
         Apu {
             cycles: 0,
+            last_sampled_cycles: 0,
             pulse_1: Pulse::new(SweepNegationType::OnesComplement),
             pulse_2: Pulse::new(SweepNegationType::TwosComplement),
             triangle: Triangle::new(),
@@ -158,7 +161,8 @@ impl Apu {
             self.step_frame_counter(cpu);
         }
 
-        if cycle_2 % CYCLES_PER_SAMPLE == 0 {
+        if self.cycles > self.last_sampled_cycles + CYCLES_PER_SAMPLE {
+            self.last_sampled_cycles += CYCLES_PER_SAMPLE;
             let mut sample = self.generate_sample();
             if self.settings.filter_enabled {
                 sample = self.filter.step(sample);

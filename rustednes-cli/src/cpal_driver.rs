@@ -7,6 +7,7 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::iter::Iterator;
+use std::sync::atomic::{self, AtomicU64};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
@@ -42,7 +43,6 @@ impl Iterator for SampleBuffer {
 
     fn next(&mut self) -> Option<f32> {
         self.samples_read += 1;
-
         self.samples.pop_front()
     }
 }
@@ -64,37 +64,41 @@ impl AudioSink for CpalDriverBufferSink {
 }
 
 struct CpalDriverTimeSource {
-    sample_buffer: Arc<Mutex<SampleBuffer>>,
+    samples_written: Arc<AtomicU64>,
     sample_rate: u32,
 }
 
 impl TimeSource for CpalDriverTimeSource {
     fn time_ns(&self) -> u64 {
-        let sample_buffer = self.sample_buffer.lock().unwrap();
-        1_000_000_000 * (sample_buffer.samples_read) / (self.sample_rate as u64)
+        let samples_written = self.samples_written.load(atomic::Ordering::Relaxed);
+        1_000_000_000 * samples_written / (self.sample_rate as u64)
     }
 }
 
 pub struct CpalDriver {
     sample_buffer: Arc<Mutex<SampleBuffer>>,
+    samples_written: Arc<AtomicU64>,
     sample_rate: u32,
 
     _join_handle: JoinHandle<()>,
 }
 
 impl CpalDriver {
-    pub fn new(desired_sample_rate: u32) -> Result<CpalDriver, CpalDriverError> {
+    pub fn new(
+        input_sample_rate: u32,
+        desired_output_sample_rate: u32,
+    ) -> Result<CpalDriver, CpalDriverError> {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
             .expect("failed to get default output device");
 
         let compare_sample_rates = |x: u32, y: u32| -> Ordering {
-            if x < desired_sample_rate && y > desired_sample_rate {
+            if x < desired_output_sample_rate && y > desired_output_sample_rate {
                 return Ordering::Greater;
-            } else if x > desired_sample_rate && y < desired_sample_rate {
+            } else if x > desired_output_sample_rate && y < desired_output_sample_rate {
                 return Ordering::Less;
-            } else if x < desired_sample_rate && y < desired_sample_rate {
+            } else if x < desired_output_sample_rate && y < desired_output_sample_rate {
                 return x.cmp(&y).reverse();
             } else {
                 return x.cmp(&y);
@@ -114,9 +118,10 @@ impl CpalDriver {
             data_type: format.data_type,
         };
 
-        let sample_rate = format.sample_rate.0;
+        let output_sample_rate = format.sample_rate.0;
 
         let sample_buffer = Arc::new(Mutex::new(SampleBuffer::new()));
+        let samples_written = Arc::new(AtomicU64::new(0));
 
         let event_loop = host.event_loop();
 
@@ -125,9 +130,10 @@ impl CpalDriver {
             .play_stream(stream_id)
             .expect("failed to play stream");
 
-        let mut resampler = LinearResampler::new(desired_sample_rate, sample_rate);
+        let mut resampler = LinearResampler::new(input_sample_rate, output_sample_rate);
 
         let read_sample_buffer = sample_buffer.clone();
+        let output_samples_written = samples_written.clone();
 
         let join_handle = thread::spawn(move || {
             event_loop.run(move |stream_id, stream_result| {
@@ -150,6 +156,7 @@ impl CpalDriver {
                             for out in sample.iter_mut() {
                                 *out = val;
                             }
+                            output_samples_written.fetch_add(1, atomic::Ordering::Relaxed);
                         }
                     }
                     cpal::StreamData::Output {
@@ -161,6 +168,7 @@ impl CpalDriver {
                             for out in sample.iter_mut() {
                                 *out = val;
                             }
+                            output_samples_written.fetch_add(1, atomic::Ordering::Relaxed);
                         }
                     }
                     cpal::StreamData::Output {
@@ -171,6 +179,7 @@ impl CpalDriver {
                             for out in sample.iter_mut() {
                                 *out = val;
                             }
+                            output_samples_written.fetch_add(1, atomic::Ordering::Relaxed);
                         }
                     }
                     _ => (),
@@ -180,15 +189,15 @@ impl CpalDriver {
 
         Ok(CpalDriver {
             sample_buffer,
-            sample_rate,
-
+            samples_written: samples_written,
+            sample_rate: output_sample_rate,
             _join_handle: join_handle,
         })
     }
 
     pub fn time_source(&self) -> Box<dyn TimeSource> {
         Box::new(CpalDriverTimeSource {
-            sample_buffer: self.sample_buffer.clone(),
+            samples_written: self.samples_written.clone(),
             sample_rate: self.sample_rate,
         })
     }

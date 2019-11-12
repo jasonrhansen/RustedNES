@@ -7,7 +7,7 @@ use crate::emulator::*;
 use crate::null_audio_driver::*;
 use crate::system_time_source::*;
 
-use rustednes_core::apu::SAMPLE_RATE;
+use rustednes_core::apu::SAMPLE_RATE as NES_SAMPLE_RATE;
 use rustednes_core::cartridge::*;
 
 use structopt::StructOpt;
@@ -22,6 +22,8 @@ mod cpal_driver;
 mod emulator;
 mod null_audio_driver;
 mod system_time_source;
+
+const DESIRED_OUTPUT_SAMPLE_RATE: u32 = 44_100;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "RustedNES", about = "A CLI frontend to the RustedNES emulator")]
@@ -64,7 +66,8 @@ fn run_rom(rom: Cartridge, opt: Opt) {
         println!("Audio disabled");
         Emulator::new(rom, audio_driver.sink(), time_source)
     } else {
-        let audio_driver = Box::new(CpalDriver::new(SAMPLE_RATE).unwrap());
+        let audio_driver =
+            Box::new(CpalDriver::new(NES_SAMPLE_RATE, DESIRED_OUTPUT_SAMPLE_RATE).unwrap());
         let time_source = audio_driver.time_source();
         println!("Audio sample rate: {}", audio_driver.sample_rate());
         Emulator::new(rom, audio_driver.sink(), time_source)
