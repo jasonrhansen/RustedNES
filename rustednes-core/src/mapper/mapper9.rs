@@ -1,7 +1,5 @@
 use crate::cartridge::{self, Cartridge, Mirroring};
 use crate::mapper::{self, Mapper};
-use crate::memory::Memory;
-use crate::ppu::Vram;
 
 use serde_derive::{Deserialize, Serialize};
 
@@ -74,10 +72,6 @@ impl Mapper9 {
 
         (bank as usize * 0x1000 as usize) | (address as usize & 0x0FFF)
     }
-
-    fn mirror_address(&self, address: u16) -> u16 {
-        self.cartridge.mirroring.mirror_address(address)
-    }
 }
 
 impl Mapper for Mapper9 {
@@ -123,35 +117,31 @@ impl Mapper for Mapper9 {
         }
     }
 
-    fn ppu_read_byte(&mut self, vram: &mut Vram, address: u16) -> u8 {
-        if address < 0x2000 {
-            let chr_addr = self.chr_address(address);
-            let value = self.cartridge.chr[chr_addr as usize];
+    fn chr_read_byte(&mut self, address: u16) -> u8 {
+        let chr_addr = self.chr_address(address);
+        let value = self.cartridge.chr[chr_addr as usize];
 
-            // Latch should be updated AFTER the byte is fetched
-            if address == 0x0FD8 {
-                self.latch_0 = 0xFD;
-            } else if address == 0x0FE8 {
-                self.latch_0 = 0xFE;
-            } else if 0x1FD8 <= address && address <= 0x1FDF {
-                self.latch_1 = 0xFD;
-            } else if 0x1FE8 <= address && address <= 0x1FEF {
-                self.latch_1 = 0xFE;
-            }
-
-            value
-        } else {
-            vram.read_byte(self.mirror_address(address) - 0x2000)
+        // Latch should be updated AFTER the byte is fetched
+        if address == 0x0FD8 {
+            self.latch_0 = 0xFD;
+        } else if address == 0x0FE8 {
+            self.latch_0 = 0xFE;
+        } else if 0x1FD8 <= address && address <= 0x1FDF {
+            self.latch_1 = 0xFD;
+        } else if 0x1FE8 <= address && address <= 0x1FEF {
+            self.latch_1 = 0xFE;
         }
+
+        value
     }
 
-    fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8) {
-        if address < 0x2000 {
-            let chr_addr = self.chr_address(address);
-            self.cartridge.chr[chr_addr as usize] = value
-        } else {
-            vram.write_byte(self.mirror_address(address) - 0x2000, value);
-        }
+    fn chr_write_byte(&mut self, address: u16, value: u8) {
+        let chr_addr = self.chr_address(address);
+        self.cartridge.chr[chr_addr as usize] = value
+    }
+
+    fn mirroring(&self) -> Mirroring {
+        self.cartridge.mirroring
     }
 
     fn reset(&mut self) {

@@ -13,10 +13,9 @@ use self::mapper3::Mapper3;
 use self::mapper4::Mapper4;
 use self::mapper7::Mapper7;
 use self::mapper9::Mapper9;
-use super::cartridge::Cartridge;
+use super::cartridge::{Cartridge, Mirroring};
 use super::cpu::Cpu;
 use super::ppu::Ppu;
-use super::ppu::Vram;
 
 use serde_derive::{Deserialize, Serialize};
 
@@ -25,8 +24,10 @@ use std::ptr;
 pub trait Mapper {
     fn prg_read_byte(&mut self, address: u16) -> u8;
     fn prg_write_byte(&mut self, address: u16, value: u8);
-    fn ppu_read_byte(&mut self, vram: &mut Vram, address: u16) -> u8;
-    fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8);
+    fn chr_read_byte(&mut self, address: u16) -> u8;
+    fn chr_write_byte(&mut self, address: u16, value: u8);
+
+    fn mirroring(&self) -> Mirroring;
 
     // Called for every PPU cycle. Most mappers don't need to do anything.
     fn step(&mut self, _cpu: &mut Cpu, _ppu: &Ppu) {}

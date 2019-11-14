@@ -1,7 +1,5 @@
-use crate::cartridge::{self, Cartridge};
+use crate::cartridge::{self, Cartridge, Mirroring};
 use crate::mapper::{self, Mapper};
-use crate::memory::Memory;
-use crate::ppu::Vram;
 
 use serde_derive::{Deserialize, Serialize};
 
@@ -27,15 +25,6 @@ impl Mapper3 {
     fn chr_address(&self, bank: u8, address: u16) -> usize {
         (bank as usize * 0x2000 as usize) | (address as usize & 0x1FFF)
     }
-
-    fn read_chr(&mut self, address: u16) -> u8 {
-        let rom_addr = self.chr_address(self.chr_bank, address);
-        self.cartridge.chr[rom_addr as usize]
-    }
-
-    fn mirror_address(&self, address: u16) -> u16 {
-        self.cartridge.mirroring.mirror_address(address)
-    }
 }
 
 impl Mapper for Mapper3 {
@@ -53,18 +42,17 @@ impl Mapper for Mapper3 {
         }
     }
 
-    fn ppu_read_byte(&mut self, vram: &mut Vram, address: u16) -> u8 {
-        if address < 0x2000 {
-            self.read_chr(address)
-        } else {
-            vram.read_byte(self.mirror_address(address) - 0x2000)
-        }
+    fn chr_read_byte(&mut self, address: u16) -> u8 {
+        let rom_addr = self.chr_address(self.chr_bank, address);
+        self.cartridge.chr[rom_addr as usize]
     }
 
-    fn ppu_write_byte(&mut self, vram: &mut Vram, address: u16, value: u8) {
-        if address >= 0x2000 {
-            vram.write_byte(self.mirror_address(address) - 0x2000, value);
-        }
+    fn chr_write_byte(&mut self, _address: u16, _value: u8) {
+        panic!("attempt to write to CHR ROM in mapper 3");
+    }
+
+    fn mirroring(&self) -> Mirroring {
+        self.cartridge.mirroring
     }
 
     fn reset(&mut self) {

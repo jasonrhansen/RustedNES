@@ -18,12 +18,11 @@ pub const SCREEN_HEIGHT: usize = 240;
 
 const CYCLES_PER_SCANLINE: u64 = 341;
 
-const PRE_RENDER_SCANLINE: i16 = -1;
 const VISIBLE_START_SCANLINE: i16 = 0;
 pub const VISIBLE_END_SCANLINE: i16 = 239;
 const POST_RENDER_SCANLINE: i16 = 240;
 const VBLANK_START_SCANLINE: i16 = 241;
-const VBLANK_END_SCANLINE: i16 = 260;
+const PRE_RENDER_SCANLINE: i16 = 261;
 
 // Memory-mapped register addresses
 const PPUCTRL_ADDRESS: u16 = 0x2000;
@@ -649,84 +648,83 @@ impl Ppu {
             VISIBLE_START_SCANLINE <= self.scanline && self.scanline <= VISIBLE_END_SCANLINE;
         let on_visible_cycle = 1 <= scanline_cycle && scanline_cycle <= 256;
 
-        let on_fetch_scanline = self.scanline <= VISIBLE_END_SCANLINE;
+        let on_fetch_scanline =
+            self.scanline == PRE_RENDER_SCANLINE || self.scanline <= VISIBLE_END_SCANLINE;
         let on_fetch_cycle = on_visible_cycle ||
                     // Pre-fetch tiles for the next scanline
                     321 <= scanline_cycle && scanline_cycle <= 336;
 
-        // Handle backgrounds
         if self.rendering_enabled() {
-            if on_visible_scanline && on_visible_cycle {
-                self.render_pixel();
-            }
-
-            if on_fetch_scanline && on_fetch_cycle {
-                self.shift_background_registers();
-                match scanline_cycle % 8 {
-                    1 => self.fetch_name_table_byte(),
-                    3 => self.fetch_attribute_table_byte(),
-                    5 => self.fetch_bitmap_byte_lo(),
-                    7 => self.fetch_bitmap_byte_hi(),
-                    0 => self.load_background_registers(),
-                    _ => (),
-                }
-            }
-
-            if on_fetch_scanline {
-                if on_fetch_cycle && scanline_cycle % 8 == 0 {
-                    // Increment the effective x scroll coordinate every 8 cycles
-                    self.inc_coarse_x_with_wrap();
-                }
-
-                if scanline_cycle == 256 {
-                    self.inc_y_with_wrap();
-                } else if scanline_cycle == 257 {
-                    // Copy bits related to horizontal position from t to v
-                    self.regs.v = (self.regs.v & !0x041F) | (self.regs.t & 0x041F);
-                }
-            }
-
-            if self.scanline == PRE_RENDER_SCANLINE
-                && 280 <= scanline_cycle
-                && scanline_cycle <= 304
+            // Handle backgrounds
             {
-                // Copy bits related to vertical position from t to v
-                self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
-            }
-        }
+                if on_visible_scanline && on_visible_cycle {
+                    self.render_pixel();
+                }
 
-        // Handle sprites
-        if self.rendering_enabled() && on_visible_scanline {
-            if on_visible_cycle {
-                self.update_sprite_rendering_registers();
+                if on_fetch_scanline && on_fetch_cycle {
+                    self.shift_background_registers();
+                    match scanline_cycle % 8 {
+                        1 => self.fetch_name_table_byte(),
+                        3 => self.fetch_attribute_table_byte(),
+                        5 => self.fetch_bitmap_byte_lo(),
+                        7 => self.fetch_bitmap_byte_hi(),
+                        0 => self.load_background_registers(),
+                        _ => (),
+                    }
+                }
+
+                if on_fetch_scanline {
+                    if on_fetch_cycle && scanline_cycle % 8 == 0 {
+                        // Increment the effective x scroll coordinate every 8 cycles
+                        self.inc_coarse_x_with_wrap();
+                    }
+
+                    if scanline_cycle == 256 {
+                        self.inc_y_with_wrap();
+                    } else if scanline_cycle == 257 {
+                        // Copy bits related to horizontal position from t to v
+                        self.regs.v = (self.regs.v & !0x041F) | (self.regs.t & 0x041F);
+                    }
+                }
+
+                if self.scanline == PRE_RENDER_SCANLINE
+                    && 280 <= scanline_cycle
+                    && scanline_cycle <= 304
+                {
+                    // Copy bits related to vertical position from t to v
+                    self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
+                }
             }
 
-            match scanline_cycle {
-                1..=64 => {
-                    if scanline_cycle == 1 {
+            // Handle sprites
+            if on_visible_scanline {
+                if on_visible_cycle {
+                    self.update_sprite_rendering_registers();
+                }
+
+                match scanline_cycle {
+                    1 => {
                         self.sprite_evaluation_init();
                     }
-                    if scanline_cycle % 2 == 0 {
-                        self.oam.secondary[((scanline_cycle / 2) - 1) as usize] = 0xFF;
+                    2..=64 => {
+                        if scanline_cycle % 2 == 0 {
+                            self.oam.secondary[((scanline_cycle / 2) - 1) as usize] = 0xFF;
+                        }
                     }
-                }
-                65..=256 => {
-                    if scanline_cycle % 2 == 1 {
-                        self.sprite_evaluation_read_byte();
-                    } else {
-                        self.sprite_evaluation_write_byte();
+                    65..=256 => {
+                        if scanline_cycle % 2 == 1 {
+                            self.sprite_evaluation_read_byte();
+                        } else {
+                            self.sprite_evaluation_write_byte();
+                        }
                     }
+                    _ => (),
                 }
-                _ => (),
-            }
-        }
 
-        if on_visible_scanline
-            && 257 <= scanline_cycle
-            && scanline_cycle <= 320
-            && scanline_cycle % 8 == 0
-        {
-            self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
+                if 257 <= scanline_cycle && scanline_cycle <= 320 && scanline_cycle % 8 == 0 {
+                    self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
+                }
+            }
         }
 
         match self.scanline {
@@ -767,8 +765,8 @@ impl Ppu {
             self.scanline += 1;
         }
 
-        if self.scanline > VBLANK_END_SCANLINE {
-            self.scanline = PRE_RENDER_SCANLINE;
+        if self.scanline > PRE_RENDER_SCANLINE {
+            self.scanline = VISIBLE_START_SCANLINE;
             self.frame += 1;
         }
     }
@@ -1085,11 +1083,11 @@ impl Vram {
 
 impl Memory for Vram {
     fn read_byte(&mut self, address: u16) -> u8 {
-        self[address as usize]
+        self.bytes[address as usize]
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        self[address as usize] = value
+        self.bytes[address as usize] = value
     }
 }
 
@@ -1136,25 +1134,11 @@ impl PaletteRam {
 
 impl Memory for PaletteRam {
     fn read_byte(&mut self, address: u16) -> u8 {
-        self[PaletteRam::index(address)]
+        self.bytes[PaletteRam::index(address)]
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        self[PaletteRam::index(address)] = value
-    }
-}
-
-impl Deref for PaletteRam {
-    type Target = [u8; PaletteRam::SIZE];
-
-    fn deref(&self) -> &Self::Target {
-        &self.bytes
-    }
-}
-
-impl DerefMut for PaletteRam {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.bytes
+        self.bytes[PaletteRam::index(address)] = value
     }
 }
 
@@ -1178,9 +1162,14 @@ impl Memory for MemMap {
     fn read_byte(&mut self, address: u16) -> u8 {
         let address = address & 0x3FFF;
 
-        if address < PaletteRam::START_ADDRESS {
+        if address < 0x2000 {
             let mut mapper = self.mapper.borrow_mut();
-            mapper.ppu_read_byte(&mut self.vram, address)
+            mapper.chr_read_byte(address)
+        } else if address < PaletteRam::START_ADDRESS {
+            let mapper = self.mapper.borrow();
+            let mirroring = mapper.mirroring();
+            self.vram
+                .read_byte(mirroring.mirror_address(address) & 0x07FF)
         } else if address < 0x4000 {
             // Palette RAM is not configurable, always mapped to the
             // internal palette control in VRAM.
@@ -1193,9 +1182,14 @@ impl Memory for MemMap {
     fn write_byte(&mut self, address: u16, value: u8) {
         let address = address & 0x3FFF;
 
-        if address < PaletteRam::START_ADDRESS {
+        if address < 0x2000 {
             let mut mapper = self.mapper.borrow_mut();
-            mapper.ppu_write_byte(&mut self.vram, address, value);
+            mapper.chr_write_byte(address, value);
+        } else if address < PaletteRam::START_ADDRESS {
+            let mapper = self.mapper.borrow();
+            let mirroring = mapper.mirroring();
+            self.vram
+                .write_byte(mirroring.mirror_address(address) & 0x07FF, value)
         } else if address < 0x4000 {
             // Palette RAM is not configurable, always mapped to the
             // internal palette control in VRAM.
@@ -1214,7 +1208,7 @@ enum SpritePriority {
     BehindBackground,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy, Default, Deserialize, Serialize)]
 pub struct SpriteAttributes(u8);
 
 impl SpriteAttributes {
@@ -1239,7 +1233,7 @@ impl SpriteAttributes {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct Sprite {
     y: u8,
     tile_index: u8,
@@ -1263,16 +1257,5 @@ impl Sprite {
 
     fn flip_vertically(self) -> bool {
         self.attributes.flip_vertically()
-    }
-}
-
-impl Default for Sprite {
-    fn default() -> Sprite {
-        Sprite {
-            y: 0,
-            tile_index: 0,
-            attributes: SpriteAttributes(0),
-            x: 0,
-        }
     }
 }
