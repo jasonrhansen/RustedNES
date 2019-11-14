@@ -225,11 +225,11 @@ impl Cpu {
         self.trigger_watchpoint = false;
         let cycles = self.cycles;
 
-        self.handle_interrupts(mem);
-
-        let opcode = self.next_pc_byte(mem);
-        handle_opcode!(opcode, self, mem);
-        self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
+        if !self.handle_interrupts(mem) {
+            let opcode = self.next_pc_byte(mem);
+            handle_opcode!(opcode, self, mem);
+            self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
+        }
 
         let cycles = (self.cycles - cycles) as u32;
 
@@ -1095,7 +1095,7 @@ impl Cpu {
         match interrupt {
             Interrupt::Nmi => self.interrupt = Some(interrupt),
             Interrupt::Irq => {
-                if !self.flags.i {
+                if !self.flags.i && self.interrupt.is_none() {
                     self.interrupt = Some(interrupt);
                 }
             }
