@@ -41,8 +41,8 @@ impl Mapper for Mapper0 {
         self.cartridge.chr[address as usize]
     }
 
-    fn chr_write_byte(&mut self, _address: u16, _value: u8) {
-        panic!("attempted to write to CHR ROM in mapper 0");
+    fn chr_write_byte(&mut self, address: u16, value: u8) {
+        self.cartridge.chr[address as usize] = value;
     }
 
     fn mirroring(&self) -> Mirroring {
