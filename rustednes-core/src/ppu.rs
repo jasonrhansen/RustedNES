@@ -318,14 +318,16 @@ impl Ppu {
     fn read_ppu_data_byte(&mut self) -> u8 {
         let address = self.regs.v;
 
-        let read_buffer = self.ppu_data_read_buffer;
-        self.ppu_data_read_buffer = self.mem.read_byte(address);
         let data = if address < PaletteRam::START_ADDRESS {
             // Return contents of read buffer before the read.
+            let read_buffer = self.ppu_data_read_buffer;
+            self.ppu_data_read_buffer = self.mem.read_byte(address);
             read_buffer
         } else {
-            // Palette data is returned immediately. No dummy read is required.
-            self.ppu_data_read_buffer
+            // Palette data is returned immediately, but we need
+            // fill read buffer with VRAM hidden by palette.
+            self.ppu_data_read_buffer = self.mem.read_byte(address - 0x1000);
+            self.mem.read_byte(address)
         };
 
         self.inc_ppu_addr();
