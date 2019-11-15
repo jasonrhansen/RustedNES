@@ -459,12 +459,18 @@ impl Ppu {
     }
 
     fn fetch_sprite_tile(&mut self, sprite_index: usize) {
+        // Don't attempt to fetch tiles for empty sprite slots.
+        if sprite_index >= self.oam.secondary_write_index / 4 {
+            return;
+        }
+
         let index = sprite_index * Oam::BYTES_PER_SPRITE;
         let sprite =
             Sprite::from_oam_bytes(&self.oam.secondary[index..(index + Oam::BYTES_PER_SPRITE)]);
 
-        let mut row = self.scanline as u16 - sprite.y as u16;
         let size = self.regs.ppu_ctrl.sprite_size();
+
+        let mut row = self.scanline - sprite.y as u16;
         let pattern_addr = match size {
             SpriteSize::Size8x8 => {
                 if sprite.flip_vertically() {
