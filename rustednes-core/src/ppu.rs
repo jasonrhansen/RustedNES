@@ -789,7 +789,7 @@ impl Memory for Ppu {
 
         let address = address & 0x2007;
 
-        let val = match address & 0x2007 {
+        let val = match address {
             PPUSTATUS_ADDRESS => self.read_ppu_status(),
             OAMDATA_ADDRESS => self.read_oam_byte(),
             PPUDATA_ADDRESS => self.read_ppu_data_byte(),
