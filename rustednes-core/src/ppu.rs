@@ -18,11 +18,11 @@ pub const SCREEN_HEIGHT: usize = 240;
 
 const CYCLES_PER_SCANLINE: u64 = 341;
 
-const VISIBLE_START_SCANLINE: i16 = 0;
-pub const VISIBLE_END_SCANLINE: i16 = 239;
-const POST_RENDER_SCANLINE: i16 = 240;
-const VBLANK_START_SCANLINE: i16 = 241;
-const PRE_RENDER_SCANLINE: i16 = 261;
+const VISIBLE_START_SCANLINE: u16 = 0;
+pub const VISIBLE_END_SCANLINE: u16 = 239;
+const POST_RENDER_SCANLINE: u16 = 240;
+const VBLANK_START_SCANLINE: u16 = 241;
+const PRE_RENDER_SCANLINE: u16 = 261;
 
 // Memory-mapped register addresses
 const PPUCTRL_ADDRESS: u16 = 0x2000;
@@ -56,7 +56,7 @@ pub struct Ppu {
     // Object Attribute Memory
     oam: Oam,
 
-    pub scanline: i16,
+    pub scanline: u16,
 
     // The cycle that the current scanline started at
     scanline_start_cycle: u64,
@@ -103,7 +103,7 @@ pub struct State {
     pub vram: Vram,
     pub palette_ram: PaletteRam,
     pub oam: Oam,
-    pub scanline: i16,
+    pub scanline: u16,
     pub scanline_start_cycle: u64,
     pub frame: u64,
     pub ppu_gen_latch: u8,
@@ -288,7 +288,9 @@ impl Ppu {
 
     fn inc_ppu_addr(&mut self) {
         // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242007_reads_and_writes
-        if self.rendering_enabled() && self.scanline < 240 {
+        if self.rendering_enabled()
+            && (self.scanline == PRE_RENDER_SCANLINE || self.scanline <= VISIBLE_END_SCANLINE)
+        {
             self.inc_coarse_x_with_wrap();
             self.inc_y_with_wrap();
         } else {
@@ -342,15 +344,10 @@ impl Ppu {
     }
 
     fn is_sprite_at_y_on_scanline(&self, y: u8) -> bool {
-        if self.scanline < 0 {
-            return false;
-        }
-
-        let scanline = self.scanline as u16;
         let y = y as u16;
         let height = self.regs.ppu_ctrl.sprite_size().height() as u16;
 
-        y <= scanline && scanline < y + height
+        y <= self.scanline && self.scanline < y + height
     }
 
     fn sprite_evaluation_init(&mut self) {
@@ -533,7 +530,7 @@ impl Ppu {
 
     fn render_pixel(&mut self) {
         let x = self.scanline_cycle() - 1;
-        let y = self.scanline as u16;
+        let y = self.scanline;
 
         let background_pixel = self.background_pixel();
         let (sprite_pixel, sprite_index) = self.sprite_pixel_and_index();
