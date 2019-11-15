@@ -225,11 +225,11 @@ impl Cpu {
         self.trigger_watchpoint = false;
         let cycles = self.cycles;
 
-        if !self.handle_interrupts(mem) {
-            let opcode = self.next_pc_byte(mem);
-            handle_opcode!(opcode, self, mem);
-            self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
-        }
+        self.handle_interrupts(mem);
+
+        let opcode = self.next_pc_byte(mem);
+        handle_opcode!(opcode, self, mem);
+        self.cycles += OPCODE_CYCLES[opcode as usize] as u64;
 
         let cycles = (self.cycles - cycles) as u32;
 
