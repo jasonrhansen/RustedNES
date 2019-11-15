@@ -45,7 +45,7 @@ fn u16_(input: &str) -> IResult<&str, u16> {
 
 fn u16_hex(input: &str) -> IResult<&str, u16> {
     let prefix = alt((tag("0x"), tag("$")));
-    let digits = map_res(digit1, |s: &str| u16::from_str_radix(&s, 16));
+    let digits = map_res(alphanumeric1, |s: &str| u16::from_str_radix(&s, 16));
     preceded(opt(prefix), digits)(input)
 }
 
