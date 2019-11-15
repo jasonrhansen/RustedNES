@@ -758,13 +758,13 @@ impl Ppu {
 
         self.cycles += 1;
 
-        if scanline_cycle >= CYCLES_PER_SCANLINE ||
-            // On pre-render scanline, for odd frames,
-            // the cycle at the end of the scanline is skipped
+        if scanline_cycle >= CYCLES_PER_SCANLINE - 1 ||
+        // On pre-render scanline, for odd frames,
+        // the cycle at the end of the scanline is skipped
             (self.rendering_enabled() &&
-                self.scanline == PRE_RENDER_SCANLINE &&
-                scanline_cycle == CYCLES_PER_SCANLINE - 1 &&
-                self.frame % 2 != 0)
+            self.scanline == PRE_RENDER_SCANLINE &&
+            scanline_cycle == CYCLES_PER_SCANLINE - 2 &&
+            self.frame % 2 != 0)
         {
             self.scanline_start_cycle = self.cycles;
             self.scanline += 1;
