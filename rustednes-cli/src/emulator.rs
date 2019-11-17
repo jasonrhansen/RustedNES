@@ -450,6 +450,7 @@ impl Emulator {
         if let Some(ref s) = self.serialized {
             let save_file = OpenOptions::new()
                 .write(true)
+                .truncate(true)
                 .create(true)
                 .open(&self.save_state_file_path());
             match save_file {
@@ -475,7 +476,7 @@ impl Emulator {
             let mut save_reader = BufReader::new(save_file);
             let mut serialized = String::new();
             let _ = save_reader.read_to_string(&mut serialized);
-            self.serialized = Some(serialized.trim_end().to_string());
+            self.serialized = Some(serialized);
         }
     }
 
