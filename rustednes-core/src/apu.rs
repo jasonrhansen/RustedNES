@@ -80,6 +80,7 @@ pub struct Apu {
 #[derive(Deserialize, Serialize)]
 pub struct State {
     pub cycles: u64,
+    pub last_sampled_cycles: u64,
     pub pulse_1: Pulse,
     pub pulse_2: Pulse,
     pub triangle: Triangle,
@@ -129,6 +130,7 @@ impl Apu {
     pub fn get_state(&self) -> State {
         State {
             cycles: self.cycles,
+            last_sampled_cycles: self.last_sampled_cycles,
             pulse_1: self.pulse_1.clone(),
             pulse_2: self.pulse_2.clone(),
             triangle: self.triangle.clone(),
@@ -140,6 +142,7 @@ impl Apu {
 
     pub fn apply_state(&mut self, state: &State) {
         self.cycles = state.cycles;
+        self.last_sampled_cycles = state.last_sampled_cycles;
         self.pulse_1 = state.pulse_1.clone();
         self.pulse_2 = state.pulse_2.clone();
         self.triangle = state.triangle.clone();
