@@ -571,7 +571,9 @@ impl Pulse {
 
     fn write_timer_hi(&mut self, value: u8) {
         self.timer_period = (self.timer_period & 0x00FF) | (((value & 0x07) as u16) << 8);
-        self.length_counter.set(value >> 3);
+        if self.enabled {
+            self.length_counter.set(value >> 3);
+        }
         self.envelope.start = true;
         self.duty_cycle = 0;
     }
@@ -695,7 +697,9 @@ impl Triangle {
     }
 
     fn write_length_counter_and_timer_hi(&mut self, value: u8) {
-        self.length_counter.set(value >> 3);
+        if self.enabled {
+            self.length_counter.set(value >> 3);
+        }
         self.timer_period = (self.timer_period & 0x00FF) | (((value & 0x07) as u16) << 8);
         self.timer_value = self.timer_period;
         self.linear_counter.reload = true;
@@ -762,7 +766,9 @@ impl Noise {
     }
 
     fn write_length_counter_and_envelope_restart(&mut self, value: u8) {
-        self.length_counter.set(value >> 3);
+        if self.enabled {
+            self.length_counter.set(value >> 3);
+        }
         self.envelope.start = true;
     }
 
