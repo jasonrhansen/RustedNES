@@ -225,8 +225,8 @@ impl Apu {
                         self.step_envelope_and_linear_counter();
                     }
                     3 => {
-                        if self.frame_counter.interrupt_enable {
-                            cpu.request_interrupt(Interrupt::Irq);
+                        if !self.frame_counter.interrupt_inhibit_flag {
+                            self.frame_counter.interrupt_flag = true;
                         }
                         self.step_length_counter();
                         self.step_sweep();
@@ -250,6 +250,11 @@ impl Apu {
                 }
                 self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 5;
             }
+        }
+
+        // Handle IRQ
+        if self.frame_counter.interrupt_flag {
+            cpu.request_interrupt(Interrupt::Irq);
         }
     }
 
@@ -306,13 +311,15 @@ impl Apu {
             status |= 0x10;
         }
 
-        if self.frame_counter.interrupt_enable {
+        if self.frame_counter.interrupt_flag {
             status |= 0x40;
         }
 
         if self.dmc.irq_flag {
             status |= 0x80;
         }
+
+        self.frame_counter.interrupt_flag = false;
 
         status
     }
@@ -353,7 +360,10 @@ impl Apu {
             FrameCounterMode::FiveStep
         };
 
-        self.frame_counter.interrupt_enable = value & 0x40 == 0;
+        self.frame_counter.interrupt_inhibit_flag = value & 0x40 != 0;
+        if self.frame_counter.interrupt_inhibit_flag {
+            self.frame_counter.interrupt_flag = false;
+        }
 
         if self.frame_counter.mode == FrameCounterMode::FiveStep {
             self.step_length_counter();
@@ -901,7 +911,8 @@ enum FrameCounterMode {
 pub struct FrameCounter {
     sequence_frame: u8,
     mode: FrameCounterMode,
-    interrupt_enable: bool,
+    interrupt_flag: bool,
+    interrupt_inhibit_flag: bool,
 }
 
 impl FrameCounter {
@@ -911,7 +922,8 @@ impl FrameCounter {
         FrameCounter {
             sequence_frame: 0,
             mode: FrameCounterMode::FourStep,
-            interrupt_enable: false,
+            interrupt_flag: false,
+            interrupt_inhibit_flag: false,
         }
     }
 }
