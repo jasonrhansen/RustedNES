@@ -20,7 +20,6 @@ const CYCLES_PER_SCANLINE: u64 = 341;
 
 const VISIBLE_START_SCANLINE: u16 = 0;
 pub const VISIBLE_END_SCANLINE: u16 = 239;
-const POST_RENDER_SCANLINE: u16 = 240;
 const VBLANK_START_SCANLINE: u16 = 241;
 const PRE_RENDER_SCANLINE: u16 = 261;
 
@@ -461,6 +460,7 @@ impl Ppu {
     fn fetch_sprite_tile(&mut self, sprite_index: usize) {
         // Don't attempt to fetch tiles for empty sprite slots.
         if sprite_index >= self.oam.secondary_write_index / 4 {
+            self.sprite_attribute_latches[sprite_index] = SpriteAttributes(0xFF);
             return;
         }
 
@@ -538,8 +538,8 @@ impl Ppu {
         let x = self.scanline_cycle() - 1;
         let y = self.scanline;
 
-        let background_pixel = self.background_pixel();
-        let (sprite_pixel, sprite_index) = self.sprite_pixel_and_index();
+        let background_pixel = self.background_pixel(x);
+        let (sprite_pixel, sprite_index) = self.sprite_pixel_and_index(x);
 
         let background_pattern = background_pixel & 0x03;
         let sprite_pattern = sprite_pixel & 0x03;
@@ -552,7 +552,11 @@ impl Ppu {
             self.color_from_palette_index(background_pixel)
         } else {
             // Sprite 0 hit is not detected at x=255
-            if self.sprite_0_on_scanline && sprite_index == 0 && x != 255 {
+            if self.sprite_0_on_scanline
+                && sprite_index == 0
+                && x < 255
+                && !self.regs.ppu_status.contains(PpuStatus::SPRITE_ZERO_HIT)
+            {
                 self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, true);
             }
 
@@ -567,8 +571,7 @@ impl Ppu {
         self.frame_buffer[(y as usize * SCREEN_WIDTH) + x as usize] = color & 0x3F;
     }
 
-    fn background_pixel(&self) -> u8 {
-        let x = self.scanline_cycle() - 1;
+    fn background_pixel(&self, x: u64) -> u8 {
         if !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND)
             || x < 8 && !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND_LEFT_8)
         {
@@ -583,9 +586,9 @@ impl Ppu {
             | ((self.background_palette_shift_hi >> (12 - fine_x)) & 0x08) as u8
     }
 
-    fn sprite_pixel_and_index(&mut self) -> (u8, usize) {
-        let x = self.scanline_cycle() - 1;
-        if !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES)
+    fn sprite_pixel_and_index(&mut self, x: u64) -> (u8, usize) {
+        if self.scanline == 0
+            || !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES)
             || x < 8 && !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES_LEFT_8)
         {
             return (0, 0);
@@ -653,34 +656,34 @@ impl Ppu {
             VISIBLE_START_SCANLINE <= self.scanline && self.scanline <= VISIBLE_END_SCANLINE;
         let on_visible_cycle = 1 <= scanline_cycle && scanline_cycle <= 256;
 
-        let on_fetch_scanline =
+        let on_bg_fetch_scanline =
             self.scanline == PRE_RENDER_SCANLINE || self.scanline <= VISIBLE_END_SCANLINE;
-        let on_fetch_cycle = on_visible_cycle ||
-                    // Pre-fetch tiles for the next scanline
-                    321 <= scanline_cycle && scanline_cycle <= 336;
+        // Pre-fetch tiles for the next scanline
+        let on_bg_prefetch_cycle = 321 <= scanline_cycle && scanline_cycle <= 336;
+        let on_bg_fetch_cycle = on_visible_cycle || on_bg_prefetch_cycle;
 
         if self.rendering_enabled() {
+            if on_visible_scanline && on_visible_cycle {
+                self.render_pixel();
+            }
+
             // Handle backgrounds
             {
-                if on_visible_scanline && on_visible_cycle {
-                    self.render_pixel();
-                }
-
-                if on_fetch_scanline && on_fetch_cycle {
-                    self.shift_background_registers();
-                    match scanline_cycle % 8 {
-                        1 => self.fetch_name_table_byte(),
-                        3 => self.fetch_attribute_table_byte(),
-                        5 => self.fetch_bitmap_byte_lo(),
-                        7 => self.fetch_bitmap_byte_hi(),
-                        0 => self.load_background_registers(),
-                        _ => (),
+                if on_bg_fetch_scanline {
+                    if on_bg_fetch_cycle {
+                        self.shift_background_registers();
+                        match scanline_cycle % 8 {
+                            1 => self.fetch_name_table_byte(),
+                            3 => self.fetch_attribute_table_byte(),
+                            5 => self.fetch_bitmap_byte_lo(),
+                            7 => self.fetch_bitmap_byte_hi(),
+                            0 => self.load_background_registers(),
+                            _ => (),
+                        }
                     }
-                }
 
-                if on_fetch_scanline {
-                    if on_fetch_cycle && scanline_cycle % 8 == 0 {
-                        // Increment the effective x scroll coordinate every 8 cycles
+                    // Increment the effective x scroll coordinate every 8 cycles
+                    if on_bg_fetch_cycle && scanline_cycle % 8 == 0 {
                         self.inc_coarse_x_with_wrap();
                     }
 
@@ -707,6 +710,7 @@ impl Ppu {
                     self.update_sprite_rendering_registers();
                 }
 
+                // Sprite evaluation
                 match scanline_cycle {
                     1 => {
                         self.sprite_evaluation_init();
@@ -726,6 +730,7 @@ impl Ppu {
                     _ => (),
                 }
 
+                // Fetch sprite tile data for the _next_ scanline.
                 if 257 <= scanline_cycle && scanline_cycle <= 320 && scanline_cycle % 8 == 0 {
                     self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
                 }
@@ -733,6 +738,14 @@ impl Ppu {
         }
 
         match self.scanline {
+            VBLANK_START_SCANLINE => {
+                if scanline_cycle == 1 {
+                    self.set_vblank();
+                    if self.nmi_output && self.nmi_occurred {
+                        cpu.request_interrupt(Interrupt::Nmi);
+                    }
+                }
+            }
             260 => {
                 if scanline_cycle == 330 {
                     // Although I believe this should happen on cycle 1 of the pre-render scanline,
@@ -747,27 +760,14 @@ impl Ppu {
                     self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, false);
                 }
             }
-            POST_RENDER_SCANLINE => {
-                if scanline_cycle == 0 {
-                    video_frame_sink.write_frame(&self.frame_buffer);
-                }
-            }
-            VBLANK_START_SCANLINE => {
-                if scanline_cycle == 1 {
-                    self.set_vblank();
-                    if self.nmi_output && self.nmi_occurred {
-                        cpu.request_interrupt(Interrupt::Nmi);
-                    }
-                }
-            }
             _ => (),
         }
 
         self.cycles += 1;
 
+        // End of scanline
         if scanline_cycle >= CYCLES_PER_SCANLINE - 1 ||
-        // On pre-render scanline, for odd frames,
-        // the cycle at the end of the scanline is skipped
+            // On pre-render scanline, for odd frames, the cycle at the end of the scanline is skipped
             (self.rendering_enabled() &&
             self.scanline == PRE_RENDER_SCANLINE &&
             scanline_cycle == CYCLES_PER_SCANLINE - 2 &&
@@ -777,7 +777,9 @@ impl Ppu {
             self.scanline += 1;
         }
 
+        // End of frame
         if self.scanline > PRE_RENDER_SCANLINE {
+            video_frame_sink.write_frame(&self.frame_buffer);
             self.scanline = VISIBLE_START_SCANLINE;
             self.frame += 1;
         }
