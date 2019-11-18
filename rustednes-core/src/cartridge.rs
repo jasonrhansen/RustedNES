@@ -7,7 +7,7 @@ use std::error::Error;
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 
 // ROM must begin with this constant ("NES" followed by MS-DOS end-of-file)
 const MAGIC_CONSTANT: u32 = 0x4e45_531a;
@@ -116,7 +116,7 @@ impl Debug for Cartridge {
 }
 
 impl Cartridge {
-    pub fn load<R: Read + Seek>(r: &mut R) -> Result<Cartridge, LoadError> {
+    pub fn load<R: Read>(r: &mut R) -> Result<Cartridge, LoadError> {
         let magic = r.read_u32::<BigEndian>()?;
 
         if magic != MAGIC_CONSTANT {
@@ -136,14 +136,18 @@ impl Cartridge {
 
         // Skip the rest of the header
         // TODO: Implement NEW 2.0
-        r.seek(SeekFrom::Current(7))?;
+        for _ in 0..7 {
+            r.read_u8()?;
+        }
 
         let is_battery_backed = (flags6 & 0x02) != 0;
 
         let has_trainer = (flags6 & 0x04) != 0;
         if has_trainer {
             // Skip over trainer. We won't support it.
-            r.seek(SeekFrom::Current(512))?;
+            for _ in 0..512 {
+                r.read_u8()?;
+            }
         }
 
         let mapper = ((flags7 & 0xf0) | (flags6 >> 4)) as u16;

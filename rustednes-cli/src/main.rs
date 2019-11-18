@@ -13,6 +13,7 @@ use rustednes_core::cartridge::*;
 use structopt::StructOpt;
 
 use std::alloc::System;
+use std::error::Error;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
@@ -54,10 +55,21 @@ fn main() {
     }
 }
 
-fn load_rom(filename: &Path) -> Result<Cartridge, LoadError> {
-    let mut file = File::open(filename)?;
+fn load_rom(filename: &Path) -> Result<Cartridge, Box<dyn Error>> {
+    let file = File::open(filename)?;
 
-    Cartridge::load(&mut file)
+    match filename.extension() {
+        Some(ext) if ext == "zip" => {
+            println!("Unzipping {}", filename.display());
+            let mut zip = zip::ZipArchive::new(&file)?;
+            let mut zip_file = zip.by_index(0)?;
+            Cartridge::load(&mut zip_file).map_err(|e| e.into())
+        }
+        _ => {
+            let mut file = file;
+            Cartridge::load(&mut file).map_err(|e| e.into())
+        }
+    }
 }
 
 fn run_rom(rom: Cartridge, opt: Opt, rom_path: PathBuf) {

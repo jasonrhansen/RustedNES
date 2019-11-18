@@ -481,9 +481,7 @@ impl Emulator {
     }
 
     fn save_state_file_path(&self) -> PathBuf {
-        let mut save_path = self.rom_path.clone();
-        save_path.set_extension("sav");
-        save_path
+        self.rom_path.with_extension("sav")
     }
 }
 
