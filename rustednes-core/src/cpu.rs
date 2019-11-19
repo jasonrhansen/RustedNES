@@ -375,6 +375,7 @@ impl Cpu {
             }
             ZeroPageIndexed(reg) => {
                 let base = self.next_pc_byte(mem) as u16;
+                self.read_byte(mem, base);
                 let index = self.get_register(reg) as u16;
                 let addr = (base + index) % 0x0100;
                 self.write_byte(mem, addr, val);
