@@ -180,7 +180,7 @@ macro_rules! handle_opcode {
             0x00 => $this.brk($mem),
             0x40 => $this.rti($mem),
 
-            0xEA => $this.nop($mem),
+            0xEA => $this.nop($mem, AddressMode::Immediate),
 
             // Unofficial opcodes
             0x4B => $this.alr($mem),
@@ -241,7 +241,7 @@ macro_rules! handle_opcode {
             0x5B => $this.sre($mem, AddressMode::AbsoluteIndexed(Register8::Y)),
             0x5F => $this.sre($mem, AddressMode::AbsoluteIndexed(Register8::X)),
             0xEB => $this.sbc($mem, AddressMode::Immediate),
-            0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => $this.nop($mem),
+            0x1A | 0x3A | 0x5A | 0x7A | 0xDA | 0xFA => $this.nop($mem, AddressMode::Immediate),
             0x80 | 0x82 | 0x89 | 0xC2 | 0xE2 => $this.skb($mem),
             0x0C => $this.ign($mem, AddressMode::Absolute),
             0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC => {

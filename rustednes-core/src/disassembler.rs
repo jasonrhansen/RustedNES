@@ -303,7 +303,7 @@ impl Disassembler {
         "rti".into()
     }
 
-    fn nop(&mut self, _mem: &mut impl Memory) -> String {
+    fn nop(&mut self, _mem: &mut impl Memory, _am: AddressMode) -> String {
         "nop".into()
     }
 
