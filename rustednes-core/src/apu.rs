@@ -9,8 +9,8 @@ use serde_derive::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub const CYCLES_PER_SAMPLE: u64 = 41;
-pub const SAMPLE_RATE: u32 = (CPU_FREQUENCY / CYCLES_PER_SAMPLE) as u32;
+pub const CPU_CYCLES_PER_SAMPLE: u64 = 41;
+pub const SAMPLE_RATE: u32 = (CPU_FREQUENCY / CPU_CYCLES_PER_SAMPLE) as u32;
 
 static DUTY_CYCLE_TABLE: &[[u8; 8]] = &[
     [0, 1, 0, 0, 0, 0, 0, 0],
@@ -152,20 +152,21 @@ impl Apu {
     }
 
     pub fn step(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut dyn AudioSink) {
-        let cycle_1 = self.cycles;
         self.cycles += 1;
-        let cycle_2 = self.cycles;
 
         self.step_timer(cpu);
 
-        let f1 = ((cycle_1 as f64) / FrameCounter::RATE) as u64;
-        let f2 = ((cycle_2 as f64) / FrameCounter::RATE) as u64;
-        if f1 != f2 {
-            self.step_frame_counter(cpu);
+        if self.cycles % 2 == 0 {
+            if self.frame_counter.divider_count == 0 {
+                self.frame_counter.divider_count = FrameCounter::DIVIDER_COUNT_RELOAD_VALUE;
+                self.step_frame_counter(cpu);
+            } else {
+                self.frame_counter.divider_count -= 1;
+            }
         }
 
-        if self.cycles > self.last_sampled_cycles + CYCLES_PER_SAMPLE {
-            self.last_sampled_cycles += CYCLES_PER_SAMPLE;
+        if self.cycles > self.last_sampled_cycles + CPU_CYCLES_PER_SAMPLE {
+            self.last_sampled_cycles += CPU_CYCLES_PER_SAMPLE;
             let mut sample = self.generate_sample();
             if self.settings.filter_enabled {
                 sample = self.filter.step(sample);
@@ -363,6 +364,9 @@ impl Apu {
             FrameCounterMode::FiveStep
         };
 
+        self.frame_counter.sequence_frame = 0;
+        self.frame_counter.divider_count = FrameCounter::DIVIDER_COUNT_RELOAD_VALUE;
+
         self.frame_counter.interrupt_inhibit_flag = value & 0x40 != 0;
         if self.frame_counter.interrupt_inhibit_flag {
             self.frame_counter.interrupt_flag = false;
@@ -406,7 +410,9 @@ impl Memory for Apu {
             0x4012 => self.dmc.write_sample_address(value),
             0x4013 => self.dmc.write_sample_length(value),
             0x4015 => self.write_status(value),
-            0x4017 => self.write_frame_counter(value),
+            0x4017 => {
+                self.write_frame_counter(value)
+            }
             _ => (),
         }
     }
@@ -918,6 +924,7 @@ enum FrameCounterMode {
 
 #[derive(Clone, Copy, Deserialize, Serialize)]
 pub struct FrameCounter {
+    divider_count: u16,
     sequence_frame: u8,
     mode: FrameCounterMode,
     interrupt_flag: bool,
@@ -925,10 +932,11 @@ pub struct FrameCounter {
 }
 
 impl FrameCounter {
-    const RATE: f64 = (CPU_FREQUENCY as f64) / 240.029;
+    const DIVIDER_COUNT_RELOAD_VALUE: u16 = 3728;
 
     fn new() -> FrameCounter {
         FrameCounter {
+            divider_count: FrameCounter::DIVIDER_COUNT_RELOAD_VALUE,
             sequence_frame: 0,
             mode: FrameCounterMode::FourStep,
             interrupt_flag: false,
