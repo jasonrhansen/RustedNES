@@ -58,18 +58,20 @@ fn main() {
 fn load_rom(filename: &Path) -> Result<Cartridge, Box<dyn Error>> {
     let file = File::open(filename)?;
 
-    match filename.extension() {
+    let cartridge = match filename.extension() {
         Some(ext) if ext == "zip" => {
             println!("Unzipping {}", filename.display());
             let mut zip = zip::ZipArchive::new(&file)?;
             let mut zip_file = zip.by_index(0)?;
-            Cartridge::load(&mut zip_file).map_err(|e| e.into())
+            Cartridge::load(&mut zip_file)?
         }
         _ => {
             let mut file = file;
-            Cartridge::load(&mut file).map_err(|e| e.into())
+            Cartridge::load(&mut file)?
         }
-    }
+    };
+
+    Ok(cartridge)
 }
 
 fn run_rom(rom: Cartridge, opt: Opt, rom_path: PathBuf) {

@@ -1,11 +1,11 @@
 use byteorder::{BigEndian, ReadBytesExt};
 use serde_bytes;
 use serde_derive::{Deserialize, Serialize};
+use thiserror::Error;
 
 use std::cmp::max;
-use std::error::Error;
 use std::fmt;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::io;
 use std::io::Read;
 
@@ -45,40 +45,12 @@ impl Mirroring {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum LoadError {
+    #[error("{0}")]
     FormatError(String),
-    IoError(io::Error),
-}
-
-impl LoadError {
-    fn new<M: Into<String>>(msg: M) -> LoadError {
-        LoadError::FormatError(msg.into())
-    }
-}
-
-impl Display for LoadError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            LoadError::FormatError(ref m) => write!(f, "{}", m),
-            LoadError::IoError(ref e) => write!(f, "{}", e),
-        }
-    }
-}
-
-impl Error for LoadError {
-    fn description(&self) -> &str {
-        match *self {
-            LoadError::FormatError(ref m) => &m[..],
-            LoadError::IoError(ref e) => e.description(),
-        }
-    }
-}
-
-impl From<io::Error> for LoadError {
-    fn from(error: io::Error) -> Self {
-        LoadError::IoError(error)
-    }
+    #[error("{0}")]
+    IoError(#[from] io::Error),
 }
 
 pub struct Cartridge {
@@ -120,7 +92,9 @@ impl Cartridge {
         let magic = r.read_u32::<BigEndian>()?;
 
         if magic != MAGIC_CONSTANT {
-            return Err(LoadError::new("magic constant in header is incorrect"));
+            return Err(LoadError::FormatError(
+                "magic constant in header is incorrect".into(),
+            ));
         }
 
         let prg_rom_num_banks = r.read_u8()?;
