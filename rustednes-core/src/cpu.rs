@@ -1085,7 +1085,7 @@ impl Cpu {
 
         let addr = if ((base ^ addr) & 0x100) != 0 {
             // Page crossed
-            (addr & (value << 8) as u16) | (addr & 0x00FF)
+            (addr & ((value as u16) << 8)) | (addr & 0x00FF)
         } else {
             addr
         };
