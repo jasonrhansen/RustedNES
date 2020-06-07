@@ -250,7 +250,7 @@ impl LinearResampler {
 
     fn next(&mut self, input: &mut dyn Iterator<Item = f32>) -> f32 {
         fn interpolate(a: f32, b: f32, num: u32, denom: u32) -> f32 {
-            ((a * ((denom - num) as f32) + b * (num as f32)) / (denom as f32))
+            (a * ((denom - num) as f32) + b * (num as f32)) / (denom as f32)
         }
 
         let ret = interpolate(
