@@ -127,7 +127,7 @@ fn command(input: &str) -> IResult<&str, Command> {
 
     let repeat = all_consuming(space0);
 
-    let commands = alt((
+    let mut commands = alt((
         map(show_regs, |_| Command::ShowRegs),
         map(step, |count| Command::Step(count.unwrap_or(1))),
         map(continue_, |_| Command::Continue),

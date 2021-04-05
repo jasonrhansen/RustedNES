@@ -24,8 +24,6 @@ mod emulator;
 mod null_audio_driver;
 mod system_time_source;
 
-const DESIRED_OUTPUT_SAMPLE_RATE: u32 = 44_100;
-
 #[derive(Debug, StructOpt)]
 #[structopt(name = "RustedNES", about = "A CLI frontend to the RustedNES emulator")]
 struct Opt {
@@ -81,8 +79,7 @@ fn run_rom(rom: Cartridge, opt: Opt, rom_path: PathBuf) {
         println!("Audio disabled");
         Emulator::new(rom, audio_driver.sink(), time_source, rom_path)
     } else {
-        let audio_driver =
-            Box::new(CpalDriver::new(NES_SAMPLE_RATE, DESIRED_OUTPUT_SAMPLE_RATE).unwrap());
+        let audio_driver = Box::new(CpalDriver::new(NES_SAMPLE_RATE).unwrap());
         let time_source = audio_driver.time_source();
         println!("Audio sample rate: {}", audio_driver.sample_rate());
         Emulator::new(rom, audio_driver.sink(), time_source, rom_path)

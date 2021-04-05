@@ -11,7 +11,7 @@ use rustednes_core::serialize;
 use rustednes_core::sink::*;
 use rustednes_core::time_source::TimeSource;
 
-use minifb::{Key, KeyRepeat, Scale, Window, WindowOptions};
+use minifb::{Key, KeyRepeat, Scale, ScaleMode, Window, WindowOptions};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use serde_json;
@@ -84,6 +84,10 @@ impl Emulator {
                     title: true,
                     resize: false,
                     scale: Scale::X4,
+                    scale_mode: ScaleMode::AspectRatioStretch,
+                    topmost: false,
+                    transparency: false,
+                    none: false,
                 },
             )
             .unwrap(),
@@ -158,7 +162,9 @@ impl Emulator {
             }
 
             if video_frame_sink.frame_written() {
-                self.window.update_with_buffer(&pixel_buffer).unwrap();
+                self.window
+                    .update_with_buffer(&pixel_buffer, SCREEN_WIDTH, SCREEN_HEIGHT)
+                    .unwrap();
 
                 if self.mode == Mode::Running {
                     self.read_input_keys();
