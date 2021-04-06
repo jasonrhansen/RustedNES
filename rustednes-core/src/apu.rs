@@ -410,9 +410,7 @@ impl Memory for Apu {
             0x4012 => self.dmc.write_sample_address(value),
             0x4013 => self.dmc.write_sample_length(value),
             0x4015 => self.write_status(value),
-            0x4017 => {
-                self.write_frame_counter(value)
-            }
+            0x4017 => self.write_frame_counter(value),
             _ => (),
         }
     }

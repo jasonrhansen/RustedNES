@@ -1,5 +1,4 @@
 use byteorder::{BigEndian, ReadBytesExt};
-use serde_bytes;
 use serde_derive::{Deserialize, Serialize};
 use thiserror::Error;
 

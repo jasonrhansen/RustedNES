@@ -8,7 +8,6 @@ use crate::memory::{Memory, Ram};
 use crate::ppu::{self, Ppu};
 use crate::sink::*;
 
-use serde_bytes;
 use serde_derive::{Deserialize, Serialize};
 
 use std::cell::RefCell;

@@ -23,7 +23,7 @@ impl Mapper7 {
     }
 
     fn prg_rom_address(bank: u8, address: u16) -> usize {
-        (bank as usize * 0x8000 as usize) | (address as usize & 0x7FFF)
+        (bank as usize * 0x8000) | (address as usize & 0x7FFF)
     }
 
     fn read_prg_rom(&mut self, address: u16) -> u8 {

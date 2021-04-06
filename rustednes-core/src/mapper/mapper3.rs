@@ -23,7 +23,7 @@ impl Mapper3 {
     }
 
     fn chr_address(&self, bank: u8, address: u16) -> usize {
-        (bank as usize * 0x2000 as usize) | (address as usize & 0x1FFF)
+        (bank as usize * 0x2000) | (address as usize & 0x1FFF)
     }
 }
 

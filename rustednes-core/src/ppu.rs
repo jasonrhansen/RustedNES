@@ -5,7 +5,6 @@ use crate::sink::*;
 
 use bit_reverse::ParallelReverse;
 use bitflags::bitflags;
-use serde_bytes;
 use serde_derive::{Deserialize, Serialize};
 
 use std::cell::RefCell;
@@ -235,9 +234,9 @@ impl Ppu {
 
     fn read_oam_byte(&self) -> u8 {
         // http://wiki.nesdev.com/w/index.php/PPU_sprite_evaluation
-        if VISIBLE_START_SCANLINE <= self.scanline && self.scanline <= VISIBLE_END_SCANLINE {
+        if self.scanline <= VISIBLE_END_SCANLINE {
             let scanline_cycle = self.scanline_cycle();
-            if 1 <= scanline_cycle && scanline_cycle <= 64 {
+            if (1..=64).contains(&scanline_cycle) {
                 return 0xFF;
             }
         }
@@ -248,10 +247,7 @@ impl Ppu {
     fn write_oam_byte(&mut self, val: u8) {
         // Ignore writes during rendering
         // http://wiki.nesdev.com/w/index.php/PPU_registers#OAM_data_.28.242004.29_.3C.3E_read.2Fwrite
-        if self.rendering_enabled()
-            && VISIBLE_START_SCANLINE <= self.scanline
-            && self.scanline <= VISIBLE_END_SCANLINE
-        {
+        if self.rendering_enabled() && self.scanline <= VISIBLE_END_SCANLINE {
             return;
         }
 
@@ -652,14 +648,13 @@ impl Ppu {
     pub fn step(&mut self, cpu: &mut Cpu, video_frame_sink: &mut dyn VideoSink) {
         let scanline_cycle = self.scanline_cycle();
 
-        let on_visible_scanline =
-            VISIBLE_START_SCANLINE <= self.scanline && self.scanline <= VISIBLE_END_SCANLINE;
-        let on_visible_cycle = 1 <= scanline_cycle && scanline_cycle <= 256;
+        let on_visible_scanline = self.scanline <= VISIBLE_END_SCANLINE;
+        let on_visible_cycle = (1..=256).contains(&scanline_cycle);
 
         let on_bg_fetch_scanline =
             self.scanline == PRE_RENDER_SCANLINE || self.scanline <= VISIBLE_END_SCANLINE;
         // Pre-fetch tiles for the next scanline
-        let on_bg_prefetch_cycle = 321 <= scanline_cycle && scanline_cycle <= 336;
+        let on_bg_prefetch_cycle = (321..=336).contains(&scanline_cycle);
         let on_bg_fetch_cycle = on_visible_cycle || on_bg_prefetch_cycle;
 
         if self.rendering_enabled() {
@@ -731,7 +726,7 @@ impl Ppu {
                 }
 
                 // Fetch sprite tile data for the _next_ scanline.
-                if 257 <= scanline_cycle && scanline_cycle <= 320 && scanline_cycle % 8 == 0 {
+                if (257..=320).contains(&scanline_cycle) && scanline_cycle % 8 == 0 {
                     self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
                 }
             }
@@ -789,7 +784,7 @@ impl Ppu {
 // Implements mapping of PPU registers into CPU address space
 impl Memory for Ppu {
     fn read_byte(&mut self, address: u16) -> u8 {
-        if !(0x2000 <= address && address < 0x4000) {
+        if !((0x2000..0x4000).contains(&address)) {
             panic!(
                 "Invalid read from PPU memory-mapped registers: {:X}",
                 address
@@ -811,7 +806,7 @@ impl Memory for Ppu {
     }
 
     fn write_byte(&mut self, address: u16, value: u8) {
-        if !(0x2000 <= address && address < 0x4000) {
+        if !((0x2000..0x4000).contains(&address)) {
             panic!(
                 "Invalid write to PPU memory-mapped registers, address: {:X}, value: {}",
                 address, value

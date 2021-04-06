@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 // This module is based on the rustual-boy-libretro module (https://github.com/emu-rs/rustual-boy/blob/libretro/rustual-boy-libretro).
 
 extern crate libc;

@@ -54,7 +54,7 @@ impl Mapper9 {
     }
 
     fn prg_rom_address(bank: u8, address: u16) -> usize {
-        (bank as usize * 0x2000 as usize) | (address as usize & 0x1FFF)
+        (bank as usize * 0x2000) | (address as usize & 0x1FFF)
     }
 
     fn chr_address(&self, address: u16) -> usize {
@@ -70,7 +70,7 @@ impl Mapper9 {
             self.chr_fe_1000_bank
         };
 
-        (bank as usize * 0x1000 as usize) | (address as usize & 0x0FFF)
+        (bank as usize * 0x1000) | (address as usize & 0x0FFF)
     }
 }
 
@@ -126,9 +126,9 @@ impl Mapper for Mapper9 {
             self.latch_0 = 0xFD;
         } else if address == 0x0FE8 {
             self.latch_0 = 0xFE;
-        } else if 0x1FD8 <= address && address <= 0x1FDF {
+        } else if (0x1FD8..=0x1FDF).contains(&address) {
             self.latch_1 = 0xFD;
-        } else if 0x1FE8 <= address && address <= 0x1FEF {
+        } else if (0x1FE8..=0x1FEF).contains(&address) {
             self.latch_1 = 0xFE;
         }
 

@@ -32,7 +32,7 @@ impl Mapper for Mapper0 {
     }
 
     fn prg_write_byte(&mut self, address: u16, value: u8) {
-        if 0x6000 <= address && address < 0x8000 {
+        if (0x6000..0x8000).contains(&address) {
             self.cartridge.prg_ram[(address & 0x0100) as usize] = value;
         }
     }
