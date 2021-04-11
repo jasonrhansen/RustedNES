@@ -73,17 +73,17 @@ fn load_rom(filename: &Path) -> Result<Cartridge, Box<dyn Error>> {
 }
 
 fn run_rom(rom: Cartridge, opt: Opt, rom_path: PathBuf) {
-    let mut emulator = if opt.disable_audio {
-        let audio_driver = Box::new(NullAudioDriver {});
-        let time_source = Box::new(SystemTimeSource {});
+    if opt.disable_audio {
+        let audio_driver = NullAudioDriver {};
+        let time_source = SystemTimeSource {};
         println!("Audio disabled");
-        Emulator::new(rom, audio_driver.sink(), time_source, rom_path)
+        let mut emulator = Emulator::new(rom, audio_driver.sink(), time_source, rom_path);
+        emulator.run(opt.debug);
     } else {
         let audio_driver = Box::new(CpalDriver::new(NES_SAMPLE_RATE).unwrap());
         let time_source = audio_driver.time_source();
         println!("Audio sample rate: {}", audio_driver.sample_rate());
-        Emulator::new(rom, audio_driver.sink(), time_source, rom_path)
+        let mut emulator = Emulator::new(rom, audio_driver.sink(), time_source, rom_path);
+        emulator.run(opt.debug);
     };
-
-    emulator.run(opt.debug);
 }

@@ -109,12 +109,12 @@ impl Memory for Interconnect {
 }
 
 impl Interconnect {
-    pub fn cycles(
+    pub fn cycles<A: AudioSink, V: VideoSink>(
         &mut self,
         cpu: &mut Cpu,
         cycles: u32,
-        video_frame_sink: &mut dyn VideoSink,
-        audio_frame_sink: &mut dyn AudioSink,
+        video_frame_sink: &mut V,
+        audio_frame_sink: &mut A,
     ) {
         for _ in 0..cycles {
             // 3 PPU cycles per CPU cycle

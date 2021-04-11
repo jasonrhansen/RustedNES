@@ -52,10 +52,10 @@ impl Nes {
         self.cpu.reset(&mut self.interconnect);
     }
 
-    pub fn step(
+    pub fn step<A: AudioSink, V: VideoSink + Sized>(
         &mut self,
-        video_frame_sink: &mut dyn VideoSink,
-        audio_frame_sink: &mut dyn AudioSink,
+        video_frame_sink: &mut V,
+        audio_frame_sink: &mut A,
     ) -> (u32, bool) {
         let (cpu_cycles, trigger_watchpoint) = self.cpu.step(&mut self.interconnect);
 

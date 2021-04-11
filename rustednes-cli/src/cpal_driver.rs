@@ -42,7 +42,7 @@ impl Iterator for SampleBuffer {
     }
 }
 
-struct CpalDriverBufferSink {
+pub struct CpalDriverBufferSink {
     sample_buffer: Arc<Mutex<SampleBuffer>>,
 }
 
@@ -58,7 +58,7 @@ impl AudioSink for CpalDriverBufferSink {
     }
 }
 
-struct CpalDriverTimeSource {
+pub struct CpalDriverTimeSource {
     samples_written: Arc<AtomicU64>,
     sample_rate: u32,
 }
@@ -170,19 +170,21 @@ impl CpalDriver {
         })
     }
 
-    pub fn time_source(&self) -> Box<dyn TimeSource> {
-        Box::new(CpalDriverTimeSource {
+    pub fn time_source(&self) -> CpalDriverTimeSource {
+        CpalDriverTimeSource {
             samples_written: self.samples_written.clone(),
             sample_rate: self.sample_rate,
-        })
+        }
     }
 }
 
 impl AudioDriver for CpalDriver {
-    fn sink(&self) -> Box<dyn AudioSink> {
-        Box::new(CpalDriverBufferSink {
+    type S = CpalDriverBufferSink;
+
+    fn sink(&self) -> CpalDriverBufferSink {
+        CpalDriverBufferSink {
             sample_buffer: self.sample_buffer.clone(),
-        })
+        }
     }
 
     fn sample_rate(&self) -> u32 {

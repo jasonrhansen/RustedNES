@@ -90,6 +90,20 @@ pub trait VideoSink {
     fn pixel_size(&self) -> usize;
 }
 
+impl<S: VideoSink + ?Sized> VideoSink for Box<S> {
+    fn write_frame(&mut self, frame_buffer: &[u8]) {
+        (**self).write_frame(frame_buffer);
+    }
+
+    fn frame_written(&self) -> bool {
+        (**self).frame_written()
+    }
+
+    fn pixel_size(&self) -> usize {
+        (**self).pixel_size()
+    }
+}
+
 pub struct Rgb565VideoSink<'a> {
     buffer: &'a mut [u16],
     frame_written: bool,

@@ -208,7 +208,7 @@ impl Context {
                     while !video_output_sink.frame_written() {
                         system
                             .nes
-                            .step(video_output_sink.as_mut(), &mut audio_output_sink);
+                            .step(&mut video_output_sink, &mut audio_output_sink);
                     }
 
                     audio_output_sink.samples_written()

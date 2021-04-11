@@ -33,7 +33,7 @@ enum Mode {
     Debugging,
 }
 
-pub struct Emulator {
+pub struct Emulator<A: AudioSink, T: TimeSource> {
     window: Window,
 
     nes: Nes,
@@ -48,9 +48,9 @@ pub struct Emulator {
     prompt_sender: Sender<String>,
     stdin_receiver: Receiver<String>,
 
-    audio_frame_sink: Box<dyn AudioSink>,
+    audio_frame_sink: A,
 
-    time_source: Box<dyn TimeSource>,
+    time_source: T,
     start_time_ns: u64,
 
     emulated_cycles: u64,
@@ -61,13 +61,21 @@ pub struct Emulator {
     rom_path: PathBuf,
 }
 
-impl Emulator {
+impl<A, T> Emulator<A, T>
+where
+    A: AudioSink,
+    T: TimeSource,
+{
     pub fn new(
         cartridge: Cartridge,
-        audio_frame_sink: Box<dyn AudioSink>,
-        time_source: Box<dyn TimeSource>,
+        audio_frame_sink: A,
+        time_source: T,
         rom_path: PathBuf,
-    ) -> Emulator {
+    ) -> Emulator<A, T>
+    where
+        A: AudioSink,
+        T: TimeSource,
+    {
         let (prompt_sender, prompt_receiver) = channel();
         let (stdin_sender, stdin_receiver) = channel();
         let _stdin_thread = thread::spawn(move || {
@@ -231,10 +239,9 @@ impl Emulator {
         self.save_state_to_file();
     }
 
-    fn step(&mut self, video_frame_sink: &mut dyn VideoSink) -> (u32, bool) {
-        let (cycles, trigger_watchpoint) = self
-            .nes
-            .step(video_frame_sink, self.audio_frame_sink.as_mut());
+    fn step<V: VideoSink>(&mut self, video_frame_sink: &mut V) -> (u32, bool) {
+        let (cycles, trigger_watchpoint) =
+            self.nes.step(video_frame_sink, &mut self.audio_frame_sink);
 
         self.emulated_cycles += cycles as u64;
 
@@ -265,7 +272,7 @@ impl Emulator {
         self.print_cursor();
     }
 
-    fn run_debugger_commands(&mut self, video_frame_sink: &mut dyn VideoSink) -> bool {
+    fn run_debugger_commands<V: VideoSink>(&mut self, video_frame_sink: &mut V) -> bool {
         while let Ok(command_string) = self.stdin_receiver.try_recv() {
             let command = match (command_string.parse(), self.last_command.clone()) {
                 (Ok(Command::Repeat), Some(c)) => Ok(c),
@@ -293,10 +300,10 @@ impl Emulator {
         false
     }
 
-    fn run_debugger_command(
+    fn run_debugger_command<V: VideoSink>(
         &mut self,
         command: Command,
-        video_frame_sink: &mut dyn VideoSink,
+        video_frame_sink: &mut V,
     ) -> bool {
         match command {
             Command::ShowRegs => {
@@ -313,8 +320,7 @@ impl Emulator {
             }
             Command::Step(count) => {
                 for _ in 0..count {
-                    self.nes
-                        .step(video_frame_sink, self.audio_frame_sink.as_mut());
+                    self.nes.step(video_frame_sink, &mut self.audio_frame_sink);
                     self.emulated_instructions += 1;
                     self.cursor = self.nes.cpu.regs().pc;
                     print!("{} 0x{:04x}  ", self.emulated_instructions, self.cursor);

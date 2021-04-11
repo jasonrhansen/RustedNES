@@ -645,7 +645,7 @@ impl Ppu {
         self.cycles - self.scanline_start_cycle
     }
 
-    pub fn step(&mut self, cpu: &mut Cpu, video_frame_sink: &mut dyn VideoSink) {
+    pub fn step<V: VideoSink>(&mut self, cpu: &mut Cpu, video_frame_sink: &mut V) {
         let scanline_cycle = self.scanline_cycle();
 
         let on_visible_scanline = self.scanline <= VISIBLE_END_SCANLINE;

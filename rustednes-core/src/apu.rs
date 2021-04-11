@@ -151,7 +151,7 @@ impl Apu {
         self.frame_counter = state.frame_counter;
     }
 
-    pub fn step(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut dyn AudioSink) {
+    pub fn step<A: AudioSink>(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut A) {
         self.cycles += 1;
 
         self.step_timer(cpu);
