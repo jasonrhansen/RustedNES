@@ -137,7 +137,7 @@ where
         while self.window.is_open() && !self.window.is_key_down(Key::Escape) {
             let mut video_frame_sink = Xrgb8888VideoSink::new(&mut pixel_buffer);
 
-            let target_time_ns = self.time_source.time_ns() - self.start_time_ns + 400_000;
+            let target_time_ns = self.time_source.time_ns() - self.start_time_ns;
             let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
 
             match self.mode {
