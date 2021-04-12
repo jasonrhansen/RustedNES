@@ -412,23 +412,19 @@ impl Ppu {
     }
 
     fn fetch_name_table_byte(&mut self) {
-        let name_addr = self.current_name_address();
-        self.name_table_byte = self.mem.read_byte(name_addr);
+        self.name_table_byte = self.mem.read_byte(self.current_name_address());
     }
 
     fn fetch_attribute_table_byte(&mut self) {
-        let attr_addr = self.current_attribute_address();
-        self.attribute_table_byte = self.mem.read_byte(attr_addr);
+        self.attribute_table_byte = self.mem.read_byte(self.current_attribute_address());
     }
 
     fn fetch_bitmap_byte_lo(&mut self) {
-        let addr = self.current_pattern_address();
-        self.tile_bitmap_byte_lo = self.mem.read_byte(addr);
+        self.tile_bitmap_byte_lo = self.mem.read_byte(self.current_pattern_address());
     }
 
     fn fetch_bitmap_byte_hi(&mut self) {
-        let addr = self.current_pattern_address() + 8;
-        self.tile_bitmap_byte_hi = self.mem.read_byte(addr);
+        self.tile_bitmap_byte_hi = self.mem.read_byte(self.current_pattern_address() + 8);
     }
 
     fn load_background_registers(&mut self) {
@@ -648,11 +644,10 @@ impl Ppu {
     pub fn step<V: VideoSink>(&mut self, cpu: &mut Cpu, video_frame_sink: &mut V) {
         let scanline_cycle = self.scanline_cycle();
 
+        let on_prerender_scanline = self.scanline == PRE_RENDER_SCANLINE;
         let on_visible_scanline = self.scanline <= VISIBLE_END_SCANLINE;
         let on_visible_cycle = (1..=256).contains(&scanline_cycle);
 
-        let on_bg_fetch_scanline =
-            self.scanline == PRE_RENDER_SCANLINE || self.scanline <= VISIBLE_END_SCANLINE;
         // Pre-fetch tiles for the next scanline
         let on_bg_prefetch_cycle = (321..=336).contains(&scanline_cycle);
         let on_bg_fetch_cycle = on_visible_cycle || on_bg_prefetch_cycle;
@@ -664,9 +659,13 @@ impl Ppu {
 
             // Handle backgrounds
             {
-                if on_bg_fetch_scanline {
-                    if on_bg_fetch_cycle {
+                if on_visible_scanline || on_prerender_scanline {
+                    if (2..=257).contains(&scanline_cycle) || (322..=337).contains(&scanline_cycle)
+                    {
                         self.shift_background_registers();
+                    }
+
+                    if on_bg_fetch_cycle {
                         match scanline_cycle % 8 {
                             1 => self.fetch_name_table_byte(),
                             3 => self.fetch_attribute_table_byte(),
@@ -675,6 +674,11 @@ impl Ppu {
                             0 => self.load_background_registers(),
                             _ => (),
                         }
+                    }
+
+                    // Unused NT fetches
+                    if scanline_cycle == 337 || scanline_cycle == 339 {
+                        self.mem.read_byte(self.current_name_address());
                     }
 
                     // Increment the effective x scroll coordinate every 8 cycles
@@ -690,44 +694,45 @@ impl Ppu {
                     }
                 }
 
-                if self.scanline == PRE_RENDER_SCANLINE
-                    && 280 <= scanline_cycle
-                    && scanline_cycle <= 304
-                {
+                if self.scanline == PRE_RENDER_SCANLINE && (280..=304).contains(&scanline_cycle) {
                     // Copy bits related to vertical position from t to v
                     self.regs.v = (self.regs.v & !0x7BE0) | (self.regs.t & 0x7BE0);
                 }
             }
 
             // Handle sprites
-            if on_visible_scanline {
-                if on_visible_cycle {
-                    self.update_sprite_rendering_registers();
+            {
+                if on_visible_scanline {
+                    if on_visible_cycle {
+                        self.update_sprite_rendering_registers();
+                    }
+
+                    // Sprite evaluation
+                    match scanline_cycle {
+                        1 => {
+                            self.sprite_evaluation_init();
+                        }
+                        2..=64 => {
+                            if scanline_cycle % 2 == 0 {
+                                self.oam.secondary[((scanline_cycle / 2) - 1) as usize] = 0xFF;
+                            }
+                        }
+                        65..=256 => {
+                            if scanline_cycle % 2 == 1 {
+                                self.sprite_evaluation_read_byte();
+                            } else {
+                                self.sprite_evaluation_write_byte();
+                            }
+                        }
+                        _ => (),
+                    }
                 }
 
-                // Sprite evaluation
-                match scanline_cycle {
-                    1 => {
-                        self.sprite_evaluation_init();
+                if on_visible_scanline || on_prerender_scanline {
+                    // Fetch sprite tile data for the _next_ scanline.
+                    if (257..=320).contains(&scanline_cycle) && scanline_cycle % 8 == 0 {
+                        self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
                     }
-                    2..=64 => {
-                        if scanline_cycle % 2 == 0 {
-                            self.oam.secondary[((scanline_cycle / 2) - 1) as usize] = 0xFF;
-                        }
-                    }
-                    65..=256 => {
-                        if scanline_cycle % 2 == 1 {
-                            self.sprite_evaluation_read_byte();
-                        } else {
-                            self.sprite_evaluation_write_byte();
-                        }
-                    }
-                    _ => (),
-                }
-
-                // Fetch sprite tile data for the _next_ scanline.
-                if (257..=320).contains(&scanline_cycle) && scanline_cycle % 8 == 0 {
-                    self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
                 }
             }
         }
