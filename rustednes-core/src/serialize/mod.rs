@@ -15,6 +15,6 @@ pub fn get_state(nes: &Nes) -> VersionedState {
 pub fn apply_state(nes: &mut Nes, state: VersionedState) {
     use self::VersionedState::*;
     match state {
-        Version1(ref state) => nes.apply_state(&state),
+        Version1(ref state) => nes.apply_state(state),
     }
 }

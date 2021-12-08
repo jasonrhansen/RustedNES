@@ -14,7 +14,6 @@ use rustednes_core::time_source::TimeSource;
 use minifb::{Key, KeyRepeat, Scale, ScaleMode, Window, WindowOptions};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
-use serde_json;
 
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
@@ -25,7 +24,7 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time;
 
-const CPU_CYCLE_TIME_NS: u64 = (1e9 as f64 / CPU_FREQUENCY as f64) as u64 + 1;
+const CPU_CYCLE_TIME_NS: u64 = (1e9_f64 / CPU_FREQUENCY as f64) as u64 + 1;
 
 #[derive(PartialEq, Eq)]
 enum Mode {
@@ -149,7 +148,7 @@ where
                         self.emulated_instructions += 1;
 
                         if trigger_watchpoint
-                            || (self.breakpoints.len() != 0
+                            || (!self.breakpoints.is_empty()
                                 && self.breakpoints.contains(&self.nes.cpu.regs().pc))
                         {
                             start_debugger = true;
@@ -220,7 +219,7 @@ where
                             self.load_state_from_file();
                         }
                         if let Some(ref s) = self.serialized {
-                            match serde_json::from_str(&s) {
+                            match serde_json::from_str(s) {
                                 Ok(state) => {
                                     serialize::apply_state(&mut self.nes, state);
                                 }
@@ -398,7 +397,7 @@ where
                 self.labels.insert(label.clone(), address);
             }
             Command::RemoveLabel(ref label) => {
-                if let None = self.labels.remove(label) {
+                if self.labels.remove(label).is_none() {
                     println!("Label .{} doesn't exist", label);
                 }
             }

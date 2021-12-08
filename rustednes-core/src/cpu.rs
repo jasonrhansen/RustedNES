@@ -33,16 +33,16 @@ pub struct Flags {
     n: bool, // Negative
 }
 
-impl Into<u8> for Flags {
-    fn into(self) -> u8 {
-        (self.c as u8)
-            | ((self.z as u8) << 1)
-            | ((self.i as u8) << 2)
-            | ((self.d as u8) << 3)
-            | ((self.b as u8) << 4)
-            | ((self.e as u8) << 5)
-            | ((self.v as u8) << 6)
-            | ((self.n as u8) << 7)
+impl From<Flags> for u8 {
+    fn from(flags: Flags) -> Self {
+        (flags.c as u8)
+            | ((flags.z as u8) << 1)
+            | ((flags.i as u8) << 2)
+            | ((flags.d as u8) << 3)
+            | ((flags.b as u8) << 4)
+            | ((flags.e as u8) << 5)
+            | ((flags.v as u8) << 6)
+            | ((flags.n as u8) << 7)
     }
 }
 

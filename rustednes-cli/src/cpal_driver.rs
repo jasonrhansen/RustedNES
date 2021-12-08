@@ -154,7 +154,9 @@ impl CpalDriver {
                         eprintln!("unable to play audio stream: {}", e);
                     } else {
                         // Keep thread alive or stream doesn't play.
-                        loop {}
+                        loop {
+                            thread::sleep(std::time::Duration::from_secs(1))
+                        }
                     }
                 }
                 Err(e) => {
