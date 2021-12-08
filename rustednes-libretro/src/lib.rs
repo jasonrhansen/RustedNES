@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![allow(clippy::missing_safety_doc)]
 
 // This module is based on the rustual-boy-libretro module (https://github.com/emu-rs/rustual-boy/blob/libretro/rustual-boy-libretro).
 
@@ -230,12 +231,12 @@ impl Context {
 
     unsafe fn handle_input(system: &mut System) {
         {
-            let mut game_pad = &mut system.nes.interconnect.input.game_pad_1;
-            Context::handle_game_pad(&mut game_pad, 0);
+            let game_pad = &mut system.nes.interconnect.input.game_pad_1;
+            Context::handle_game_pad(game_pad, 0);
         }
         {
-            let mut game_pad = &mut system.nes.interconnect.input.game_pad_2;
-            Context::handle_game_pad(&mut game_pad, 1);
+            let game_pad = &mut system.nes.interconnect.input.game_pad_2;
+            Context::handle_game_pad(game_pad, 1);
         }
     }
 
