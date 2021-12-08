@@ -1,4 +1,4 @@
-use callbacks::Callbacks;
+use super::callbacks::Callbacks;
 
 #[allow(dead_code)]
 pub enum JoypadButton {
