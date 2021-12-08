@@ -15,7 +15,13 @@ RustedNES is a Nintendo Entertainment System emulator written in the Rust progra
 
 To build RustedNES you will need to have have Rust installed. You can find instructions here https://www.rust-lang.org/en-US/install.html
 
-After installing Rust, you run the following in the project directory to build:
+On Linux you may also need to install build dependencies. For Ubuntu that could be done like this:
+
+```
+sudo apt install libxkbcommon-dev libwayland-cursor2 libwayland-dev
+```
+
+Then run the following in the project directory to build:
 
 ```
 cargo build --release
