@@ -4,4 +4,5 @@ members = [
     "rustednes-cli",
     "rustednes-core",
     "rustednes-libretro",
+    "rustednes-sdl",
 ]

@@ -1,0 +1,18 @@
+[package]
+name = "rustednes-sdl"
+version = "0.1.0"
+authors = ["Jason Rodney Hansen <jasonrodneyhansen@gmail.com>"]
+description = "An SDL2 frontend for rustednes-core"
+license = "MIT/Apache-2.0"
+edition = "2021"
+default-run = "rustednes-sdl"
+
+[dependencies]
+rustednes-core = { path = "../rustednes-core" }
+sdl2 = "0.35"
+serde = "1.0"
+serde_json = "1.0"
+structopt = "0.3"
+structopt-derive = "0.4"
+time = "0.3"
+zip = "0.5"
