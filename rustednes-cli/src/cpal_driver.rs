@@ -3,14 +3,14 @@ use crate::audio_driver::AudioDriver;
 use rustednes_core::sink::AudioSink;
 use rustednes_core::time_source::TimeSource;
 
+use std::collections::VecDeque;
 use std::error;
 use std::iter::Iterator;
 use std::sync::atomic::{self, AtomicU64};
 use std::sync::{Arc, Mutex};
-use std::{collections::VecDeque, thread};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::SampleFormat;
+use cpal::{SampleFormat, Stream};
 
 pub struct SampleBuffer {
     samples: VecDeque<f32>,
@@ -71,6 +71,7 @@ impl TimeSource for CpalDriverTimeSource {
 }
 
 pub struct CpalDriver {
+    _stream: Stream,
     sample_buffer: Arc<Mutex<SampleBuffer>>,
     samples_written: Arc<AtomicU64>,
     sample_rate: u32,
@@ -81,14 +82,14 @@ impl CpalDriver {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
-            .expect("failed to get default output device");
+            .ok_or("failed to get default output device")?;
 
         let supported_config = device
-            .supported_output_configs()
-            .expect("failed to get supported output configs for device")
+            .supported_output_configs()?
             .next()
-            .expect("failed to find stream config")
+            .ok_or("failed to find stream config")?
             .with_max_sample_rate();
+
         let config = supported_config.config();
         let channels = config.channels as usize;
         let output_sample_rate = config.sample_rate.0;
@@ -100,72 +101,58 @@ impl CpalDriver {
         let read_sample_buffer = sample_buffer.clone();
         let output_samples_written = samples_written.clone();
 
-        thread::spawn(move || {
-            let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
-            let stream = match supported_config.sample_format() {
-                SampleFormat::F32 => device.build_output_stream(
-                    &config,
-                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                        let mut read_ring_buffer = read_sample_buffer.lock().unwrap();
-                        for sample in data.chunks_mut(channels) {
-                            let val = resampler.next(&mut *read_ring_buffer);
-                            for out in sample.iter_mut() {
-                                *out = val;
-                            }
-                            output_samples_written.fetch_add(1, atomic::Ordering::Relaxed);
+        let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
+        let stream = match supported_config.sample_format() {
+            SampleFormat::F32 => device.build_output_stream(
+                &config,
+                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    let mut read_ring_buffer = read_sample_buffer.lock().unwrap();
+                    for sample in data.chunks_mut(channels) {
+                        let val = resampler.next(&mut *read_ring_buffer);
+                        for out in sample.iter_mut() {
+                            *out = val;
                         }
-                    },
-                    err_fn,
-                ),
-                SampleFormat::I16 => device.build_output_stream(
-                    &config,
-                    move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                        let mut read_ring_buffer = read_sample_buffer.lock().unwrap();
-                        for sample in data.chunks_mut(channels) {
-                            let val = (resampler.next(&mut *read_ring_buffer) * 32768.0) as i16;
-                            for out in sample.iter_mut() {
-                                *out = val;
-                            }
-                            output_samples_written.fetch_add(1, atomic::Ordering::Relaxed);
-                        }
-                    },
-                    err_fn,
-                ),
-                SampleFormat::U16 => device.build_output_stream(
-                    &config,
-                    move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
-                        let mut read_ring_buffer = read_sample_buffer.lock().unwrap();
-                        for sample in data.chunks_mut(channels) {
-                            let val = ((resampler.next(&mut *read_ring_buffer) * 32768.0) + 32768.0)
-                                as u16;
-                            for out in sample.iter_mut() {
-                                *out = val;
-                            }
-                            output_samples_written.fetch_add(1, atomic::Ordering::Relaxed);
-                        }
-                    },
-                    err_fn,
-                ),
-            };
-
-            match stream {
-                Ok(stream) => {
-                    if let Err(e) = stream.play() {
-                        eprintln!("unable to play audio stream: {}", e);
-                    } else {
-                        // Keep thread alive or stream doesn't play.
-                        loop {
-                            thread::sleep(std::time::Duration::from_secs(1))
-                        }
+                        output_samples_written.fetch_add(1, atomic::Ordering::Relaxed);
                     }
-                }
-                Err(e) => {
-                    eprintln!("unable to build audio stream: {}", e);
-                }
-            }
-        });
+                },
+                err_fn,
+            ),
+            SampleFormat::I16 => device.build_output_stream(
+                &config,
+                move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                    let mut read_ring_buffer = read_sample_buffer.lock().unwrap();
+                    for sample in data.chunks_mut(channels) {
+                        let val = (resampler.next(&mut *read_ring_buffer) * 32768.0) as i16;
+                        for out in sample.iter_mut() {
+                            *out = val;
+                        }
+                        output_samples_written.fetch_add(1, atomic::Ordering::Relaxed);
+                    }
+                },
+                err_fn,
+            ),
+            SampleFormat::U16 => device.build_output_stream(
+                &config,
+                move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
+                    let mut read_ring_buffer = read_sample_buffer.lock().unwrap();
+                    for sample in data.chunks_mut(channels) {
+                        let val =
+                            ((resampler.next(&mut *read_ring_buffer) * 32768.0) + 32768.0) as u16;
+                        for out in sample.iter_mut() {
+                            *out = val;
+                        }
+                        output_samples_written.fetch_add(1, atomic::Ordering::Relaxed);
+                    }
+                },
+                err_fn,
+            ),
+        };
+
+        let stream = stream?;
+        stream.play()?;
 
         Ok(CpalDriver {
+            _stream: stream,
             sample_buffer,
             samples_written,
             sample_rate: output_sample_rate,
@@ -181,10 +168,10 @@ impl CpalDriver {
 }
 
 impl AudioDriver for CpalDriver {
-    type S = CpalDriverBufferSink;
+    type Sink = CpalDriverBufferSink;
 
-    fn sink(&self) -> CpalDriverBufferSink {
-        CpalDriverBufferSink {
+    fn sink(&self) -> Self::Sink {
+        Self::Sink {
             sample_buffer: self.sample_buffer.clone(),
         }
     }

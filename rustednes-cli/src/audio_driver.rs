@@ -1,8 +1,8 @@
 use rustednes_core::sink::AudioSink;
 
 pub trait AudioDriver {
-    type S: AudioSink;
+    type Sink: AudioSink;
 
-    fn sink(&self) -> Self::S;
+    fn sink(&self) -> Self::Sink;
     fn sample_rate(&self) -> u32;
 }

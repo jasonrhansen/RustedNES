@@ -5,10 +5,10 @@ use rustednes_core::sink::AudioSink;
 pub struct NullAudioDriver;
 
 impl AudioDriver for NullAudioDriver {
-    type S = NullAudioSink;
+    type Sink = NullAudioSink;
 
-    fn sink(&self) -> NullAudioSink {
-        NullAudioSink {}
+    fn sink(&self) -> Self::Sink {
+        Self::Sink {}
     }
 
     fn sample_rate(&self) -> u32 {

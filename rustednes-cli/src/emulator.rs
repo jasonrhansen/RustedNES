@@ -22,7 +22,7 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
-use std::time;
+use std::time::Duration;
 
 const CPU_CYCLE_TIME_NS: u64 = (1e9_f64 / CPU_FREQUENCY as f64) as u64 + 1;
 
@@ -232,7 +232,7 @@ where
                 }
             }
 
-            thread::sleep(time::Duration::from_millis(10));
+            thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
         }
 
         self.save_state_to_file();
