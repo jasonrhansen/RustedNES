@@ -159,12 +159,13 @@ where
                     Rect::new(0, (target_height - height) as i32 / 2, target_width, height)
                 };
 
+                self.canvas.clear();
                 self.canvas.copy(&texture, None, Some(dest_rect)).unwrap();
+                self.canvas.present();
 
                 self.update_gamepad(event_pump.keyboard_state());
             }
 
-            self.canvas.present();
             thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
         }
 
