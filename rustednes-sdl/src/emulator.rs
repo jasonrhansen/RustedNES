@@ -7,7 +7,7 @@ use rustednes_core::sink::*;
 use rustednes_core::time_source::TimeSource;
 
 use sdl2::event::Event;
-use sdl2::keyboard::{KeyboardState, Keycode, Scancode};
+use sdl2::keyboard::{KeyboardState, Keycode, Mod, Scancode};
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
 use sdl2::render::Canvas;
@@ -110,6 +110,16 @@ where
                     } => break 'running,
                     Event::KeyDown {
                         keycode: Some(Keycode::F11),
+                        ..
+                    }
+                    | Event::KeyDown {
+                        keycode: Some(Keycode::F),
+                        keymod: Mod::LCTRLMOD | Mod::RCTRLMOD,
+                        ..
+                    }
+                    | Event::KeyDown {
+                        keycode: Some(Keycode::Return),
+                        keymod: Mod::LALTMOD | Mod::RALTMOD,
                         ..
                     } => {
                         self.toggle_fullscreen();
