@@ -9,6 +9,7 @@ use rustednes_core::time_source::TimeSource;
 use sdl2::event::Event;
 use sdl2::keyboard::{KeyboardState, Keycode, Scancode};
 use sdl2::pixels::{Color, PixelFormatEnum};
+use sdl2::rect::Rect;
 use sdl2::render::Canvas;
 use sdl2::video::Window;
 use sdl2::Sdl;
@@ -17,6 +18,7 @@ use std::thread;
 use std::time::Duration;
 
 const CPU_CYCLE_TIME_NS: u64 = (1e9_f64 / CPU_FREQUENCY as f64) as u64 + 1;
+const SCREEN_RATIO: f32 = SCREEN_WIDTH as f32 / SCREEN_HEIGHT as f32;
 
 pub struct Emulator<A: AudioSink, T: TimeSource> {
     sdl_context: Sdl,
@@ -58,12 +60,13 @@ where
             )
             .position_centered()
             .resizable()
+            .maximized()
             .build()
             .unwrap();
 
         let mut canvas = window.into_canvas().build().unwrap();
 
-        canvas.set_draw_color(Color::RGB(0, 255, 255));
+        canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
         canvas.present();
 
@@ -127,7 +130,20 @@ where
                     )
                     .unwrap();
 
-                self.canvas.copy(&texture, None, None).unwrap();
+                // Maintain aspect ratio when resizing window.
+                let (target_width, target_height) = self.canvas.window().drawable_size();
+                let target_ratio = target_width as f32 / target_height as f32;
+                let dest_rect = if SCREEN_RATIO <= target_ratio {
+                    let width =
+                        (SCREEN_WIDTH as f32 * target_height as f32 / SCREEN_HEIGHT as f32) as u32;
+                    Rect::new((target_width - width) as i32 / 2, 0, width, target_height)
+                } else {
+                    let height =
+                        (SCREEN_HEIGHT as f32 * target_width as f32 / SCREEN_WIDTH as f32) as u32;
+                    Rect::new(0, (target_height - height) as i32 / 2, target_width, height)
+                };
+
+                self.canvas.copy(&texture, None, Some(dest_rect)).unwrap();
 
                 self.update_gamepad(event_pump.keyboard_state());
             }
