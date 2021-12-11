@@ -29,7 +29,6 @@ impl SampleBuffer {
 
     fn push(&mut self, value: f32) {
         self.samples.push_back(value);
-        self.samples_written += 1;
     }
 }
 

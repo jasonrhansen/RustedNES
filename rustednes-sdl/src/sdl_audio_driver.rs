@@ -29,7 +29,6 @@ impl SampleBuffer {
 
     fn push(&mut self, value: f32) {
         self.samples.push_back(value);
-        self.samples_written += 1;
     }
 }
 
@@ -142,7 +141,6 @@ impl AudioCallback for SampleCallback {
     fn callback(&mut self, out: &mut [f32]) {
         let mut read_buffer = self.sample_buffer.lock().unwrap();
 
-        // Generate a square wave
         for x in out.iter_mut() {
             let val = self.resampler.next(&mut *read_buffer);
             *x = val;
