@@ -85,7 +85,7 @@ where
         }
     }
 
-    pub fn run(&mut self, start_debugger: bool) {
+    pub fn run(&mut self) {
         self.start_time_ns = self.time_source.time_ns();
 
         let mut pixel_buffer = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
@@ -116,7 +116,7 @@ where
 
             let target_time_ns = self.time_source.time_ns() - self.start_time_ns;
             let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
-            while self.emulated_cycles < target_cycles && !start_debugger {
+            while self.emulated_cycles < target_cycles {
                 self.step(&mut video_frame_sink);
                 self.emulated_instructions += 1;
             }
