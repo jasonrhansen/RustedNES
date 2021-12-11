@@ -11,7 +11,7 @@ use sdl2::keyboard::{KeyboardState, Keycode, Scancode};
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
 use sdl2::render::Canvas;
-use sdl2::video::Window;
+use sdl2::video::{FullscreenType, Window};
 use sdl2::Sdl;
 
 use std::thread;
@@ -64,7 +64,7 @@ where
             .build()
             .unwrap();
 
-        let mut canvas = window.into_canvas().build().unwrap();
+        let mut canvas = window.into_canvas().present_vsync().build().unwrap();
 
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
@@ -108,6 +108,12 @@ where
                         keycode: Some(Keycode::Escape),
                         ..
                     } => break 'running,
+                    Event::KeyDown {
+                        keycode: Some(Keycode::F11),
+                        ..
+                    } => {
+                        self.toggle_fullscreen();
+                    }
                     _ => {}
                 }
             }
@@ -151,6 +157,8 @@ where
             self.canvas.present();
             thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
         }
+
+        self.cleanup();
     }
 
     fn step<V: VideoSink>(&mut self, video_frame_sink: &mut V) -> (u32, bool) {
@@ -188,5 +196,30 @@ where
             Button::Right,
             keyboard_state.is_scancode_pressed(Scancode::Right),
         );
+    }
+
+    fn set_fullscreen(&mut self, fullscreen: bool) {
+        let state = if fullscreen {
+            FullscreenType::Desktop
+        } else {
+            FullscreenType::Off
+        };
+        self.canvas
+            .window_mut()
+            .set_fullscreen(state)
+            .unwrap_or_else(|e| {
+                eprintln!("Unable to change fullscreen state: {:?}", e);
+            });
+    }
+
+    fn toggle_fullscreen(&mut self) {
+        self.set_fullscreen(matches!(
+            self.canvas.window().fullscreen_state(),
+            FullscreenType::Off
+        ));
+    }
+
+    fn cleanup(&mut self) {
+        self.set_fullscreen(false);
     }
 }
