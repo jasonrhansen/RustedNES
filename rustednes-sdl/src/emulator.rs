@@ -21,18 +21,19 @@ const CPU_CYCLE_TIME_NS: u64 = (1e9_f64 / CPU_FREQUENCY as f64) as u64 + 1;
 const SCREEN_RATIO: f32 = SCREEN_WIDTH as f32 / SCREEN_HEIGHT as f32;
 
 pub struct Emulator<A: AudioSink, T: TimeSource> {
-    sdl_context: Sdl,
-    canvas: Canvas<Window>,
-
     nes: Nes,
 
+    sdl_context: Sdl,
+    canvas: Canvas<Window>,
     audio_frame_sink: A,
-
     time_source: T,
     start_time_ns: u64,
 
     emulated_cycles: u64,
     emulated_instructions: u64,
+
+    debugging: bool,
+    debug_canvas: Canvas<Window>,
 }
 
 impl<A, T> Emulator<A, T>
@@ -51,6 +52,16 @@ where
         T: TimeSource,
     {
         let video_subsystem = sdl_context.video().unwrap();
+
+        let debug_window = video_subsystem
+            .window("Debug", 256, 128)
+            .hidden()
+            .build()
+            .unwrap();
+        let mut debug_canvas = debug_window.into_canvas().build().unwrap();
+        debug_canvas.set_draw_color(Color::RGB(0, 0, 0));
+        debug_canvas.clear();
+        debug_canvas.present();
 
         let window = video_subsystem
             .window(
@@ -71,17 +82,19 @@ where
         canvas.present();
 
         Emulator {
+            nes: Nes::new(cartridge),
+
             sdl_context,
             canvas,
-
-            nes: Nes::new(cartridge),
             audio_frame_sink,
-
             time_source,
             start_time_ns: 0,
 
             emulated_cycles: 0,
             emulated_instructions: 0,
+
+            debugging: false,
+            debug_canvas,
         }
     }
 
@@ -125,6 +138,12 @@ where
                     } => {
                         self.toggle_fullscreen();
                     }
+                    Event::KeyDown {
+                        keycode: Some(Keycode::F5),
+                        ..
+                    } => {
+                        self.toggle_debugging();
+                    }
                     Event::Window { .. } => {
                         self.start_time_ns =
                             self.time_source.time_ns() - (self.emulated_cycles * CPU_CYCLE_TIME_NS);
@@ -140,6 +159,10 @@ where
             while self.emulated_cycles < target_cycles {
                 self.step(&mut video_frame_sink);
                 self.emulated_instructions += 1;
+            }
+
+            if self.debugging {
+                self.draw_debug_window();
             }
 
             if video_frame_sink.frame_written() {
@@ -175,6 +198,51 @@ where
         }
 
         self.cleanup();
+    }
+
+    fn draw_debug_window(&mut self) {
+        // DCBA98 76543210
+        // ---------------
+        // 0HRRRR CCCCPTTT
+        // |||||| |||||+++- T: Fine Y offset, the row number within a tile
+        // |||||| ||||+---- P: Bit plane (0: "lower"; 1: "upper")
+        // |||||| ++++----- C: Tile column
+        // ||++++---------- R: Tile row
+        // |+-------------- H: Half of sprite table (0: "left"; 1: "right")
+        // +--------------- 0: Pattern table is at $0000-$1FFF
+        self.debug_canvas.clear();
+        let mut mapper = self.nes.interconnect.mapper.borrow_mut();
+        for half in 0..=1 {
+            for row in 0..16 {
+                for y in 0..8 {
+                    let point_y = (row * 8 + y) as i32;
+                    for col in 0..16 {
+                        let tile_x = (half * 128 + col * 8) as i32;
+                        let lower_addr: u16 = half << 12 | row << 8 | col << 4 | y;
+                        let upper_addr = lower_addr | 0x08;
+                        let lower_byte = mapper.chr_read_byte(lower_addr);
+                        let upper_byte = mapper.chr_read_byte(upper_addr);
+
+                        for bit in 0..8 {
+                            let pixel = ((lower_byte & (1 << bit)) >> bit)
+                                | ((upper_byte & (1 << bit)) >> (bit - 1));
+                            let shade = match pixel {
+                                3 => 255,
+                                2 => 255 / 3 * 2,
+                                1 => 255 / 3,
+                                _ => 0,
+                            };
+                            self.debug_canvas
+                                .set_draw_color(Color::RGB(shade, shade, shade));
+                            self.debug_canvas
+                                .draw_point((tile_x + (7 - bit) as i32, point_y))
+                                .unwrap();
+                        }
+                    }
+                }
+            }
+        }
+        self.debug_canvas.present();
     }
 
     fn step<V: VideoSink>(&mut self, video_frame_sink: &mut V) -> (u32, bool) {
@@ -233,6 +301,16 @@ where
             self.canvas.window().fullscreen_state(),
             FullscreenType::Off
         ));
+    }
+
+    fn toggle_debugging(&mut self) {
+        if self.debugging {
+            self.debug_canvas.window_mut().show();
+        } else {
+            self.debug_canvas.window_mut().hide();
+        }
+
+        self.debugging = !self.debugging;
     }
 
     fn cleanup(&mut self) {
