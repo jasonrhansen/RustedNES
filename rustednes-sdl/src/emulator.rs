@@ -86,8 +86,6 @@ where
     }
 
     pub fn run(&mut self) {
-        self.start_time_ns = self.time_source.time_ns();
-
         let mut pixel_buffer = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
         let texture_creator = self.canvas.texture_creator();
         let mut texture = texture_creator
@@ -99,6 +97,8 @@ where
             )
             .unwrap();
 
+        self.start_time_ns = self.time_source.time_ns();
+
         let mut event_pump = self.sdl_context.event_pump().unwrap();
         'running: loop {
             for event in event_pump.poll_iter() {
@@ -108,6 +108,7 @@ where
                         keycode: Some(Keycode::Escape),
                         ..
                     } => break 'running,
+
                     Event::KeyDown {
                         keycode: Some(Keycode::F11),
                         ..
@@ -123,6 +124,10 @@ where
                         ..
                     } => {
                         self.toggle_fullscreen();
+                    }
+                    Event::Window { .. } => {
+                        self.start_time_ns =
+                            self.time_source.time_ns() - (self.emulated_cycles * CPU_CYCLE_TIME_NS);
                     }
                     _ => {}
                 }
