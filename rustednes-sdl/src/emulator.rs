@@ -1,6 +1,7 @@
 use rustednes_core::cartridge::Cartridge;
 use rustednes_core::cpu::CPU_FREQUENCY;
 use rustednes_core::input::Button;
+use rustednes_core::memory::Memory;
 use rustednes_core::nes::Nes;
 use rustednes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use rustednes_core::sink::*;
@@ -35,6 +36,7 @@ pub struct Emulator<A: AudioSink, T: TimeSource> {
 
     debugging: bool,
     debug_canvas: Canvas<Window>,
+    debug_palette_selector: usize,
 }
 
 impl<A, T> Emulator<A, T>
@@ -56,7 +58,7 @@ where
 
         let debug_scale = 4;
         let debug_window = video_subsystem
-            .window("Debug", 256 * debug_scale, 128 * debug_scale)
+            .window("Debug", 256 * debug_scale, 176 * debug_scale)
             .hidden()
             .build()
             .unwrap();
@@ -64,7 +66,7 @@ where
         debug_canvas
             .set_scale(debug_scale as f32, debug_scale as f32)
             .unwrap();
-        debug_canvas.set_draw_color(Color::RGB(0, 0, 0));
+        debug_canvas.set_draw_color(Color::BLACK);
         debug_canvas.clear();
         debug_canvas.present();
 
@@ -82,7 +84,7 @@ where
 
         let mut canvas = window.into_canvas().present_vsync().build().unwrap();
 
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
+        canvas.set_draw_color(Color::BLACK);
         canvas.clear();
         canvas.present();
 
@@ -101,6 +103,7 @@ where
 
             debugging: false,
             debug_canvas,
+            debug_palette_selector: 0,
         }
     }
 
@@ -178,6 +181,15 @@ where
                         return false;
                     } else if window_id == self.debug_canvas.window().id() {
                         self.toggle_debugging();
+                    }
+                }
+                Event::KeyDown {
+                    window_id,
+                    keycode: Some(Keycode::P),
+                    ..
+                } => {
+                    if window_id == self.debug_canvas.window().id() {
+                        self.cycle_debug_palette_selector();
                     }
                 }
                 Event::KeyDown {
@@ -263,9 +275,9 @@ where
 
     fn toggle_debugging(&mut self) {
         if self.debugging {
-            self.debug_canvas.window_mut().show();
-        } else {
             self.debug_canvas.window_mut().hide();
+        } else {
+            self.debug_canvas.window_mut().show();
         }
 
         self.debugging = !self.debugging;
@@ -299,6 +311,31 @@ where
 
     /// Render debug info
     fn render_debug_window(&mut self) {
+        self.debug_canvas.set_draw_color(Color::BLACK);
+        self.debug_canvas.clear();
+
+        // Load palette colors
+        //
+        // $3F00 	Universal background color
+        // $3F01-$3F03 	Background palette 0
+        // $3F05-$3F07 	Background palette 1
+        // $3F09-$3F0B 	Background palette 2
+        // $3F0D-$3F0F 	Background palette 3
+        // $3F11-$3F13 	Sprite palette 0
+        // $3F15-$3F17 	Sprite palette 1
+        // $3F19-$3F1B 	Sprite palette 2
+        // $3F1D-$3F1F 	Sprite palette 3
+        let palette: Vec<u32> = (0x3F00..=0x3F1F)
+            .map(|addr| {
+                let addr = if addr % 4 == 0 { 0x3F00 } else { addr };
+                XRGB8888_PALETTE[(self.nes.interconnect.ppu.mem.read_byte(addr) & 0x3F) as usize]
+            })
+            .collect();
+
+        let mut mapper = self.nes.interconnect.mapper.borrow_mut();
+
+        // Draw pattern tables
+        //
         // DCBA98 76543210
         // ---------------
         // 0HRRRR CCCCPTTT
@@ -308,8 +345,6 @@ where
         // ||++++---------- R: Tile row
         // |+-------------- H: Half of sprite table (0: "left"; 1: "right")
         // +--------------- 0: Pattern table is at $0000-$1FFF
-        self.debug_canvas.clear();
-        let mut mapper = self.nes.interconnect.mapper.borrow_mut();
         for half in 0..=1 {
             for row in 0..16 {
                 for y in 0..8 {
@@ -322,16 +357,13 @@ where
                         let upper_byte = mapper.chr_read_byte(upper_addr);
 
                         for bit in 0..8 {
-                            let pixel = ((lower_byte & (1 << bit)) >> bit)
-                                | ((upper_byte & (1 << bit)) >> (bit - 1));
-                            let shade = match pixel {
-                                3 => 255,
-                                2 => 255 / 3 * 2,
-                                1 => 255 / 3,
-                                _ => 0,
-                            };
-                            self.debug_canvas
-                                .set_draw_color(Color::RGB(shade, shade, shade));
+                            let palette_index = (((lower_byte & (1 << bit)) >> bit)
+                                | ((upper_byte & (1 << bit)) >> (bit - 1)))
+                                as usize;
+                            self.debug_canvas.set_draw_color(Color::from_u32(
+                                &PixelFormatEnum::RGB888.try_into().unwrap(),
+                                palette[self.debug_palette_selector * 4 + palette_index],
+                            ));
                             self.debug_canvas
                                 .draw_point((tile_x + (7 - bit) as i32, point_y))
                                 .unwrap();
@@ -341,7 +373,28 @@ where
             }
         }
 
+        // Draw palettes
+        for (i, &color) in palette.iter().enumerate() {
+            self.debug_canvas.set_draw_color(Color::from_u32(
+                &PixelFormatEnum::RGB888.try_into().unwrap(),
+                color,
+            ));
+
+            self.debug_canvas
+                .fill_rect(Rect::new(
+                    i as i32 % 16 * 16,
+                    144 + ((i as i32 / 16) * 16),
+                    16,
+                    16,
+                ))
+                .unwrap();
+        }
+
         self.debug_canvas.present();
+    }
+
+    fn cycle_debug_palette_selector(&mut self) {
+        self.debug_palette_selector = (self.debug_palette_selector + 1) % 8;
     }
 
     fn cleanup(&mut self) {
