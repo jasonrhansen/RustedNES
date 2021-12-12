@@ -390,6 +390,17 @@ where
                 .unwrap();
         }
 
+        // Draw rectangle around selected palette
+        self.debug_canvas.set_draw_color(Color::WHITE);
+        self.debug_canvas
+            .draw_rect(Rect::new(
+                self.debug_palette_selector as i32 % 4 * 16 * 4,
+                144 + ((self.debug_palette_selector as i32 / 4) * 16),
+                16 * 4,
+                16,
+            ))
+            .unwrap();
+
         self.debug_canvas.present();
     }
 
