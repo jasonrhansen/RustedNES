@@ -44,7 +44,8 @@ fn main() {
     match load_rom(&opt.rom_path) {
         Ok(rom) => {
             println!("{:?}", rom);
-            run_rom(rom, opt);
+            let rom_path = opt.rom_path.to_path_buf();
+            run_rom(rom, opt, rom_path);
         }
         Err(e) => println!("Error: {}", e),
     }
@@ -69,21 +70,23 @@ fn load_rom(filename: &Path) -> Result<Cartridge, Box<dyn Error>> {
     Ok(cartridge)
 }
 
-fn run_rom(rom: Cartridge, opt: Opt) {
+fn run_rom(rom: Cartridge, opt: Opt, rom_path: PathBuf) {
     let sdl_context = sdl2::init().unwrap();
 
     if opt.disable_audio {
         let audio_driver = NullAudioDriver {};
         let time_source = SystemTimeSource {};
         println!("Audio disabled");
-        let mut emulator = Emulator::new(sdl_context, rom, audio_driver.sink(), time_source);
+        let mut emulator =
+            Emulator::new(sdl_context, rom, audio_driver.sink(), time_source, rom_path);
         emulator.run();
     } else {
         let audio_driver =
             Box::new(SdlAudioDriver::new(sdl_context.clone(), NES_SAMPLE_RATE).unwrap());
         let time_source = audio_driver.time_source();
         println!("Audio sample rate: {}", audio_driver.sample_rate());
-        let mut emulator = Emulator::new(sdl_context, rom, audio_driver.sink(), time_source);
+        let mut emulator =
+            Emulator::new(sdl_context, rom, audio_driver.sink(), time_source, rom_path);
         emulator.run();
     };
 }

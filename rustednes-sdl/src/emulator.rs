@@ -4,8 +4,8 @@ use rustednes_core::input::Button;
 use rustednes_core::memory::Memory;
 use rustednes_core::nes::Nes;
 use rustednes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
-use rustednes_core::sink::*;
 use rustednes_core::time_source::TimeSource;
+use rustednes_core::{serialize, sink::*};
 
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::{KeyboardState, Keycode, Mod, Scancode};
@@ -15,6 +15,9 @@ use sdl2::render::{Canvas, Texture};
 use sdl2::video::{FullscreenType, Window};
 use sdl2::{EventPump, Sdl};
 
+use std::fs::OpenOptions;
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::PathBuf;
 use std::thread;
 use std::time::Duration;
 
@@ -37,6 +40,9 @@ pub struct Emulator<A: AudioSink, T: TimeSource> {
     debugging: bool,
     debug_canvas: Canvas<Window>,
     debug_palette_selector: usize,
+
+    serialized: Option<String>,
+    rom_path: PathBuf,
 }
 
 impl<A, T> Emulator<A, T>
@@ -49,6 +55,7 @@ where
         cartridge: Cartridge,
         audio_frame_sink: A,
         time_source: T,
+        rom_path: PathBuf,
     ) -> Emulator<A, T>
     where
         A: AudioSink,
@@ -104,6 +111,9 @@ where
             debugging: false,
             debug_canvas,
             debug_palette_selector: 0,
+
+            serialized: None,
+            rom_path,
         }
     }
 
@@ -167,57 +177,101 @@ where
     fn handle_events(&mut self, events: &mut EventPump) -> bool {
         for event in events.poll_iter() {
             match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
+                Event::KeyDown {
+                    window_id,
+                    keycode: Some(keycode),
+                    keymod,
                     ..
-                } => return false,
+                } => {
+                    let main_window = self.canvas.window().id() == window_id;
+                    let debug_window = self.debug_canvas.window().id() == window_id;
+
+                    match (keycode, keymod) {
+                        (Keycode::Escape, Mod::NOMOD) if main_window => {
+                            return false;
+                        }
+                        (Keycode::F11, Mod::NOMOD)
+                        | (Keycode::F, Mod::LCTRLMOD | Mod::RCTRLMOD)
+                        | (Keycode::Return, Mod::LALTMOD | Mod::RALTMOD)
+                            if main_window =>
+                        {
+                            self.toggle_fullscreen();
+                        }
+                        (Keycode::F12, Mod::NOMOD) if main_window => {
+                            self.toggle_debugging();
+                        }
+                        (Keycode::Space, Mod::NOMOD) if debug_window => {
+                            self.cycle_debug_palette_selector();
+                        }
+                        (Keycode::P, Mod::NOMOD) => {
+                            let settings = &mut self.nes.interconnect.apu.settings;
+                            settings.pulse_1_enabled = !settings.pulse_1_enabled;
+                        }
+                        (Keycode::LeftBracket, Mod::NOMOD) => {
+                            let settings = &mut self.nes.interconnect.apu.settings;
+                            settings.pulse_2_enabled = !settings.pulse_2_enabled;
+                        }
+                        (Keycode::T, Mod::NOMOD) => {
+                            let settings = &mut self.nes.interconnect.apu.settings;
+                            settings.triangle_enabled = !settings.triangle_enabled;
+                        }
+                        (Keycode::N, Mod::NOMOD) => {
+                            let settings = &mut self.nes.interconnect.apu.settings;
+                            settings.noise_enabled = !settings.noise_enabled;
+                        }
+                        (Keycode::D, Mod::NOMOD) => {
+                            let settings = &mut self.nes.interconnect.apu.settings;
+                            settings.dmc_enabled = !settings.dmc_enabled;
+                        }
+                        (Keycode::F, Mod::NOMOD) => {
+                            let settings = &mut self.nes.interconnect.apu.settings;
+                            settings.filter_enabled = !settings.filter_enabled;
+                        }
+                        (Keycode::Num1, Mod::NOMOD) => {
+                            self.serialized =
+                                serde_json::to_string(&serialize::get_state(&self.nes)).ok();
+                            serde_json::to_string(&serialize::get_state(&self.nes)).ok();
+                        }
+                        (Keycode::Num1, Mod::LCTRLMOD | Mod::RCTRLMOD) => {
+                            if self.serialized.is_none() {
+                                self.load_state_from_file();
+                            }
+                            if let Some(ref s) = self.serialized {
+                                match serde_json::from_str(s) {
+                                    Ok(state) => {
+                                        serialize::apply_state(&mut self.nes, state);
+                                    }
+                                    Err(e) => {
+                                        eprintln!("error applying save state: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 Event::Window {
                     window_id,
-                    win_event: WindowEvent::Close,
+                    win_event,
                     ..
                 } => {
-                    if window_id == self.canvas.window().id() {
-                        return false;
-                    } else if window_id == self.debug_canvas.window().id() {
-                        self.toggle_debugging();
+                    let main_window = self.canvas.window().id() == window_id;
+                    let debug_window = self.debug_canvas.window().id() == window_id;
+
+                    match win_event {
+                        WindowEvent::Close if main_window => {
+                            return false;
+                        }
+                        WindowEvent::Close if debug_window => {
+                            self.toggle_debugging();
+                        }
+                        _ => {}
                     }
-                }
-                Event::KeyDown {
-                    window_id,
-                    keycode: Some(Keycode::P),
-                    ..
-                } => {
-                    if window_id == self.debug_canvas.window().id() {
-                        self.cycle_debug_palette_selector();
-                    }
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::F11),
-                    ..
-                }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::F),
-                    keymod: Mod::LCTRLMOD | Mod::RCTRLMOD,
-                    ..
-                }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Return),
-                    keymod: Mod::LALTMOD | Mod::RALTMOD,
-                    ..
-                } => {
-                    self.toggle_fullscreen();
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::F5),
-                    ..
-                } => {
-                    self.toggle_debugging();
-                }
-                Event::Window { .. } => {
+
                     self.start_time_ns =
                         self.time_source.time_ns() - (self.emulated_cycles * CPU_CYCLE_TIME_NS);
                 }
+                Event::Quit { .. } => return false,
                 _ => {}
             }
         }
@@ -281,6 +335,44 @@ where
         }
 
         self.debugging = !self.debugging;
+    }
+
+    fn save_state_to_file(&mut self) {
+        if let Some(ref s) = self.serialized {
+            let save_file = OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .create(true)
+                .open(&self.save_state_file_path());
+            match save_file {
+                Ok(save_file) => {
+                    let mut save_writer = BufWriter::new(save_file);
+                    let _ = save_writer.write_all(s.as_bytes());
+                }
+                Err(e) => {
+                    eprintln!("unable to open file to save state: {}", e);
+                }
+            }
+        }
+    }
+
+    fn load_state_from_file(&mut self) {
+        let save_file = OpenOptions::new()
+            .read(true)
+            .write(false)
+            .create(false)
+            .open(&self.save_state_file_path());
+        if let Ok(save_file) = save_file {
+            println!("Loading save file");
+            let mut save_reader = BufReader::new(save_file);
+            let mut serialized = String::new();
+            let _ = save_reader.read_to_string(&mut serialized);
+            self.serialized = Some(serialized);
+        }
+    }
+
+    fn save_state_file_path(&self) -> PathBuf {
+        self.rom_path.with_extension("sav")
     }
 
     /// Render a frame of emulation.
@@ -410,5 +502,6 @@ where
 
     fn cleanup(&mut self) {
         self.set_fullscreen(false);
+        self.save_state_to_file();
     }
 }
