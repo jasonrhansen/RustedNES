@@ -9,7 +9,7 @@ use rustednes_core::{serialize, sink::*};
 
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::{KeyboardState, Keycode, Mod, Scancode};
-use sdl2::pixels::{Color, PixelFormatEnum};
+use sdl2::pixels::{Color, PixelFormat, PixelFormatEnum};
 use sdl2::rect::Rect;
 use sdl2::render::{Canvas, Texture};
 use sdl2::video::{FullscreenType, Window};
@@ -18,11 +18,12 @@ use sdl2::{EventPump, Sdl};
 use std::fs::OpenOptions;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
-use std::thread;
 use std::time::Duration;
+use std::{mem, thread};
 
 const CPU_CYCLE_TIME_NS: u64 = (1e9_f64 / CPU_FREQUENCY as f64) as u64 + 1;
-const SCREEN_RATIO: f32 = SCREEN_WIDTH as f32 / SCREEN_HEIGHT as f32;
+const DEBUG_WIDTH: u32 = 256;
+const DEBUG_HEIGHT: u32 = 176;
 
 pub struct Emulator<A: AudioSink, T: TimeSource> {
     nes: Nes,
@@ -65,14 +66,16 @@ where
 
         let debug_scale = 4;
         let debug_window = video_subsystem
-            .window("Debug", 256 * debug_scale, 176 * debug_scale)
+            .window(
+                "Debug",
+                DEBUG_WIDTH * debug_scale,
+                DEBUG_HEIGHT * debug_scale,
+            )
+            .resizable()
             .hidden()
             .build()
             .unwrap();
         let mut debug_canvas = debug_window.into_canvas().build().unwrap();
-        debug_canvas
-            .set_scale(debug_scale as f32, debug_scale as f32)
-            .unwrap();
         debug_canvas.set_draw_color(Color::BLACK);
         debug_canvas.clear();
         debug_canvas.present();
@@ -118,8 +121,6 @@ where
     }
 
     pub fn run(&mut self) {
-        // Create a texture we can use to render emulation frames.
-        let mut pixel_buffer = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
         let texture_creator = self.canvas.texture_creator();
         let mut texture = texture_creator
             .create_texture(
@@ -139,38 +140,39 @@ where
                 break;
             }
 
-            // Run enough emulator cycles to catch up with the time that has passed since the
-            // previous loop iteration.
-            let mut video_frame_sink = Xrgb8888VideoSink::new(&mut pixel_buffer);
-            let target_time_ns = self.time_source.time_ns() - self.start_time_ns;
-            let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
-            while self.emulated_cycles < target_cycles {
-                self.step(&mut video_frame_sink);
-                self.emulated_instructions += 1;
+            let mut frame_written = false;
+            let canvas = &mut self.canvas;
+            canvas
+                .with_texture_canvas(&mut texture, |canvas| {
+                    // Run enough emulator cycles to catch up with the time that has passed since the
+                    // previous loop iteration.
+                    let mut video_frame_sink = CanvasVideoSink::new(canvas);
+                    let target_time_ns = self.time_source.time_ns() - self.start_time_ns;
+                    let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
+                    while self.emulated_cycles < target_cycles {
+                        let (cycles, _) = self
+                            .nes
+                            .step(&mut video_frame_sink, &mut self.audio_frame_sink);
+                        self.emulated_cycles += cycles as u64;
+                        self.emulated_instructions += 1;
+                    }
+                    frame_written = video_frame_sink.frame_written();
+                })
+                .unwrap();
+
+            if frame_written {
+                self.render_frame(&mut texture);
+                self.update_gamepad(event_pump.keyboard_state());
             }
 
             if self.debugging {
                 self.render_debug_window();
             }
 
-            if video_frame_sink.frame_written() {
-                self.render_frame(pixel_buffer.as_ref(), &mut texture);
-                self.update_gamepad(event_pump.keyboard_state());
-            }
-
             thread::sleep(Duration::new(0, 1_000_000_000 / 60));
         }
 
         self.cleanup();
-    }
-
-    fn step<V: VideoSink>(&mut self, video_frame_sink: &mut V) -> (u32, bool) {
-        let (cycles, trigger_watchpoint) =
-            self.nes.step(video_frame_sink, &mut self.audio_frame_sink);
-
-        self.emulated_cycles += cycles as u64;
-
-        (cycles, trigger_watchpoint)
     }
 
     /// Returns false to signal to end emulation.
@@ -376,26 +378,16 @@ where
     }
 
     /// Render a frame of emulation.
-    fn render_frame(&mut self, pixel_buffer: &[u32], texture: &mut Texture) {
-        texture
-            .update(
-                None,
-                unsafe { std::mem::transmute(pixel_buffer) },
-                SCREEN_WIDTH * 4,
-            )
-            .unwrap();
+    fn render_frame(&mut self, texture: &mut Texture) {
+        let (canvas_width, canvas_height) = self.canvas.window().drawable_size();
+        let dest_rect = scale_to_canvas(
+            SCREEN_WIDTH as u32,
+            SCREEN_HEIGHT as u32,
+            canvas_width,
+            canvas_height,
+        );
 
-        // Maintain aspect ratio when resizing window.
-        let (target_width, target_height) = self.canvas.window().drawable_size();
-        let target_ratio = target_width as f32 / target_height as f32;
-        let dest_rect = if SCREEN_RATIO <= target_ratio {
-            let width = (SCREEN_WIDTH as f32 * target_height as f32 / SCREEN_HEIGHT as f32) as u32;
-            Rect::new((target_width - width) as i32 / 2, 0, width, target_height)
-        } else {
-            let height = (SCREEN_HEIGHT as f32 * target_width as f32 / SCREEN_WIDTH as f32) as u32;
-            Rect::new(0, (target_height - height) as i32 / 2, target_width, height)
-        };
-
+        self.canvas.set_draw_color(Color::BLACK);
         self.canvas.clear();
         self.canvas.copy(&texture, None, Some(dest_rect)).unwrap();
         self.canvas.present();
@@ -403,9 +395,6 @@ where
 
     /// Render debug info
     fn render_debug_window(&mut self) {
-        self.debug_canvas.set_draw_color(Color::BLACK);
-        self.debug_canvas.clear();
-
         // Load palette colors
         //
         // $3F00 	Universal background color
@@ -424,75 +413,94 @@ where
             })
             .collect();
 
+        let pixel_format: PixelFormat = PixelFormatEnum::RGB888.try_into().unwrap();
+
         let mut mapper = self.nes.interconnect.mapper.borrow_mut();
 
-        // Draw pattern tables
-        //
-        // DCBA98 76543210
-        // ---------------
-        // 0HRRRR CCCCPTTT
-        // |||||| |||||+++- T: Fine Y offset, the row number within a tile
-        // |||||| ||||+---- P: Bit plane (0: "lower"; 1: "upper")
-        // |||||| ++++----- C: Tile column
-        // ||++++---------- R: Tile row
-        // |+-------------- H: Half of sprite table (0: "left"; 1: "right")
-        // +--------------- 0: Pattern table is at $0000-$1FFF
-        for half in 0..=1 {
-            for row in 0..16 {
-                for y in 0..8 {
-                    let point_y = (row * 8 + y) as i32;
-                    for col in 0..16 {
-                        let tile_x = (half * 128 + col * 8) as i32;
-                        let lower_addr: u16 = half << 12 | row << 8 | col << 4 | y;
-                        let upper_addr = lower_addr | 0x08;
-                        let lower_byte = mapper.chr_read_byte(lower_addr);
-                        let upper_byte = mapper.chr_read_byte(upper_addr);
+        let texture_creator = self.debug_canvas.texture_creator();
+        let mut texture = texture_creator
+            .create_texture(
+                None,
+                sdl2::render::TextureAccess::Target,
+                DEBUG_WIDTH,
+                DEBUG_HEIGHT,
+            )
+            .unwrap();
+        self.debug_canvas
+            .with_texture_canvas(&mut texture, |canvas| {
+                // Draw pattern tables
+                //
+                // DCBA98 76543210
+                // ---------------
+                // 0HRRRR CCCCPTTT
+                // |||||| |||||+++- T: Fine Y offset, the row number within a tile
+                // |||||| ||||+---- P: Bit plane (0: "lower"; 1: "upper")
+                // |||||| ++++----- C: Tile column
+                // ||++++---------- R: Tile row
+                // |+-------------- H: Half of sprite table (0: "left"; 1: "right")
+                // +--------------- 0: Pattern table is at $0000-$1FFF
+                for half in 0..=1 {
+                    for row in 0..16 {
+                        for y in 0..8 {
+                            let point_y = (row * 8 + y) as i32;
+                            for col in 0..16 {
+                                let tile_x = (half * 128 + col * 8) as i32;
+                                let lower_addr: u16 = half << 12 | row << 8 | col << 4 | y;
+                                let upper_addr = lower_addr | 0x08;
+                                let lower_byte = mapper.chr_read_byte(lower_addr);
+                                let upper_byte = mapper.chr_read_byte(upper_addr);
 
-                        for bit in 0..8 {
-                            let palette_index = (((lower_byte & (1 << bit)) >> bit)
-                                | ((upper_byte & (1 << bit)) >> (bit - 1)))
-                                as usize;
-                            self.debug_canvas.set_draw_color(Color::from_u32(
-                                &PixelFormatEnum::RGB888.try_into().unwrap(),
-                                palette[self.debug_palette_selector * 4 + palette_index],
-                            ));
-                            self.debug_canvas
-                                .draw_point((tile_x + (7 - bit) as i32, point_y))
-                                .unwrap();
+                                for bit in 0..8 {
+                                    let palette_index = (((lower_byte & (1 << bit)) >> bit)
+                                        | ((upper_byte & (1 << bit)) >> (bit - 1)))
+                                        as usize;
+                                    canvas.set_draw_color(Color::from_u32(
+                                        &pixel_format,
+                                        palette[self.debug_palette_selector * 4 + palette_index],
+                                    ));
+                                    canvas
+                                        .draw_point((tile_x + (7 - bit) as i32, point_y))
+                                        .unwrap();
+                                }
+                            }
                         }
                     }
                 }
-            }
-        }
 
-        // Draw palettes
-        for (i, &color) in palette.iter().enumerate() {
-            self.debug_canvas.set_draw_color(Color::from_u32(
-                &PixelFormatEnum::RGB888.try_into().unwrap(),
-                color,
-            ));
+                // Draw palettes
+                for (i, &color) in palette.iter().enumerate() {
+                    canvas.set_draw_color(Color::from_u32(&pixel_format, color));
 
-            self.debug_canvas
-                .fill_rect(Rect::new(
-                    i as i32 % 16 * 16,
-                    144 + ((i as i32 / 16) * 16),
-                    16,
-                    16,
-                ))
-                .unwrap();
-        }
+                    canvas
+                        .fill_rect(Rect::new(
+                            i as i32 % 16 * 16,
+                            144 + ((i as i32 / 16) * 16),
+                            16,
+                            16,
+                        ))
+                        .unwrap();
+                }
 
-        // Draw rectangle around selected palette
-        self.debug_canvas.set_draw_color(Color::WHITE);
-        self.debug_canvas
-            .draw_rect(Rect::new(
-                self.debug_palette_selector as i32 % 4 * 16 * 4,
-                144 + ((self.debug_palette_selector as i32 / 4) * 16),
-                16 * 4,
-                16,
-            ))
+                // Draw rectangle around selected palette
+                canvas.set_draw_color(Color::WHITE);
+                canvas
+                    .draw_rect(Rect::new(
+                        self.debug_palette_selector as i32 % 4 * 16 * 4,
+                        144 + ((self.debug_palette_selector as i32 / 4) * 16),
+                        16 * 4,
+                        16,
+                    ))
+                    .unwrap();
+            })
             .unwrap();
 
+        let (canvas_width, canvas_height) = self.debug_canvas.window().drawable_size();
+        let dest_rect = scale_to_canvas(DEBUG_WIDTH, DEBUG_HEIGHT, canvas_width, canvas_height);
+        self.debug_canvas.set_draw_color(Color::BLACK);
+        self.debug_canvas.clear();
+        self.debug_canvas
+            .copy(&texture, None, Some(dest_rect))
+            .unwrap();
         self.debug_canvas.present();
     }
 
@@ -503,5 +511,55 @@ where
     fn cleanup(&mut self) {
         self.set_fullscreen(false);
         self.save_state_to_file();
+    }
+}
+
+fn scale_to_canvas(src_width: u32, src_height: u32, canvas_width: u32, canvas_height: u32) -> Rect {
+    let src_ratio = src_width as f32 / src_height as f32;
+    let dst_ratio = canvas_width as f32 / canvas_height as f32;
+    if src_ratio <= dst_ratio {
+        let width = (src_width as f32 * canvas_height as f32 / src_height as f32) as u32;
+        Rect::new((canvas_width - width) as i32 / 2, 0, width, canvas_height)
+    } else {
+        let height = (src_height as f32 * canvas_width as f32 / src_width as f32) as u32;
+        Rect::new(0, (canvas_height - height) as i32 / 2, canvas_width, height)
+    }
+}
+
+pub struct CanvasVideoSink<'a> {
+    canvas: &'a mut Canvas<Window>,
+    frame_written: bool,
+}
+
+impl<'a> CanvasVideoSink<'a> {
+    pub fn new(canvas: &'a mut Canvas<Window>) -> Self {
+        CanvasVideoSink {
+            canvas,
+            frame_written: false,
+        }
+    }
+}
+
+impl<'a> VideoSink for CanvasVideoSink<'a> {
+    fn write_frame(&mut self, frame_buffer: &[u8]) {
+        let pixel_format = PixelFormatEnum::RGB888.try_into().unwrap();
+        for (i, palette_index) in frame_buffer.iter().enumerate() {
+            self.canvas.set_draw_color(Color::from_u32(
+                &pixel_format,
+                XRGB8888_PALETTE[*palette_index as usize],
+            ));
+            self.canvas
+                .draw_point(((i % SCREEN_WIDTH) as i32, (i / SCREEN_WIDTH) as i32))
+                .unwrap();
+        }
+        self.frame_written = true;
+    }
+
+    fn frame_written(&self) -> bool {
+        self.frame_written
+    }
+
+    fn pixel_size(&self) -> usize {
+        mem::size_of::<u32>()
     }
 }
