@@ -5,4 +5,5 @@ members = [
     "rustednes-core",
     "rustednes-libretro",
     "rustednes-sdl",
+    "rustednes-common",
 ]

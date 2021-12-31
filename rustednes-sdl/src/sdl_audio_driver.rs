@@ -1,4 +1,4 @@
-use crate::audio_driver::AudioDriver;
+use rustednes_common::audio_driver::AudioDriver;
 
 use rustednes_core::sink::AudioSink;
 use rustednes_core::time_source::TimeSource;

@@ -1,14 +1,15 @@
 #[global_allocator]
 static GLOBAL: System = System;
 
-use crate::audio_driver::*;
 use crate::emulator::*;
-use crate::null_audio_driver::*;
 use crate::sdl_audio_driver::*;
-use crate::system_time_source::*;
 
 use rustednes_core::apu::SAMPLE_RATE as NES_SAMPLE_RATE;
 use rustednes_core::cartridge::*;
+
+use rustednes_common::audio_driver::*;
+use rustednes_common::null_audio_driver::*;
+use rustednes_common::system_time_source::*;
 
 use structopt::StructOpt;
 
@@ -17,11 +18,8 @@ use std::error::Error;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-mod audio_driver;
 mod emulator;
-mod null_audio_driver;
 mod sdl_audio_driver;
-mod system_time_source;
 
 #[derive(Debug, StructOpt)]
 #[structopt(

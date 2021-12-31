@@ -1,0 +1,11 @@
+[package]
+name = "rustednes-common"
+version = "0.1.0"
+authors = ["Jason Rodney Hansen <jasonrodneyhansen@gmail.com>"]
+description = "Shared types for rustednes frontends"
+license = "MIT/Apache-2.0"
+edition = "2021"
+
+[dependencies]
+rustednes-core = { path = "../rustednes-core" }
+time = "0.3"

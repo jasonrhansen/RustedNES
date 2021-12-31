@@ -9,6 +9,7 @@ edition = "2021"
 [dependencies]
 minifb = "0.20"
 rustednes-core = { path = "../rustednes-core" }
+rustednes-common = { path = "../rustednes-common" }
 time = "0.3"
 cpal = "0.13"
 serde = "1.0"
