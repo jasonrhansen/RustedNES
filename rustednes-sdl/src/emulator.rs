@@ -25,6 +25,18 @@ use std::{mem, thread};
 const CPU_CYCLE_TIME_NS: u64 = (1e9_f64 / CPU_FREQUENCY as f64) as u64 + 1;
 const DEBUG_WIDTH: u32 = 256;
 const DEBUG_HEIGHT: u32 = 176;
+const NUMBER_KEYCODES: &[Keycode] = &[
+    Keycode::Num0,
+    Keycode::Num1,
+    Keycode::Num2,
+    Keycode::Num3,
+    Keycode::Num4,
+    Keycode::Num5,
+    Keycode::Num6,
+    Keycode::Num7,
+    Keycode::Num8,
+    Keycode::Num9,
+];
 
 pub struct Emulator<A: AudioSink, T: TimeSource> {
     nes: Nes,
@@ -77,7 +89,7 @@ where
             debugging_graphics: false,
             debug_palette_selector: 0,
 
-            state_manager: StateManager::new(rom_path),
+            state_manager: StateManager::new(rom_path, NUMBER_KEYCODES.len()),
         }
     }
 
@@ -287,13 +299,18 @@ where
                             let settings = &mut self.nes.interconnect.apu.settings;
                             settings.filter_enabled = !settings.filter_enabled;
                         }
-                        (Keycode::Num1, Mod::NOMOD) => {
-                            self.state_manager.save_state(&self.nes);
-                        }
-                        (Keycode::Num1, Mod::LCTRLMOD | Mod::RCTRLMOD) => {
-                            self.state_manager.load_state(&mut self.nes);
-                        }
                         _ => {}
+                    }
+
+                    let ctrl_mod = matches!(keymod, Mod::LCTRLMOD | Mod::RCTRLMOD);
+                    for (slot, &num_keycode) in NUMBER_KEYCODES.iter().enumerate() {
+                        if keycode == num_keycode {
+                            if ctrl_mod {
+                                self.state_manager.load_state(&mut self.nes, slot);
+                            } else {
+                                self.state_manager.save_state(&self.nes, slot);
+                            }
+                        }
                     }
                 }
                 Event::Window {
@@ -515,7 +532,7 @@ where
 
     fn cleanup(&mut self, canvas: &mut Canvas<Window>) {
         self.set_fullscreen(canvas, false);
-        self.state_manager.save_state_to_file();
+        self.state_manager.write_state_to_files();
     }
 }
 

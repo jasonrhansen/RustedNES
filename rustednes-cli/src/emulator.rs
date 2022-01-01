@@ -16,6 +16,18 @@ use std::thread;
 use std::time::Duration;
 
 const CPU_CYCLE_TIME_NS: u64 = (1e9_f64 / CPU_FREQUENCY as f64) as u64 + 1;
+const NUMBER_KEYS: &[Key] = &[
+    Key::Key0,
+    Key::Key1,
+    Key::Key2,
+    Key::Key3,
+    Key::Key4,
+    Key::Key5,
+    Key::Key6,
+    Key::Key7,
+    Key::Key8,
+    Key::Key9,
+];
 
 pub struct Emulator<A: AudioSink, T: TimeSource> {
     window: Window,
@@ -78,7 +90,7 @@ where
             emulated_cycles: 0,
             emulated_instructions: 0,
 
-            state_manager: StateManager::new(rom_path),
+            state_manager: StateManager::new(rom_path, NUMBER_KEYS.len()),
         }
     }
 
@@ -167,12 +179,17 @@ where
                         settings.filter_enabled = !settings.filter_enabled;
                     }
 
-                    if self.window.is_key_pressed(Key::Key1, KeyRepeat::No) {
-                        self.state_manager.save_state(&self.nes);
-                    }
+                    let ctrl_down = self.window.is_key_down(Key::LeftCtrl)
+                        || self.window.is_key_down(Key::RightCtrl);
 
-                    if self.window.is_key_pressed(Key::F1, KeyRepeat::No) {
-                        self.state_manager.load_state(&mut self.nes);
+                    for (slot, &key) in NUMBER_KEYS.iter().enumerate() {
+                        if self.window.is_key_pressed(key, KeyRepeat::No) {
+                            if ctrl_down {
+                                self.state_manager.load_state(&mut self.nes, slot);
+                            } else {
+                                self.state_manager.save_state(&self.nes, slot);
+                            }
+                        }
                     }
                 }
             }
@@ -180,7 +197,7 @@ where
             thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
         }
 
-        self.state_manager.save_state_to_file();
+        self.state_manager.write_state_to_files();
     }
 
     fn step<V: VideoSink>(&mut self, video_frame_sink: &mut V) -> (u32, bool) {
