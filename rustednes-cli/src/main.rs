@@ -18,7 +18,6 @@ use std::error::Error;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 
-mod command;
 mod cpal_driver;
 mod emulator;
 

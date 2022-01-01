@@ -9,3 +9,5 @@ edition = "2021"
 [dependencies]
 rustednes-core = { path = "../rustednes-core" }
 time = "0.3"
+nom = "7.1"
+rustyline = "9.1"

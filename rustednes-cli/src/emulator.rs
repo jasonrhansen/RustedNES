@@ -1,10 +1,8 @@
-use crate::command::*;
-
+use rustednes_common::debugger::{DebugEmulator, Debugger};
+use rustednes_common::emulation_mode::EmulationMode;
 use rustednes_core::cartridge::Cartridge;
 use rustednes_core::cpu::CPU_FREQUENCY;
-use rustednes_core::disassembler::Disassembler;
 use rustednes_core::input::Button;
-use rustednes_core::memory::Memory;
 use rustednes_core::nes::Nes;
 use rustednes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use rustednes_core::serialize;
@@ -12,40 +10,20 @@ use rustednes_core::sink::*;
 use rustednes_core::time_source::TimeSource;
 
 use minifb::{Key, KeyRepeat, Scale, ScaleMode, Window, WindowOptions};
-use rustyline::error::ReadlineError;
-use rustyline::Editor;
 
-use std::cmp::min;
-use std::collections::{HashMap, HashSet};
 use std::fs::OpenOptions;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
 const CPU_CYCLE_TIME_NS: u64 = (1e9_f64 / CPU_FREQUENCY as f64) as u64 + 1;
 
-#[derive(PartialEq, Eq)]
-enum Mode {
-    Running,
-    Debugging,
-}
-
 pub struct Emulator<A: AudioSink, T: TimeSource> {
     window: Window,
 
     nes: Nes,
-    mode: Mode,
-
-    breakpoints: HashSet<u16>,
-    labels: HashMap<String, u16>,
-
-    cursor: u16,
-    last_command: Option<Command>,
-
-    prompt_sender: Sender<String>,
-    stdin_receiver: Receiver<String>,
+    mode: EmulationMode,
 
     audio_frame_sink: A,
 
@@ -75,12 +53,6 @@ where
         A: AudioSink,
         T: TimeSource,
     {
-        let (prompt_sender, prompt_receiver) = channel();
-        let (stdin_sender, stdin_receiver) = channel();
-        let _stdin_thread = thread::spawn(move || {
-            input_loop(stdin_sender, prompt_receiver);
-        });
-
         Emulator {
             window: Window::new(
                 "RustedNES",
@@ -100,18 +72,9 @@ where
             .unwrap(),
 
             nes: Nes::new(cartridge),
-            mode: Mode::Running,
-
-            breakpoints: HashSet::new(),
-            labels: HashMap::new(),
-
-            prompt_sender,
-            stdin_receiver,
+            mode: EmulationMode::Running,
 
             audio_frame_sink,
-
-            cursor: 0,
-            last_command: None,
 
             time_source,
             start_time_ns: 0,
@@ -127,8 +90,11 @@ where
     pub fn run(&mut self, start_debugger: bool) {
         self.start_time_ns = self.time_source.time_ns();
 
+        let mut debugger = Debugger::new();
+
         if start_debugger {
-            self.start_debugger();
+            self.mode = EmulationMode::Debugging;
+            debugger.start(&mut self.nes);
         }
 
         let mut pixel_buffer = vec![0; SCREEN_WIDTH * SCREEN_HEIGHT];
@@ -140,27 +106,23 @@ where
             let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
 
             match self.mode {
-                Mode::Running => {
+                EmulationMode::Running => {
                     let mut start_debugger = false;
                     while self.emulated_cycles < target_cycles && !start_debugger {
                         let (_cycles, trigger_watchpoint) = self.step(&mut video_frame_sink);
 
-                        self.emulated_instructions += 1;
-
-                        if trigger_watchpoint
-                            || (!self.breakpoints.is_empty()
-                                && self.breakpoints.contains(&self.nes.cpu.regs().pc))
-                        {
+                        if trigger_watchpoint || debugger.at_breakpoint(&self.nes) {
                             start_debugger = true;
                         }
                     }
 
                     if start_debugger {
-                        self.start_debugger();
+                        self.mode = EmulationMode::Debugging;
+                        debugger.start(&mut self.nes);
                     }
                 }
-                Mode::Debugging => {
-                    if self.run_debugger_commands(&mut video_frame_sink) {
+                EmulationMode::Debugging => {
+                    if debugger.run_commands(self, &mut video_frame_sink) {
                         break;
                     }
 
@@ -173,10 +135,11 @@ where
                     .update_with_buffer(&pixel_buffer, SCREEN_WIDTH, SCREEN_HEIGHT)
                     .unwrap();
 
-                if self.mode == Mode::Running {
+                if self.mode == EmulationMode::Running {
                     self.read_input_keys();
                     if self.window.is_key_pressed(Key::F12, KeyRepeat::No) {
-                        self.start_debugger();
+                        self.mode = EmulationMode::Debugging;
+                        debugger.start(&mut self.nes);
                     }
 
                     if self.window.is_key_pressed(Key::P, KeyRepeat::No) {
@@ -243,6 +206,7 @@ where
             self.nes.step(video_frame_sink, &mut self.audio_frame_sink);
 
         self.emulated_cycles += cycles as u64;
+        self.emulated_instructions += 1;
 
         (cycles, trigger_watchpoint)
     }
@@ -258,203 +222,6 @@ where
         game_pad_1.set_button_pressed(Button::Down, self.window.is_key_down(Key::Down));
         game_pad_1.set_button_pressed(Button::Left, self.window.is_key_down(Key::Left));
         game_pad_1.set_button_pressed(Button::Right, self.window.is_key_down(Key::Right));
-    }
-
-    fn start_debugger(&mut self) {
-        self.mode = Mode::Debugging;
-
-        self.cursor = self.nes.cpu.regs().pc;
-
-        print!("0x{:04x}  ", self.cursor);
-        self.disassemble_instruction();
-
-        self.print_cursor();
-    }
-
-    fn run_debugger_commands<V: VideoSink>(&mut self, video_frame_sink: &mut V) -> bool {
-        while let Ok(command_string) = self.stdin_receiver.try_recv() {
-            let command = match (command_string.parse(), self.last_command.clone()) {
-                (Ok(Command::Repeat), Some(c)) => Ok(c),
-                (Ok(Command::Repeat), None) => Err("No last command".into()),
-                (Ok(c), _) => Ok(c),
-                (Err(e), _) => Err(e),
-            };
-
-            match command {
-                Ok(command) => {
-                    if self.run_debugger_command(command, video_frame_sink) {
-                        return true;
-                    }
-                }
-                Err(e) => {
-                    println!("{}", e);
-                }
-            }
-
-            if self.mode == Mode::Debugging {
-                self.print_cursor();
-            }
-        }
-
-        false
-    }
-
-    fn run_debugger_command<V: VideoSink>(
-        &mut self,
-        command: Command,
-        video_frame_sink: &mut V,
-    ) -> bool {
-        match command {
-            Command::ShowRegs => {
-                let regs = self.nes.cpu.regs();
-                let flags = self.nes.cpu.flags();
-                let status: u8 = flags.into();
-                println!("pc: 0x{:04x}", regs.pc);
-                println!("a: 0x{:02x}", regs.a);
-                println!("x: 0x{:02x}", regs.x);
-                println!("y: 0x{:02x}", regs.y);
-                println!("sp: 0x{:02x}", regs.sp);
-                println!("status: 0x{:02x}", status);
-                println!("Flags: {:?}", flags);
-            }
-            Command::Step(count) => {
-                for _ in 0..count {
-                    self.nes.step(video_frame_sink, &mut self.audio_frame_sink);
-                    self.emulated_instructions += 1;
-                    self.cursor = self.nes.cpu.regs().pc;
-                    print!("{} 0x{:04x}  ", self.emulated_instructions, self.cursor);
-                    self.disassemble_instruction();
-                }
-            }
-            Command::Continue => {
-                self.mode = Mode::Running;
-                self.start_time_ns =
-                    self.time_source.time_ns() - (self.emulated_cycles * CPU_CYCLE_TIME_NS);
-            }
-            Command::Goto(address) => {
-                self.cursor = address;
-            }
-            Command::ShowMem(address) => {
-                if let Some(address) = address {
-                    self.cursor = address;
-                }
-
-                self.print_labels_at_cursor();
-
-                const NUM_ROWS: u32 = 16;
-                const NUM_COLS: u32 = 16;
-                for _ in 0..NUM_ROWS {
-                    print!("0x{:04x}  ", self.cursor);
-                    for x in 0..NUM_COLS {
-                        let byte = self.nes.interconnect.read_byte(self.cursor);
-                        self.cursor = self.cursor.wrapping_add(1);
-                        print!("{:02x}", byte);
-                        if x < NUM_COLS - 1 {
-                            print!(" ");
-                        }
-                    }
-                    println!();
-                }
-            }
-            Command::ShowPpuMem(address) => {
-                let mut cursor = address;
-
-                const NUM_ROWS: u32 = 16;
-                const NUM_COLS: u32 = 16;
-                for _ in 0..NUM_ROWS {
-                    print!("0x{:04x}  ", cursor);
-                    for x in 0..NUM_COLS {
-                        let byte = self.nes.interconnect.ppu.mem.read_byte(cursor);
-                        cursor = (cursor + 1) % 0x4000;
-                        print!("{:02x}", byte);
-                        if x < NUM_COLS - 1 {
-                            print!(" ");
-                        }
-                    }
-                    println!();
-                }
-            }
-            Command::ShowStack => {
-                let sp = self.nes.cpu.regs().sp;
-                let addr = 0x0100 | sp as u16;
-
-                for i in 0..min(10, 0x01FF - addr + 1) {
-                    let byte = self.nes.interconnect.read_byte(addr + i);
-                    println!("0x{:04x}  {:02x}", addr + i, byte);
-                }
-            }
-            Command::Disassemble(count) => {
-                for _ in 0..count {
-                    self.cursor = self.disassemble_instruction();
-                }
-            }
-            Command::Label => {
-                for (label, address) in self.labels.iter() {
-                    println!(".{}: 0x{:04x}", label, address);
-                }
-            }
-            Command::AddLabel(ref label, address) => {
-                self.labels.insert(label.clone(), address);
-            }
-            Command::RemoveLabel(ref label) => {
-                if self.labels.remove(label).is_none() {
-                    println!("Label .{} doesn't exist", label);
-                }
-            }
-            Command::Breakpoint => {
-                for address in self.breakpoints.iter() {
-                    println!("* 0x{:04x}", address);
-                }
-            }
-            Command::AddBreakpoint(address) => {
-                self.breakpoints.insert(address);
-            }
-            Command::RemoveBreakpoint(address) => {
-                if !self.breakpoints.remove(&address) {
-                    println!("Breakpoint at 0x{:04x} doesn't exist", address);
-                }
-            }
-            Command::Watchpoint => {
-                for address in self.nes.cpu.watchpoints.iter() {
-                    println!("* 0x{:04x}", address);
-                }
-            }
-            Command::AddWatchpoint(address) => {
-                self.nes.cpu.watchpoints.insert(address);
-            }
-            Command::RemoveWatchpoint(address) => {
-                if !self.nes.cpu.watchpoints.remove(&address) {
-                    println!("Watchpoint at 0x{:04x} doesn't exist", address);
-                }
-            }
-            Command::Exit => {
-                return true;
-            }
-            Command::Repeat => unreachable!(),
-        }
-
-        self.last_command = Some(command);
-
-        false
-    }
-
-    fn disassemble_instruction(&mut self) -> u16 {
-        self.print_labels_at_cursor();
-        let mut d = Disassembler::new(self.cursor);
-        println!("{}", d.disassemble_next(&mut self.nes.interconnect));
-        d.pc
-    }
-
-    fn print_cursor(&self) {
-        self.prompt_sender
-            .send(format!("(rustednes-debug 0x{:04x}) > ", self.cursor))
-            .unwrap();
-    }
-
-    fn print_labels_at_cursor(&mut self) {
-        for (name, _) in self.labels.iter().filter(|x| *x.1 == self.cursor) {
-            println!(".{}:", name);
-        }
     }
 
     fn save_state_to_file(&mut self) {
@@ -496,34 +263,42 @@ where
     }
 }
 
-fn input_loop(stdin_sender: Sender<String>, prompt_receiver: Receiver<String>) {
-    let history_filename = "history.txt";
-    let mut rl = Editor::<()>::new();
-    if rl.load_history(history_filename).is_err() {
-        println!("No previous history.");
+impl<A, V, T> DebugEmulator<A, V> for Emulator<A, T>
+where
+    A: AudioSink,
+    V: VideoSink,
+    T: TimeSource,
+{
+    fn nes(&mut self) -> &mut Nes {
+        &mut self.nes
     }
-    loop {
-        if let Ok(prompt) = prompt_receiver.recv() {
-            let readline = rl.readline(&prompt);
-            match readline {
-                Ok(line) => {
-                    rl.add_history_entry(line.as_str());
-                    stdin_sender.send(line.as_str().into()).unwrap();
-                }
-                Err(ReadlineError::Interrupted) => {
-                    println!("CTRL-C");
-                    break;
-                }
-                Err(ReadlineError::Eof) => {
-                    println!("CTRL-D");
-                    break;
-                }
-                Err(err) => {
-                    eprintln!("error: {:?}", err);
-                    break;
-                }
-            }
-        }
+
+    fn emulated_cycles(&self) -> u64 {
+        self.emulated_cycles
     }
-    rl.save_history(history_filename).unwrap();
+
+    fn emulated_instructions(&self) -> u64 {
+        self.emulated_instructions
+    }
+
+    fn audio_frame_sink(&mut self) -> &mut A {
+        &mut self.audio_frame_sink
+    }
+
+    fn mode(&self) -> EmulationMode {
+        self.mode
+    }
+
+    fn set_mode(&mut self, mode: EmulationMode) {
+        self.mode = mode;
+    }
+
+    fn reset_start_time(&mut self) {
+        self.start_time_ns =
+            self.time_source.time_ns() - (self.emulated_cycles * CPU_CYCLE_TIME_NS);
+    }
+
+    fn step(&mut self, video_frame_sink: &mut V) -> (u32, bool) {
+        Emulator::step(self, video_frame_sink)
+    }
 }
