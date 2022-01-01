@@ -1,3 +1,5 @@
+use rustednes_common::debugger::{DebugEmulator, Debugger};
+use rustednes_common::emulation_mode::EmulationMode;
 use rustednes_core::cartridge::Cartridge;
 use rustednes_core::cpu::CPU_FREQUENCY;
 use rustednes_core::input::Button;
@@ -29,8 +31,8 @@ pub struct Emulator<A: AudioSink, T: TimeSource> {
     nes: Nes,
 
     sdl_context: Sdl,
-    canvas: Canvas<Window>,
 
+    mode: EmulationMode,
     audio_frame_sink: A,
     time_source: T,
     start_time_ns: u64,
@@ -38,8 +40,7 @@ pub struct Emulator<A: AudioSink, T: TimeSource> {
     emulated_cycles: u64,
     emulated_instructions: u64,
 
-    debugging: bool,
-    debug_canvas: Canvas<Window>,
+    debugging_graphics: bool,
     debug_palette_selector: usize,
 
     serialized: Option<String>,
@@ -62,7 +63,29 @@ where
         A: AudioSink,
         T: TimeSource,
     {
-        let video_subsystem = sdl_context.video().unwrap();
+        Emulator {
+            nes: Nes::new(cartridge),
+
+            sdl_context,
+
+            mode: EmulationMode::Running,
+            audio_frame_sink,
+            time_source,
+            start_time_ns: 0,
+
+            emulated_cycles: 0,
+            emulated_instructions: 0,
+
+            debugging_graphics: false,
+            debug_palette_selector: 0,
+
+            serialized: None,
+            rom_path,
+        }
+    }
+
+    pub fn run(&mut self, start_debugger: bool) {
+        let video_subsystem = self.sdl_context.video().unwrap();
 
         let debug_scale = 4;
         let debug_window = video_subsystem
@@ -98,30 +121,7 @@ where
         canvas.clear();
         canvas.present();
 
-        Emulator {
-            nes: Nes::new(cartridge),
-
-            sdl_context,
-            canvas,
-
-            audio_frame_sink,
-            time_source,
-            start_time_ns: 0,
-
-            emulated_cycles: 0,
-            emulated_instructions: 0,
-
-            debugging: false,
-            debug_canvas,
-            debug_palette_selector: 0,
-
-            serialized: None,
-            rom_path,
-        }
-    }
-
-    pub fn run(&mut self) {
-        let texture_creator = self.canvas.texture_creator();
+        let texture_creator = canvas.texture_creator();
         let mut texture = texture_creator
             .create_texture(
                 Some(PixelFormatEnum::RGB888),
@@ -133,15 +133,27 @@ where
 
         self.start_time_ns = self.time_source.time_ns();
 
+        let mut debugger = Debugger::new();
+
+        if start_debugger {
+            self.mode = EmulationMode::Debugging;
+            debugger.start(&mut self.nes);
+        }
+
         // Main event/emulation loop
         let mut event_pump = self.sdl_context.event_pump().unwrap();
         loop {
-            if !self.handle_events(&mut event_pump) {
+            if !self.handle_events(
+                &mut event_pump,
+                &mut debugger,
+                &mut canvas,
+                &mut debug_canvas,
+            ) {
                 break;
             }
 
             let mut frame_written = false;
-            let canvas = &mut self.canvas;
+            let mut quit = false;
             canvas
                 .with_texture_canvas(&mut texture, |canvas| {
                     // Run enough emulator cycles to catch up with the time that has passed since the
@@ -149,34 +161,79 @@ where
                     let mut video_frame_sink = CanvasVideoSink::new(canvas);
                     let target_time_ns = self.time_source.time_ns() - self.start_time_ns;
                     let target_cycles = target_time_ns / CPU_CYCLE_TIME_NS;
-                    while self.emulated_cycles < target_cycles {
-                        let (cycles, _) = self
-                            .nes
-                            .step(&mut video_frame_sink, &mut self.audio_frame_sink);
-                        self.emulated_cycles += cycles as u64;
-                        self.emulated_instructions += 1;
+
+                    match self.mode {
+                        EmulationMode::Running => {
+                            let mut start_debugger = false;
+                            while self.emulated_cycles < target_cycles && !start_debugger {
+                                let (cycles, trigger_watchpoint) = self
+                                    .nes
+                                    .step(&mut video_frame_sink, &mut self.audio_frame_sink);
+
+                                self.emulated_cycles += cycles as u64;
+                                self.emulated_instructions += 1;
+
+                                if trigger_watchpoint || debugger.at_breakpoint(&self.nes) {
+                                    start_debugger = true;
+                                }
+                            }
+
+                            if start_debugger {
+                                self.mode = EmulationMode::Debugging;
+                                debugger.start(&mut self.nes);
+                            }
+                        }
+                        EmulationMode::Debugging => {
+                            if debugger.run_commands(self, &mut video_frame_sink) {
+                                quit = true;
+                                return;
+                            }
+                        }
                     }
+
                     frame_written = video_frame_sink.frame_written();
                 })
                 .unwrap();
 
-            if frame_written {
-                self.render_frame(&mut texture);
-                self.update_gamepad(event_pump.keyboard_state());
+            if quit {
+                break;
             }
 
-            if self.debugging {
-                self.render_debug_window();
+            if frame_written {
+                self.render_frame(&mut canvas, &mut texture);
+                if self.mode == EmulationMode::Running {
+                    self.update_gamepad(event_pump.keyboard_state());
+                }
+            }
+
+            if self.debugging_graphics {
+                self.render_debug_window(&mut debug_canvas);
             }
 
             thread::sleep(Duration::new(0, 1_000_000_000 / 60));
         }
 
-        self.cleanup();
+        self.cleanup(&mut canvas);
+    }
+
+    fn step<V: VideoSink>(&mut self, video_frame_sink: &mut V) -> (u32, bool) {
+        let (cycles, trigger_watchpoint) =
+            self.nes.step(video_frame_sink, &mut self.audio_frame_sink);
+
+        self.emulated_cycles += cycles as u64;
+        self.emulated_instructions += 1;
+
+        (cycles, trigger_watchpoint)
     }
 
     /// Returns false to signal to end emulation.
-    fn handle_events(&mut self, events: &mut EventPump) -> bool {
+    fn handle_events(
+        &mut self,
+        events: &mut EventPump,
+        debugger: &mut Debugger,
+        canvas: &mut Canvas<Window>,
+        debug_canvas: &mut Canvas<Window>,
+    ) -> bool {
         for event in events.poll_iter() {
             match event {
                 Event::KeyDown {
@@ -185,8 +242,8 @@ where
                     keymod,
                     ..
                 } => {
-                    let main_window = self.canvas.window().id() == window_id;
-                    let debug_window = self.debug_canvas.window().id() == window_id;
+                    let main_window = canvas.window().id() == window_id;
+                    let debug_window = debug_canvas.window().id() == window_id;
 
                     match (keycode, keymod) {
                         (Keycode::Escape, Mod::NOMOD) if main_window => {
@@ -197,10 +254,14 @@ where
                         | (Keycode::Return, Mod::LALTMOD | Mod::RALTMOD)
                             if main_window =>
                         {
-                            self.toggle_fullscreen();
+                            self.toggle_fullscreen(canvas);
                         }
-                        (Keycode::F12, Mod::NOMOD) if main_window => {
-                            self.toggle_debugging();
+                        (Keycode::F12, Mod::NOMOD) => {
+                            self.mode = EmulationMode::Debugging;
+                            debugger.start(&mut self.nes);
+                        }
+                        (Keycode::F12, Mod::LSHIFTMOD | Mod::RSHIFTMOD) if main_window => {
+                            self.toggle_debugging(debug_canvas);
                         }
                         (Keycode::Space, Mod::NOMOD) if debug_window => {
                             self.cycle_debug_palette_selector();
@@ -257,15 +318,15 @@ where
                     win_event,
                     ..
                 } => {
-                    let main_window = self.canvas.window().id() == window_id;
-                    let debug_window = self.debug_canvas.window().id() == window_id;
+                    let main_window = canvas.window().id() == window_id;
+                    let debug_window = debug_canvas.window().id() == window_id;
 
                     match win_event {
                         WindowEvent::Close if main_window => {
                             return false;
                         }
                         WindowEvent::Close if debug_window => {
-                            self.toggle_debugging();
+                            self.toggle_debugging(debug_canvas);
                         }
                         _ => {}
                     }
@@ -277,7 +338,8 @@ where
                 _ => {}
             }
         }
-        return true;
+
+        true
     }
 
     fn update_gamepad(&mut self, keyboard_state: KeyboardState) {
@@ -308,13 +370,13 @@ where
         );
     }
 
-    fn set_fullscreen(&mut self, fullscreen: bool) {
+    fn set_fullscreen(&mut self, canvas: &mut Canvas<Window>, fullscreen: bool) {
         let state = if fullscreen {
             FullscreenType::Desktop
         } else {
             FullscreenType::Off
         };
-        self.canvas
+        canvas
             .window_mut()
             .set_fullscreen(state)
             .unwrap_or_else(|e| {
@@ -322,21 +384,21 @@ where
             });
     }
 
-    fn toggle_fullscreen(&mut self) {
-        self.set_fullscreen(matches!(
-            self.canvas.window().fullscreen_state(),
-            FullscreenType::Off
-        ));
+    fn toggle_fullscreen(&mut self, canvas: &mut Canvas<Window>) {
+        self.set_fullscreen(
+            canvas,
+            matches!(canvas.window().fullscreen_state(), FullscreenType::Off),
+        );
     }
 
-    fn toggle_debugging(&mut self) {
-        if self.debugging {
-            self.debug_canvas.window_mut().hide();
+    fn toggle_debugging(&mut self, debug_canvas: &mut Canvas<Window>) {
+        if self.debugging_graphics {
+            debug_canvas.window_mut().hide();
         } else {
-            self.debug_canvas.window_mut().show();
+            debug_canvas.window_mut().show();
         }
 
-        self.debugging = !self.debugging;
+        self.debugging_graphics = !self.debugging_graphics;
     }
 
     fn save_state_to_file(&mut self) {
@@ -378,8 +440,8 @@ where
     }
 
     /// Render a frame of emulation.
-    fn render_frame(&mut self, texture: &mut Texture) {
-        let (canvas_width, canvas_height) = self.canvas.window().drawable_size();
+    fn render_frame(&mut self, canvas: &mut Canvas<Window>, texture: &mut Texture) {
+        let (canvas_width, canvas_height) = canvas.window().drawable_size();
         let dest_rect = scale_to_canvas(
             SCREEN_WIDTH as u32,
             SCREEN_HEIGHT as u32,
@@ -387,14 +449,14 @@ where
             canvas_height,
         );
 
-        self.canvas.set_draw_color(Color::BLACK);
-        self.canvas.clear();
-        self.canvas.copy(&texture, None, Some(dest_rect)).unwrap();
-        self.canvas.present();
+        canvas.set_draw_color(Color::BLACK);
+        canvas.clear();
+        canvas.copy(texture, None, Some(dest_rect)).unwrap();
+        canvas.present();
     }
 
     /// Render debug info
-    fn render_debug_window(&mut self) {
+    fn render_debug_window(&mut self, debug_canvas: &mut Canvas<Window>) {
         // Load palette colors
         //
         // $3F00 	Universal background color
@@ -417,7 +479,7 @@ where
 
         let mut mapper = self.nes.interconnect.mapper.borrow_mut();
 
-        let texture_creator = self.debug_canvas.texture_creator();
+        let texture_creator = debug_canvas.texture_creator();
         let mut texture = texture_creator
             .create_texture(
                 None,
@@ -426,7 +488,7 @@ where
                 DEBUG_HEIGHT,
             )
             .unwrap();
-        self.debug_canvas
+        debug_canvas
             .with_texture_canvas(&mut texture, |canvas| {
                 // Draw pattern tables
                 //
@@ -494,22 +556,20 @@ where
             })
             .unwrap();
 
-        let (canvas_width, canvas_height) = self.debug_canvas.window().drawable_size();
+        let (canvas_width, canvas_height) = debug_canvas.window().drawable_size();
         let dest_rect = scale_to_canvas(DEBUG_WIDTH, DEBUG_HEIGHT, canvas_width, canvas_height);
-        self.debug_canvas.set_draw_color(Color::BLACK);
-        self.debug_canvas.clear();
-        self.debug_canvas
-            .copy(&texture, None, Some(dest_rect))
-            .unwrap();
-        self.debug_canvas.present();
+        debug_canvas.set_draw_color(Color::BLACK);
+        debug_canvas.clear();
+        debug_canvas.copy(&texture, None, Some(dest_rect)).unwrap();
+        debug_canvas.present();
     }
 
     fn cycle_debug_palette_selector(&mut self) {
         self.debug_palette_selector = (self.debug_palette_selector + 1) % 8;
     }
 
-    fn cleanup(&mut self) {
-        self.set_fullscreen(false);
+    fn cleanup(&mut self, canvas: &mut Canvas<Window>) {
+        self.set_fullscreen(canvas, false);
         self.save_state_to_file();
     }
 }
@@ -561,5 +621,45 @@ impl<'a> VideoSink for CanvasVideoSink<'a> {
 
     fn pixel_size(&self) -> usize {
         mem::size_of::<u32>()
+    }
+}
+
+impl<A, V, T> DebugEmulator<A, V> for Emulator<A, T>
+where
+    A: AudioSink,
+    V: VideoSink,
+    T: TimeSource,
+{
+    fn nes(&mut self) -> &mut Nes {
+        &mut self.nes
+    }
+
+    fn emulated_cycles(&self) -> u64 {
+        self.emulated_cycles
+    }
+
+    fn emulated_instructions(&self) -> u64 {
+        self.emulated_instructions
+    }
+
+    fn audio_frame_sink(&mut self) -> &mut A {
+        &mut self.audio_frame_sink
+    }
+
+    fn mode(&self) -> EmulationMode {
+        self.mode
+    }
+
+    fn set_mode(&mut self, mode: EmulationMode) {
+        self.mode = mode;
+    }
+
+    fn reset_start_time(&mut self) {
+        self.start_time_ns =
+            self.time_source.time_ns() - (self.emulated_cycles * CPU_CYCLE_TIME_NS);
+    }
+
+    fn step(&mut self, video_frame_sink: &mut V) -> (u32, bool) {
+        Emulator::step(self, video_frame_sink)
     }
 }

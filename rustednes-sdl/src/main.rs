@@ -31,6 +31,10 @@ struct Opt {
     #[structopt(name = "ROM", parse(from_os_str))]
     rom_path: PathBuf,
 
+    /// Start in debug mode
+    #[structopt(long = "debug", short = "d")]
+    debug: bool,
+
     /// Disable audio
     #[structopt(long = "noaudio")]
     disable_audio: bool,
@@ -77,7 +81,7 @@ fn run_rom(rom: Cartridge, opt: Opt, rom_path: PathBuf) {
         println!("Audio disabled");
         let mut emulator =
             Emulator::new(sdl_context, rom, audio_driver.sink(), time_source, rom_path);
-        emulator.run();
+        emulator.run(opt.debug);
     } else {
         let audio_driver =
             Box::new(SdlAudioDriver::new(sdl_context.clone(), NES_SAMPLE_RATE).unwrap());
@@ -85,6 +89,6 @@ fn run_rom(rom: Cartridge, opt: Opt, rom_path: PathBuf) {
         println!("Audio sample rate: {}", audio_driver.sample_rate());
         let mut emulator =
             Emulator::new(sdl_context, rom, audio_driver.sink(), time_source, rom_path);
-        emulator.run();
+        emulator.run(opt.debug);
     };
 }

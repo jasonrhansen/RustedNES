@@ -43,6 +43,12 @@ pub struct Debugger {
     stdin_receiver: Receiver<String>,
 }
 
+impl Default for Debugger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Debugger {
     pub fn new() -> Self {
         let (prompt_sender, prompt_receiver) = channel();
