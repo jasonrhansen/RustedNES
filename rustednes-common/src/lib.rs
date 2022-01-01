@@ -1,9 +1,5 @@
-pub mod audio_driver;
+pub mod audio;
 pub mod debugger;
 pub mod emulation_mode;
-pub mod linear_resampler;
-pub mod null_audio_driver;
-pub mod sample_buffer;
-pub mod state_manager;
-pub mod system_time_source;
-pub mod time_source;
+pub mod state;
+pub mod time;

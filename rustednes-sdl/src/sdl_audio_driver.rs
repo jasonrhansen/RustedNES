@@ -1,7 +1,5 @@
-use rustednes_common::audio_driver::AudioDriver;
-use rustednes_common::linear_resampler::LinearResampler;
-use rustednes_common::sample_buffer::SampleBuffer;
-use rustednes_common::time_source::TimeSource;
+use rustednes_common::audio::{AudioDriver, LinearResampler, SampleBuffer};
+use rustednes_common::time::TimeSource;
 
 use rustednes_core::sink::AudioSink;
 

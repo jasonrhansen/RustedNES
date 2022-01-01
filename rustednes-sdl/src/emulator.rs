@@ -1,7 +1,7 @@
 use rustednes_common::debugger::{DebugEmulator, Debugger};
 use rustednes_common::emulation_mode::EmulationMode;
-use rustednes_common::state_manager::StateManager;
-use rustednes_common::time_source::TimeSource;
+use rustednes_common::state::StateManager;
+use rustednes_common::time::TimeSource;
 
 use rustednes_core::cartridge::Cartridge;
 use rustednes_core::cpu::CPU_FREQUENCY;

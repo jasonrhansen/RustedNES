@@ -1,6 +1,6 @@
-use crate::audio_driver::AudioDriver;
-
 use rustednes_core::sink::AudioSink;
+
+use super::AudioDriver;
 
 pub struct NullAudioDriver;
 

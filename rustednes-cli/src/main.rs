@@ -4,9 +4,8 @@ static GLOBAL: System = System;
 use crate::cpal_driver::*;
 use crate::emulator::*;
 
-use rustednes_common::audio_driver::*;
-use rustednes_common::null_audio_driver::*;
-use rustednes_common::system_time_source::*;
+use rustednes_common::audio::*;
+use rustednes_common::time::*;
 
 use rustednes_core::apu::SAMPLE_RATE as NES_SAMPLE_RATE;
 use rustednes_core::cartridge::*;

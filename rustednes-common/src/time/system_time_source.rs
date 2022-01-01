@@ -1,4 +1,4 @@
-use crate::time_source::TimeSource;
+use crate::time::TimeSource;
 
 use time::OffsetDateTime;
 
