@@ -1,5 +1,4 @@
 pub mod audio_driver;
-pub mod command;
 pub mod debugger;
 pub mod emulation_mode;
 pub mod null_audio_driver;

@@ -8,11 +8,14 @@ use rustednes_core::memory::Memory;
 use rustednes_core::nes::Nes;
 use rustednes_core::sink::{AudioSink, VideoSink};
 
-use crate::command::Command;
 use crate::emulation_mode::EmulationMode;
+
+use command::Command;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
+
+pub mod command;
 
 pub trait DebugEmulator<A, V>
 where
