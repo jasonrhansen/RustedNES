@@ -1,13 +1,14 @@
 use rustednes_common::debugger::{DebugEmulator, Debugger};
 use rustednes_common::emulation_mode::EmulationMode;
+use rustednes_common::state_manager::StateManager;
 use rustednes_core::cartridge::Cartridge;
 use rustednes_core::cpu::CPU_FREQUENCY;
 use rustednes_core::input::Button;
 use rustednes_core::memory::Memory;
 use rustednes_core::nes::Nes;
 use rustednes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use rustednes_core::sink::*;
 use rustednes_core::time_source::TimeSource;
-use rustednes_core::{serialize, sink::*};
 
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::{KeyboardState, Keycode, Mod, Scancode};
@@ -17,8 +18,6 @@ use sdl2::render::{Canvas, Texture};
 use sdl2::video::{FullscreenType, Window};
 use sdl2::{EventPump, Sdl};
 
-use std::fs::OpenOptions;
-use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 use std::{mem, thread};
@@ -43,8 +42,7 @@ pub struct Emulator<A: AudioSink, T: TimeSource> {
     debugging_graphics: bool,
     debug_palette_selector: usize,
 
-    serialized: Option<String>,
-    rom_path: PathBuf,
+    state_manager: StateManager,
 }
 
 impl<A, T> Emulator<A, T>
@@ -79,8 +77,7 @@ where
             debugging_graphics: false,
             debug_palette_selector: 0,
 
-            serialized: None,
-            rom_path,
+            state_manager: StateManager::new(rom_path),
         }
     }
 
@@ -291,24 +288,10 @@ where
                             settings.filter_enabled = !settings.filter_enabled;
                         }
                         (Keycode::Num1, Mod::NOMOD) => {
-                            self.serialized =
-                                serde_json::to_string(&serialize::get_state(&self.nes)).ok();
-                            serde_json::to_string(&serialize::get_state(&self.nes)).ok();
+                            self.state_manager.save_state(&self.nes);
                         }
                         (Keycode::Num1, Mod::LCTRLMOD | Mod::RCTRLMOD) => {
-                            if self.serialized.is_none() {
-                                self.load_state_from_file();
-                            }
-                            if let Some(ref s) = self.serialized {
-                                match serde_json::from_str(s) {
-                                    Ok(state) => {
-                                        serialize::apply_state(&mut self.nes, state);
-                                    }
-                                    Err(e) => {
-                                        eprintln!("error applying save state: {}", e);
-                                    }
-                                }
-                            }
+                            self.state_manager.load_state(&mut self.nes);
                         }
                         _ => {}
                     }
@@ -399,44 +382,6 @@ where
         }
 
         self.debugging_graphics = !self.debugging_graphics;
-    }
-
-    fn save_state_to_file(&mut self) {
-        if let Some(ref s) = self.serialized {
-            let save_file = OpenOptions::new()
-                .write(true)
-                .truncate(true)
-                .create(true)
-                .open(&self.save_state_file_path());
-            match save_file {
-                Ok(save_file) => {
-                    let mut save_writer = BufWriter::new(save_file);
-                    let _ = save_writer.write_all(s.as_bytes());
-                }
-                Err(e) => {
-                    eprintln!("unable to open file to save state: {}", e);
-                }
-            }
-        }
-    }
-
-    fn load_state_from_file(&mut self) {
-        let save_file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .create(false)
-            .open(&self.save_state_file_path());
-        if let Ok(save_file) = save_file {
-            println!("Loading save file");
-            let mut save_reader = BufReader::new(save_file);
-            let mut serialized = String::new();
-            let _ = save_reader.read_to_string(&mut serialized);
-            self.serialized = Some(serialized);
-        }
-    }
-
-    fn save_state_file_path(&self) -> PathBuf {
-        self.rom_path.with_extension("sav")
     }
 
     /// Render a frame of emulation.
@@ -570,7 +515,7 @@ where
 
     fn cleanup(&mut self, canvas: &mut Canvas<Window>) {
         self.set_fullscreen(canvas, false);
-        self.save_state_to_file();
+        self.state_manager.save_state_to_file();
     }
 }
 
