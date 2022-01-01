@@ -1,9 +1,9 @@
 use rustednes_common::audio_driver::AudioDriver;
+use rustednes_common::sample_buffer::SampleBuffer;
+use rustednes_common::time_source::TimeSource;
 
 use rustednes_core::sink::AudioSink;
-use rustednes_core::time_source::TimeSource;
 
-use std::collections::VecDeque;
 use std::error;
 use std::iter::Iterator;
 use std::sync::atomic::{self, AtomicU64};
@@ -11,35 +11,6 @@ use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream};
-
-pub struct SampleBuffer {
-    samples: VecDeque<f32>,
-    samples_read: u64,
-    samples_written: u64,
-}
-
-impl SampleBuffer {
-    fn new() -> SampleBuffer {
-        SampleBuffer {
-            samples: VecDeque::new(),
-            samples_read: 0,
-            samples_written: 0,
-        }
-    }
-
-    fn push(&mut self, value: f32) {
-        self.samples.push_back(value);
-    }
-}
-
-impl Iterator for SampleBuffer {
-    type Item = f32;
-
-    fn next(&mut self) -> Option<f32> {
-        self.samples_read += 1;
-        self.samples.pop_front()
-    }
-}
 
 pub struct CpalDriverBufferSink {
     sample_buffer: Arc<Mutex<SampleBuffer>>,
@@ -53,7 +24,7 @@ impl AudioSink for CpalDriverBufferSink {
 
     fn samples_written(&self) -> usize {
         let sample_buffer = self.sample_buffer.lock().unwrap();
-        sample_buffer.samples_written as usize
+        sample_buffer.samples_written()
     }
 }
 
@@ -93,7 +64,7 @@ impl CpalDriver {
         let channels = config.channels as usize;
         let output_sample_rate = config.sample_rate.0;
 
-        let sample_buffer = Arc::new(Mutex::new(SampleBuffer::new()));
+        let sample_buffer = Arc::new(Mutex::new(SampleBuffer::with_max_length(32 * 1024)));
         let samples_written = Arc::new(AtomicU64::new(0));
 
         let mut resampler = LinearResampler::new(input_sample_rate, output_sample_rate);

@@ -1,6 +1,8 @@
 use rustednes_common::debugger::{DebugEmulator, Debugger};
 use rustednes_common::emulation_mode::EmulationMode;
 use rustednes_common::state_manager::StateManager;
+use rustednes_common::time_source::TimeSource;
+
 use rustednes_core::cartridge::Cartridge;
 use rustednes_core::cpu::CPU_FREQUENCY;
 use rustednes_core::input::Button;
@@ -8,7 +10,6 @@ use rustednes_core::memory::Memory;
 use rustednes_core::nes::Nes;
 use rustednes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use rustednes_core::sink::*;
-use rustednes_core::time_source::TimeSource;
 
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::{KeyboardState, Keycode, Mod, Scancode};

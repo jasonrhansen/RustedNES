@@ -1,4 +1,4 @@
-use rustednes_core::time_source::TimeSource;
+use crate::time_source::TimeSource;
 
 use time::OffsetDateTime;
 

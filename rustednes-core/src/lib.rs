@@ -14,4 +14,3 @@ pub mod nes;
 pub mod ppu;
 pub mod serialize;
 pub mod sink;
-pub mod time_source;
