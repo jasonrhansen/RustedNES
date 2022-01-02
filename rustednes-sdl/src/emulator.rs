@@ -18,6 +18,7 @@ use sdl2::rect::Rect;
 use sdl2::render::{Canvas, Texture};
 use sdl2::video::{FullscreenType, Window};
 use sdl2::{EventPump, Sdl};
+use tracing::error;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -381,7 +382,7 @@ where
             .window_mut()
             .set_fullscreen(state)
             .unwrap_or_else(|e| {
-                eprintln!("Unable to change fullscreen state: {:?}", e);
+                error!("Unable to change fullscreen state: {:?}", e);
             });
     }
 

@@ -3,12 +3,12 @@ use rustednes_common::time::TimeSource;
 
 use rustednes_core::sink::AudioSink;
 
-use std::error;
 use std::sync::atomic::{self, AtomicU64};
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream};
+use tracing::error;
 
 pub struct CpalDriverBufferSink {
     sample_buffer: Arc<Mutex<SampleBuffer>>,
@@ -46,7 +46,7 @@ pub struct CpalDriver {
 }
 
 impl CpalDriver {
-    pub fn new(input_sample_rate: u32) -> Result<CpalDriver, Box<dyn error::Error>> {
+    pub fn new(input_sample_rate: u32) -> Result<CpalDriver, Box<dyn std::error::Error>> {
         let host = cpal::default_host();
         let device = host
             .default_output_device()
@@ -69,7 +69,7 @@ impl CpalDriver {
         let read_sample_buffer = sample_buffer.clone();
         let output_samples_written = samples_written.clone();
 
-        let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
+        let err_fn = |err| error!("an error occurred on the output audio stream: {}", err);
         let stream = match supported_config.sample_format() {
             SampleFormat::F32 => device.build_output_stream(
                 &config,

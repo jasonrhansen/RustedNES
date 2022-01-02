@@ -15,6 +15,7 @@ use super::DebugEmulator;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
+use tracing::{debug, error};
 
 pub struct Debugger {
     pub breakpoints: HashSet<u16>,
@@ -55,7 +56,7 @@ impl Debugger {
         let history_filename = "history.txt";
         let mut rl = Editor::<()>::new();
         if rl.load_history(history_filename).is_err() {
-            println!("No previous history.");
+            debug!("No previous history.");
         }
         loop {
             if let Ok(prompt) = prompt_receiver.recv() {
@@ -74,7 +75,7 @@ impl Debugger {
                         break;
                     }
                     Err(err) => {
-                        eprintln!("error: {:?}", err);
+                        error!("error: {:?}", err);
                         break;
                     }
                 }

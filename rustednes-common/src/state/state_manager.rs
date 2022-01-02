@@ -6,6 +6,8 @@ use std::{
 
 use rustednes_core::{nes::Nes, serialize};
 
+use tracing::{error, info};
+
 pub struct StateManager {
     rom_path: PathBuf,
     slots: Vec<Option<String>>,
@@ -23,22 +25,22 @@ impl StateManager {
 
     pub fn save_state(&mut self, nes: &Nes, slot: usize) {
         if slot >= self.slots.len() {
-            eprintln!(
-                "couldn't save state to slot {}, the maximum is: {}",
+            error!(
+                "Couldn't save state to slot {}, the maximum is: {}",
                 slot,
                 self.slots.len() - 1
             );
             return;
         }
 
-        println!("Saving state to slot: {}", slot);
+        info!("Saving state to slot: {}", slot);
         self.slots[slot] = serde_json::to_string(&serialize::get_state(nes)).ok();
     }
 
     pub fn load_state(&mut self, nes: &mut Nes, slot: usize) {
         if slot >= self.slots.len() {
-            eprintln!(
-                "couldn't load state to slot {}, the maximum is: {}",
+            error!(
+                "Couldn't load state to slot {}, the maximum is: {}",
                 slot,
                 self.slots.len() - 1
             );
@@ -49,13 +51,13 @@ impl StateManager {
             self.load_state_from_file(slot);
         }
         if let Some(ref s) = self.slots[slot] {
-            println!("Loading state from slot: {}", slot);
+            info!("Loading state from slot: {}", slot);
             match serde_json::from_str(s) {
                 Ok(state) => {
                     serialize::apply_state(nes, state);
                 }
                 Err(e) => {
-                    eprintln!("error applying save state: {}", e);
+                    error!("Error applying save state: {}", e);
                 }
             }
         }
@@ -77,12 +79,12 @@ impl StateManager {
                 .open(&path);
             match save_file {
                 Ok(save_file) => {
-                    println!("Writing save state file: {}", path.display());
+                    info!("Writing save state file: {}", path.display());
                     let mut save_writer = BufWriter::new(save_file);
                     let _ = save_writer.write_all(s.as_bytes());
                 }
                 Err(e) => {
-                    eprintln!("unable to open file to save state: {}", e);
+                    error!("Unable to open file to save state: {}", e);
                 }
             }
         }
@@ -98,7 +100,7 @@ impl StateManager {
             .create(false)
             .open(&path);
         if let Ok(save_file) = save_file {
-            println!("Loading save state file: {}", path.display());
+            info!("Loading save state file: {}", path.display());
             let mut save_reader = BufReader::new(save_file);
             let mut serialized = String::new();
             let _ = save_reader.read_to_string(&mut serialized);
