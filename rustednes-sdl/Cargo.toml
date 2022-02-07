@@ -11,7 +11,6 @@ default-run = "rustednes-sdl"
 rustednes-core = { path = "../rustednes-core" }
 rustednes-common = { path = "../rustednes-common" }
 sdl2 = "0.35"
-structopt = "0.3"
-structopt-derive = "0.4"
+clap = { version = "3.0", features = ["derive"] }
 zip = "0.5"
 tracing = "0.1"

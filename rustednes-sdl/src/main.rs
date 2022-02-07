@@ -11,7 +11,6 @@ use rustednes_core::cartridge::*;
 use rustednes_common::audio::*;
 use rustednes_common::time::*;
 
-use structopt::StructOpt;
 use tracing::{error, info};
 
 use std::alloc::System;
@@ -22,35 +21,35 @@ use std::path::{Path, PathBuf};
 mod emulator;
 mod sdl_audio_driver;
 
-#[derive(Debug, StructOpt)]
-#[structopt(
+#[derive(Debug, clap::Parser)]
+#[clap(
     name = "RustedNES",
     about = "An SDL2 frontend to the RustedNES emulator"
 )]
 struct Opt {
     /// The name of the ROM to load
-    #[structopt(name = "ROM", parse(from_os_str))]
+    #[clap(name = "ROM", parse(from_os_str))]
     rom_path: PathBuf,
 
     /// Start in debug mode
-    #[structopt(long = "debug", short = "d")]
+    #[clap(long = "debug", short = 'd')]
     debug: bool,
 
     /// Disable audio
-    #[structopt(long = "noaudio")]
+    #[clap(long = "noaudio")]
     disable_audio: bool,
 
     /// Silence all log output
-    #[structopt(short = "q", long = "quiet")]
+    #[clap(short = 'q', long = "quiet")]
     quiet: bool,
 
     /// Verbose logging mode (-v, -vv, -vvv)
-    #[structopt(short = "v", long = "verbose", parse(from_occurrences))]
+    #[clap(short = 'v', long = "verbose", parse(from_occurrences))]
     verbose: usize,
 }
 
 fn main() {
-    let opt = Opt::from_args();
+    let opt: Opt = clap::Parser::parse();
 
     if !opt.quiet {
         logger::initialize(opt.verbose);

@@ -12,7 +12,6 @@ rustednes-core = { path = "../rustednes-core" }
 rustednes-common = { path = "../rustednes-common" }
 time = "0.3"
 cpal = "0.13"
-structopt = "0.3"
-structopt-derive = "0.4"
+clap = { version = "3.0", features = ["derive"] }
 zip = "0.5"
 tracing = "0.1"
