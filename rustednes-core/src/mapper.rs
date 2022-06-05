@@ -17,10 +17,12 @@ use super::cartridge::{Cartridge, Mirroring};
 use super::cpu::Cpu;
 use super::ppu::Ppu;
 
+use enum_dispatch::enum_dispatch;
 use serde_derive::{Deserialize, Serialize};
 
 use std::ptr;
 
+#[enum_dispatch(MapperEnum)]
 pub trait Mapper {
     fn prg_read_byte(&mut self, address: u16) -> u8;
     fn prg_write_byte(&mut self, address: u16, value: u8);
@@ -45,15 +47,26 @@ pub trait Mapper {
     fn apply_state(&mut self, state: &State);
 }
 
-pub fn create_mapper(cartridge: Cartridge) -> Box<dyn Mapper> {
+#[enum_dispatch]
+pub enum MapperEnum {
+    Mapper0,
+    Mapper1,
+    Mapper2,
+    Mapper3,
+    Mapper4,
+    Mapper7,
+    Mapper9,
+}
+
+pub fn create_mapper(cartridge: Cartridge) -> MapperEnum {
     match cartridge.mapper {
-        0 => Box::new(Mapper0::new(cartridge)),
-        1 => Box::new(Mapper1::new(cartridge)),
-        2 => Box::new(Mapper2::new(cartridge)),
-        3 => Box::new(Mapper3::new(cartridge)),
-        4 => Box::new(Mapper4::new(cartridge)),
-        7 => Box::new(Mapper7::new(cartridge)),
-        9 => Box::new(Mapper9::new(cartridge)),
+        0 => Mapper0::new(cartridge).into(),
+        1 => Mapper1::new(cartridge).into(),
+        2 => Mapper2::new(cartridge).into(),
+        3 => Mapper3::new(cartridge).into(),
+        4 => Mapper4::new(cartridge).into(),
+        7 => Mapper7::new(cartridge).into(),
+        9 => Mapper9::new(cartridge).into(),
         _ => panic!("Unsupported mapper number: {}", cartridge.mapper),
     }
 }

@@ -3,7 +3,7 @@ use crate::apu::Apu;
 use crate::cpu::Cpu;
 use crate::game_genie::Cheat;
 use crate::input::{self, Input};
-use crate::mapper::{self, Mapper};
+use crate::mapper::{self, Mapper, MapperEnum};
 use crate::memory::{Memory, Ram};
 use crate::ppu::{self, Ppu};
 use crate::sink::*;
@@ -19,7 +19,7 @@ pub struct Interconnect {
     pub ppu: Ppu,
     pub apu: Apu,
     pub input: Input,
-    pub mapper: Rc<RefCell<Box<dyn Mapper>>>,
+    pub mapper: Rc<RefCell<MapperEnum>>,
 
     cheats: HashMap<u16, Cheat>,
 }
@@ -35,7 +35,7 @@ pub struct State {
 }
 
 impl Interconnect {
-    pub fn new(mapper: Rc<RefCell<Box<dyn Mapper>>>) -> Self {
+    pub fn new(mapper: Rc<RefCell<MapperEnum>>) -> Self {
         Interconnect {
             ram: Ram::new(),
             ppu: Ppu::new(mapper.clone()),

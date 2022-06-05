@@ -1,5 +1,5 @@
 use crate::cpu::{Cpu, Interrupt};
-use crate::mapper::Mapper;
+use crate::mapper::{Mapper, MapperEnum};
 use crate::memory::Memory;
 use crate::sink::*;
 
@@ -123,7 +123,7 @@ pub struct State {
 }
 
 impl Ppu {
-    pub fn new(mapper: Rc<RefCell<Box<dyn Mapper>>>) -> Ppu {
+    pub fn new(mapper: Rc<RefCell<MapperEnum>>) -> Ppu {
         Ppu {
             cycles: 0,
             regs: Regs::new(),
@@ -1159,11 +1159,11 @@ impl Memory for PaletteRam {
 pub struct MemMap {
     pub vram: Vram,
     palette_ram: PaletteRam,
-    mapper: Rc<RefCell<Box<dyn Mapper>>>,
+    mapper: Rc<RefCell<MapperEnum>>,
 }
 
 impl MemMap {
-    pub fn new(mapper: Rc<RefCell<Box<dyn Mapper>>>) -> Self {
+    pub fn new(mapper: Rc<RefCell<MapperEnum>>) -> Self {
         MemMap {
             vram: Vram::new(),
             palette_ram: PaletteRam::new(),

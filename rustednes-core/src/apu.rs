@@ -1,5 +1,5 @@
 use crate::cpu::{Cpu, Interrupt, CPU_FREQUENCY};
-use crate::mapper::Mapper;
+use crate::mapper::{Mapper, MapperEnum};
 use crate::memory::Memory;
 use crate::sink::*;
 
@@ -69,7 +69,7 @@ pub struct Apu {
     dmc: Dmc,
     frame_counter: FrameCounter,
 
-    mapper: Rc<RefCell<Box<dyn Mapper>>>,
+    mapper: Rc<RefCell<MapperEnum>>,
 
     filter: Box<dyn Filter>,
 
@@ -89,7 +89,7 @@ pub struct State {
 }
 
 impl Apu {
-    pub fn new(mapper: Rc<RefCell<Box<dyn Mapper>>>) -> Apu {
+    pub fn new(mapper: Rc<RefCell<MapperEnum>>) -> Apu {
         Apu {
             cycles: 0,
             last_sampled_cycles: 0,
@@ -859,7 +859,7 @@ impl Dmc {
         self.current_length = self.sample_length;
     }
 
-    fn step_timer(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<Box<dyn Mapper>>>) {
+    fn step_timer(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<MapperEnum>>) {
         if self.enable_flag {
             if self.irq_flag {
                 cpu.request_interrupt(Interrupt::Irq);
@@ -874,7 +874,7 @@ impl Dmc {
         }
     }
 
-    fn step_reader(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<Box<dyn Mapper>>>) {
+    fn step_reader(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<MapperEnum>>) {
         if self.current_length > 0 && self.bit_count == 0 {
             cpu.stall(4);
             let mut mapper = mapper.borrow_mut();

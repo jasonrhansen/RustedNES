@@ -6,6 +6,7 @@ use rustednes_common::time::TimeSource;
 use rustednes_core::cartridge::Cartridge;
 use rustednes_core::cpu::CPU_FREQUENCY;
 use rustednes_core::input::Button;
+use rustednes_core::mapper::Mapper;
 use rustednes_core::memory::Memory;
 use rustednes_core::nes::Nes;
 use rustednes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};

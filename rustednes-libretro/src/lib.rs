@@ -22,6 +22,7 @@ use rustednes_core::apu::SAMPLE_RATE;
 use rustednes_core::cartridge::*;
 use rustednes_core::game_genie::Cheat;
 use rustednes_core::input::*;
+use rustednes_core::mapper::Mapper;
 use rustednes_core::nes::*;
 use rustednes_core::ppu::*;
 use rustednes_core::serialize;
