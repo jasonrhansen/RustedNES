@@ -1,4 +1,4 @@
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 
 use std::mem;
 
@@ -159,38 +159,38 @@ pub static XRGB8888_PALETTE: &[u32] = &[
     0x000000,
 ];
 
-lazy_static! {
-    static ref XRGB1555_PALETTE: [u16; 64] = {
-        let mut palette = [0; 64];
-        for n in 0..64 {
-            let color = XRGB8888_PALETTE[n];
-            let r = ((color >> 19) & 0x1F) as u16;
-            let g = ((color >> 11) & 0x1F) as u16;
-            let b = ((color >> 3) & 0x1F) as u16;
-            palette[n] = (r << 10) | (g << 5) | b;
-        }
-        palette
-    };
-    static ref RGB565_PALETTE: [u16; 64] = {
-        let mut palette = [0; 64];
-        for n in 0..64 {
-            let color = XRGB8888_PALETTE[n];
-            let r = ((color >> 19) & 0x1F) as u16;
-            let g = ((color >> 10) & 0x3F) as u16;
-            let b = ((color >> 3) & 0x1F) as u16;
-            palette[n] = (r << 11) | (g << 5) | b;
-        }
-        palette
-    };
-    static ref WEB_PALETTE: [u32; 64] = {
-        let mut palette = [0; 64];
-        for n in 0..64 {
-            let color = XRGB8888_PALETTE[n];
-            let r = ((color >> 16) & 0xFF) as u32;
-            let g = ((color >> 8) & 0xFF) as u32;
-            let b = (color & 0xFF) as u32;
-            palette[n] = 0xFF00_0000 | (b << 16) | (g << 8) | r;
-        }
-        palette
-    };
-}
+static XRGB1555_PALETTE: Lazy<[u16; 64]> = Lazy::new(|| {
+    let mut palette = [0; 64];
+    for n in 0..64 {
+        let color = XRGB8888_PALETTE[n];
+        let r = ((color >> 19) & 0x1F) as u16;
+        let g = ((color >> 11) & 0x1F) as u16;
+        let b = ((color >> 3) & 0x1F) as u16;
+        palette[n] = (r << 10) | (g << 5) | b;
+    }
+    palette
+});
+
+static RGB565_PALETTE: Lazy<[u16; 64]> = Lazy::new(|| {
+    let mut palette = [0; 64];
+    for n in 0..64 {
+        let color = XRGB8888_PALETTE[n];
+        let r = ((color >> 19) & 0x1F) as u16;
+        let g = ((color >> 10) & 0x3F) as u16;
+        let b = ((color >> 3) & 0x1F) as u16;
+        palette[n] = (r << 11) | (g << 5) | b;
+    }
+    palette
+});
+
+static WEB_PALETTE: Lazy<[u32; 64]> = Lazy::new(|| {
+    let mut palette = [0; 64];
+    for n in 0..64 {
+        let color = XRGB8888_PALETTE[n];
+        let r = ((color >> 16) & 0xFF) as u32;
+        let g = ((color >> 8) & 0xFF) as u32;
+        let b = (color & 0xFF) as u32;
+        palette[n] = 0xFF00_0000 | (b << 16) | (g << 8) | r;
+    }
+    palette
+});

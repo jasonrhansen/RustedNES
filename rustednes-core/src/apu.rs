@@ -3,7 +3,7 @@ use crate::mapper::Mapper;
 use crate::memory::Memory;
 use crate::sink::*;
 
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
 
 use std::cell::RefCell;
@@ -39,24 +39,23 @@ static DMC_TABLE: &[u8] = &[
     214, 190, 170, 160, 143, 127, 113, 107, 95, 80, 71, 64, 53, 42, 36, 27,
 ];
 
-lazy_static! {
-    static ref PULSE_TABLE: [f32; 31] = {
-        let mut pulse_table = [0f32; 31];
-        pulse_table
-            .iter_mut()
-            .enumerate()
-            .for_each(|(n, val)| *val = (95.52 / (8128.0 / (n as f64) + 100.0)) as f32);
-        pulse_table
-    };
-    static ref TND_TABLE: [f32; 203] = {
-        let mut tnd_table = [0f32; 203];
-        tnd_table
-            .iter_mut()
-            .enumerate()
-            .for_each(|(n, val)| *val = (163.67 / (24329.0 / (n as f64) + 100.0)) as f32);
-        tnd_table
-    };
-}
+static PULSE_TABLE: Lazy<[f32; 31]> = Lazy::new(|| {
+    let mut pulse_table = [0f32; 31];
+    pulse_table
+        .iter_mut()
+        .enumerate()
+        .for_each(|(n, val)| *val = (95.52 / (8128.0 / (n as f64) + 100.0)) as f32);
+    pulse_table
+});
+
+static TND_TABLE: Lazy<[f32; 203]> = Lazy::new(|| {
+    let mut tnd_table = [0f32; 203];
+    tnd_table
+        .iter_mut()
+        .enumerate()
+        .for_each(|(n, val)| *val = (163.67 / (24329.0 / (n as f64) + 100.0)) as f32);
+    tnd_table
+});
 
 pub struct Apu {
     cycles: u64,
