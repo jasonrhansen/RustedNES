@@ -7,11 +7,11 @@ license = "MIT/Apache-2.0"
 edition = "2021"
 
 [dependencies]
-minifb = "0.20"
+minifb = "0.23"
 rustednes-core = { path = "../rustednes-core" }
 rustednes-common = { path = "../rustednes-common" }
 time = "0.3"
 cpal = "0.13"
 clap = { version = "3.0", features = ["derive"] }
-zip = "0.5"
+zip = "0.6"
 tracing = "0.1"

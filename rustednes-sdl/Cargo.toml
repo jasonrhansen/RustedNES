@@ -12,5 +12,5 @@ rustednes-core = { path = "../rustednes-core" }
 rustednes-common = { path = "../rustednes-common" }
 sdl2 = "0.35"
 clap = { version = "3.0", features = ["derive"] }
-zip = "0.5"
+zip = "0.6"
 tracing = "0.1"
