@@ -4,7 +4,7 @@ use crate::cpu::Cpu;
 use crate::game_genie::Cheat;
 use crate::interconnect;
 use crate::interconnect::Interconnect;
-use crate::mapper;
+use crate::mapper::MapperEnum;
 use crate::sink::*;
 
 use serde_derive::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ pub struct State {
 
 impl Nes {
     pub fn new(cartridge: Cartridge) -> Nes {
-        let mapper = Rc::new(RefCell::new(mapper::create_mapper(cartridge)));
+        let mapper = Rc::new(RefCell::new(MapperEnum::from_cartridge(cartridge)));
         let cpu = Cpu::new();
         let interconnect = Interconnect::new(mapper);
         let mut nes = Nes { interconnect, cpu };

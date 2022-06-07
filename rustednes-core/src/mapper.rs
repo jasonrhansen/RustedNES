@@ -58,16 +58,18 @@ pub enum MapperEnum {
     Mapper9,
 }
 
-pub fn create_mapper(cartridge: Cartridge) -> MapperEnum {
-    match cartridge.mapper {
-        0 => Mapper0::new(cartridge).into(),
-        1 => Mapper1::new(cartridge).into(),
-        2 => Mapper2::new(cartridge).into(),
-        3 => Mapper3::new(cartridge).into(),
-        4 => Mapper4::new(cartridge).into(),
-        7 => Mapper7::new(cartridge).into(),
-        9 => Mapper9::new(cartridge).into(),
-        _ => panic!("Unsupported mapper number: {}", cartridge.mapper),
+impl MapperEnum {
+    pub fn from_cartridge(cartridge: Cartridge) -> Self {
+        match cartridge.mapper {
+            0 => Mapper0::new(cartridge).into(),
+            1 => Mapper1::new(cartridge).into(),
+            2 => Mapper2::new(cartridge).into(),
+            3 => Mapper3::new(cartridge).into(),
+            4 => Mapper4::new(cartridge).into(),
+            7 => Mapper7::new(cartridge).into(),
+            9 => Mapper9::new(cartridge).into(),
+            _ => panic!("Unsupported mapper number: {}", cartridge.mapper),
+        }
     }
 }
 
