@@ -257,6 +257,16 @@ where
                     let main_window = canvas.window().id() == window_id;
                     let debug_window = debug_canvas.window().id() == window_id;
 
+                    // We only care about these mods. Ignore all others.
+                    let keymod = keymod.intersection(
+                        Mod::LSHIFTMOD
+                            | Mod::RSHIFTMOD
+                            | Mod::LCTRLMOD
+                            | Mod::RCTRLMOD
+                            | Mod::LALTMOD
+                            | Mod::RALTMOD,
+                    );
+
                     match (keycode, keymod) {
                         (Keycode::Escape, Mod::NOMOD) if main_window => {
                             return false;
