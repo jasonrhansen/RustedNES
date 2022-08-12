@@ -760,16 +760,9 @@ impl Ppu {
                     }
                 }
             }
-            260 => {
-                if scanline_cycle == 330 {
-                    // Although I believe this should happen on cycle 1 of the pre-render scanline,
-                    // it only passes the blargg vbl_clear_time test if I do it here. Maybe
-                    // there's some other timing issue causing this.
-                    self.clear_vblank();
-                }
-            }
             PRE_RENDER_SCANLINE => {
                 if scanline_cycle == 1 {
+                    self.clear_vblank();
                     self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
                     self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, false);
                 }
