@@ -563,6 +563,13 @@ impl Ppu {
         self.frame_buffer[(y as usize * SCREEN_WIDTH) + x as usize] = color & 0x3F;
     }
 
+    // Set pixel to black.
+    fn clear_pixel(&mut self) {
+        let x = self.scanline_cycle() - 1;
+        let y = self.scanline;
+        self.frame_buffer[(y as usize * SCREEN_WIDTH) + x as usize] = 0x0F;
+    }
+
     fn background_pixel(&self, x: u64) -> u8 {
         if !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND)
             || x < 8 && !self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND_LEFT_8)
@@ -652,11 +659,18 @@ impl Ppu {
         let on_bg_prefetch_cycle = (321..=336).contains(&scanline_cycle);
         let on_bg_fetch_cycle = on_visible_cycle || on_bg_prefetch_cycle;
 
-        if self.rendering_enabled() {
-            if on_visible_scanline && on_visible_cycle {
+        if on_visible_scanline && on_visible_cycle {
+            if self.rendering_enabled() {
                 self.render_pixel();
+            } else {
+                // Set the pixel in the frame buffer to black when not rendering.
+                // This fixes an issue with "Wizard's and Warriors", where garbage pixels would
+                // remain in the frame buffer right above the status bar.
+                self.clear_pixel();
             }
+        }
 
+        if self.rendering_enabled() {
             // Handle backgrounds
             {
                 if on_visible_scanline || on_prerender_scanline {
