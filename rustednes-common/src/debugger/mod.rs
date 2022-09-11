@@ -58,7 +58,7 @@ impl Debugger {
 
     fn input_loop(stdin_sender: Sender<String>, prompt_receiver: Receiver<String>) {
         let history_filename = "history.txt";
-        let mut rl = Editor::<()>::new();
+        let mut rl = Editor::<()>::new().unwrap();
         if rl.load_history(history_filename).is_err() {
             debug!("No previous history.");
         }

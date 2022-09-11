@@ -11,7 +11,7 @@ minifb = "0.23"
 rustednes-core = { path = "../rustednes-core" }
 rustednes-common = { path = "../rustednes-common" }
 time = "0.3"
-cpal = "0.13"
-clap = { version = "3.0", features = ["derive"] }
+cpal = "0.14"
+clap = { version = "3.2", features = ["derive"] }
 zip = "0.6"
 tracing = "0.1"
