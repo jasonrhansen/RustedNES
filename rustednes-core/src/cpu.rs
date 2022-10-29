@@ -10,7 +10,7 @@ pub const OAMDATA_ADDRESS: u16 = 0x2004;
 pub const OAMDMA_ADDRESS: u16 = 0x4014;
 pub const CPU_FREQUENCY: u64 = 1_789_773;
 
-#[derive(Debug, Copy, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub enum Interrupt {
     Nmi, // NMI (Non-Maskable Interrupt)
     Irq,
@@ -97,7 +97,7 @@ impl Debug for Regs {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Register8 {
     A,
     X,
@@ -106,7 +106,7 @@ pub enum Register8 {
     Status,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AddressMode {
     Immediate,
     Absolute,
@@ -1129,9 +1129,8 @@ impl Cpu {
                 Interrupt::Nmi => self.handle_interrupt(mem, NMI_VECTOR),
                 Interrupt::Irq => {
                     if !self.flags.i {
-                        let result = self.handle_interrupt(mem, IRQ_VECTOR);
+                        self.handle_interrupt(mem, IRQ_VECTOR);
                         self.flags.i = true;
-                        result
                     }
                 }
             }

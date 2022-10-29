@@ -55,7 +55,7 @@ impl Callbacks {
         let x = self.input_state(
             0,
             RetroDeviceType::Analog as u32,
-            stick.clone() as u32,
+            stick as u32,
             AnalogAxis::X as u32,
         );
         let y = self.input_state(

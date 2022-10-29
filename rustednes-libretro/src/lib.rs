@@ -301,7 +301,7 @@ pub unsafe extern "C" fn retro_init() {
 
 #[no_mangle]
 pub unsafe extern "C" fn retro_deinit() {
-    Box::from_raw(CONTEXT); // Take ownership of CONTEXT and drop it
+    drop(Box::from_raw(CONTEXT)); // Take ownership of CONTEXT and drop it
     CONTEXT = ptr::null_mut();
 }
 
