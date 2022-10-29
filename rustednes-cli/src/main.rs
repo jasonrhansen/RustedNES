@@ -11,6 +11,8 @@ use rustednes_common::time::*;
 use rustednes_core::apu::SAMPLE_RATE as NES_SAMPLE_RATE;
 use rustednes_core::cartridge::*;
 
+use clap::Parser;
+use clap_verbosity_flag::{InfoLevel, Verbosity};
 use tracing::{error, info};
 
 use std::alloc::System;
@@ -21,36 +23,29 @@ use std::path::{Path, PathBuf};
 mod cpal_driver;
 mod emulator;
 
-#[derive(Debug, clap::Parser)]
-#[clap(name = "RustedNES", about = "A CLI frontend to the RustedNES emulator")]
+#[derive(Debug, Parser)]
+#[command(author, version, about, long_about = None)]
 struct Opt {
     /// The name of the ROM to load
-    #[clap(name = "ROM", parse(from_os_str))]
+    #[arg(name = "ROM")]
     rom_path: PathBuf,
 
     /// Start in debug mode
-    #[clap(long = "debug", short = 'd')]
+    #[clap(short, long)]
     debug: bool,
 
     /// Disable audio
     #[clap(long = "noaudio")]
     disable_audio: bool,
 
-    /// Silence all log output
-    #[clap(short = 'q', long = "quiet")]
-    quiet: bool,
-
-    /// Verbose logging mode (-v, -vv, -vvv)
-    #[clap(short = 'v', long = "verbose", parse(from_occurrences))]
-    verbose: usize,
+    #[clap(flatten)]
+    verbose: Verbosity<InfoLevel>,
 }
 
 fn main() {
     let opt: Opt = clap::Parser::parse();
 
-    if !opt.quiet {
-        logger::initialize(opt.verbose);
-    }
+    logger::initialize(&opt.verbose);
 
     match load_rom(&opt.rom_path) {
         Ok(rom) => {
