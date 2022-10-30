@@ -554,7 +554,7 @@ impl Pulse {
     }
 
     fn write_control(&mut self, value: u8) {
-        self.duty_cycle = value >> 6;
+        self.duty_mode = value >> 7;
         self.length_counter.enabled = (value & 0x20) == 0;
         self.envelope.loop_flag = !self.length_counter.enabled;
         self.envelope.enabled = (value & 0x10) == 0;
