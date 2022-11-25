@@ -34,7 +34,7 @@ impl Mapper2 {
         };
 
         let rom_addr = Mapper2::prg_rom_address(bank, address);
-        self.cartridge.prg_rom[rom_addr as usize]
+        self.cartridge.prg_rom[rom_addr]
     }
 }
 

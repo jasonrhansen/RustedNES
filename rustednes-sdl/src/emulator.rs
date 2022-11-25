@@ -495,9 +495,7 @@ where
                                         &pixel_format,
                                         palette[self.debug_palette_selector * 4 + palette_index],
                                     ));
-                                    canvas
-                                        .draw_point((tile_x + (7 - bit) as i32, point_y))
-                                        .unwrap();
+                                    canvas.draw_point((tile_x + 7 - bit, point_y)).unwrap();
                                 }
                             }
                         }

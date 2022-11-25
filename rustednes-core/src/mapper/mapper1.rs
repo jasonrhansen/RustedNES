@@ -142,10 +142,10 @@ impl Mapper for Mapper1 {
             self.cartridge.prg_ram[(address - 0x6000) as usize]
         } else if address < 0xC000 {
             let rom_addr = self.prg_rom_address(self.prg_rom_bank_first(), address);
-            self.cartridge.prg_rom[rom_addr as usize]
+            self.cartridge.prg_rom[rom_addr]
         } else {
             let rom_addr = self.prg_rom_address(self.prg_rom_bank_last(), address);
-            self.cartridge.prg_rom[rom_addr as usize]
+            self.cartridge.prg_rom[rom_addr]
         }
     }
 
@@ -176,12 +176,12 @@ impl Mapper for Mapper1 {
 
     fn chr_read_byte(&mut self, address: u16) -> u8 {
         let chr_addr = self.chr_address(address);
-        self.cartridge.chr[chr_addr as usize]
+        self.cartridge.chr[chr_addr]
     }
 
     fn chr_write_byte(&mut self, address: u16, value: u8) {
         let chr_addr = self.chr_address(address);
-        self.cartridge.chr[chr_addr as usize] = value
+        self.cartridge.chr[chr_addr] = value
     }
 
     fn mirroring(&self) -> Mirroring {

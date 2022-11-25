@@ -82,16 +82,16 @@ impl Mapper for Mapper9 {
             self.cartridge.prg_ram[(address - 0x6000) as usize]
         } else if address < 0xA000 {
             let rom_addr = Mapper9::prg_rom_address(self.prg_rom_switchable_bank, address);
-            self.cartridge.prg_rom[rom_addr as usize]
+            self.cartridge.prg_rom[rom_addr]
         } else if address < 0xC000 {
             let rom_addr = Mapper9::prg_rom_address(self.prg_rom_fixed_bank_1, address);
-            self.cartridge.prg_rom[rom_addr as usize]
+            self.cartridge.prg_rom[rom_addr]
         } else if address < 0xE000 {
             let rom_addr = Mapper9::prg_rom_address(self.prg_rom_fixed_bank_2, address);
-            self.cartridge.prg_rom[rom_addr as usize]
+            self.cartridge.prg_rom[rom_addr]
         } else {
             let rom_addr = Mapper9::prg_rom_address(self.prg_rom_fixed_bank_3, address);
-            self.cartridge.prg_rom[rom_addr as usize]
+            self.cartridge.prg_rom[rom_addr]
         }
     }
 
@@ -119,7 +119,7 @@ impl Mapper for Mapper9 {
 
     fn chr_read_byte(&mut self, address: u16) -> u8 {
         let chr_addr = self.chr_address(address);
-        let value = self.cartridge.chr[chr_addr as usize];
+        let value = self.cartridge.chr[chr_addr];
 
         // Latch should be updated AFTER the byte is fetched
         if address == 0x0FD8 {
@@ -137,7 +137,7 @@ impl Mapper for Mapper9 {
 
     fn chr_write_byte(&mut self, address: u16, value: u8) {
         let chr_addr = self.chr_address(address);
-        self.cartridge.chr[chr_addr as usize] = value
+        self.cartridge.chr[chr_addr] = value
     }
 
     fn mirroring(&self) -> Mirroring {

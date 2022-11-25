@@ -584,7 +584,7 @@ impl Cpu {
 
     fn rotate_left(&mut self, mem: &mut impl Memory, am: AddressMode) -> u8 {
         let (val, addr) = self.load(mem, am, true);
-        let carry: u8 = if self.flags.c { 1 } else { 0 };
+        let carry: u8 = u8::from(self.flags.c);
         let result = ((val << 1) & 0xFE) | carry;
         self.set_zero_negative(result);
         self.flags.c = (val & 0x80) != 0;

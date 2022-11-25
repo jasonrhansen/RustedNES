@@ -28,7 +28,7 @@ pub enum AnalogAxis {
 }
 
 #[allow(dead_code)]
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum AnalogStick {
     Left = 0,
     Right = 1,

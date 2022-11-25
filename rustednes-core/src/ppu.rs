@@ -406,7 +406,7 @@ impl Ppu {
     }
 
     fn current_pattern_address(&self) -> u16 {
-        let fine_y = ((self.regs.v >> 12) & 0x07) as u16;
+        let fine_y = (self.regs.v >> 12) & 0x07;
         self.regs.ppu_ctrl.background_pattern_table_address()
             + (self.name_table_byte as u16 * 16 + fine_y)
     }
@@ -595,8 +595,8 @@ impl Ppu {
 
         for i in 0..8 {
             if self.sprite_x_counters[i] == 0 && self.sprite_attribute_latches[i].0 != 0xFF {
-                let pixel = ((self.sprite_pattern_shifts_lo[i] as u8 >> 7) & 0x01)
-                    | ((self.sprite_pattern_shifts_hi[i] as u8 >> 6) & 0x02)
+                let pixel = ((self.sprite_pattern_shifts_lo[i] >> 7) & 0x01)
+                    | ((self.sprite_pattern_shifts_hi[i] >> 6) & 0x02)
                     | ((self.sprite_attribute_latches[i].palette() << 2) & 0x1C);
 
                 if pixel & 0x03 != 0 {

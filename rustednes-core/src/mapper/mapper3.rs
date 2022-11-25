@@ -44,7 +44,7 @@ impl Mapper for Mapper3 {
 
     fn chr_read_byte(&mut self, address: u16) -> u8 {
         let rom_addr = self.chr_address(self.chr_bank, address);
-        self.cartridge.chr[rom_addr as usize]
+        self.cartridge.chr[rom_addr]
     }
 
     fn chr_write_byte(&mut self, _address: u16, _value: u8) {

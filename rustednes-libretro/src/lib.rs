@@ -105,9 +105,9 @@ impl Context {
             }
 
             self.video_output_frame_buffer = match actual_pixel_format {
-                PixelFormat::Xrgb1555 => OutputBuffer::Xrgb1555(vec![0; DISPLAY_PIXELS as usize]),
-                PixelFormat::Rgb565 => OutputBuffer::Rgb565(vec![0; DISPLAY_PIXELS as usize]),
-                PixelFormat::Xrgb8888 => OutputBuffer::Xrgb8888(vec![0; DISPLAY_PIXELS as usize]),
+                PixelFormat::Xrgb1555 => OutputBuffer::Xrgb1555(vec![0; DISPLAY_PIXELS]),
+                PixelFormat::Rgb565 => OutputBuffer::Rgb565(vec![0; DISPLAY_PIXELS]),
+                PixelFormat::Xrgb8888 => OutputBuffer::Xrgb8888(vec![0; DISPLAY_PIXELS]),
             };
 
             match Cartridge::load(&mut Cursor::new(game_info.data_ref())) {
@@ -164,24 +164,21 @@ impl Context {
                                 fb.data,
                                 Box::new(Xrgb1555VideoSink::new(slice::from_raw_parts_mut(
                                     fb.data as *mut _,
-                                    (fb.height as usize) * (fb.pitch as usize)
-                                        / mem::size_of::<u16>(),
+                                    (fb.height as usize) * fb.pitch / mem::size_of::<u16>(),
                                 ))),
                             ),
                             1 => (
                                 fb.data,
                                 Box::new(Xrgb8888VideoSink::new(slice::from_raw_parts_mut(
                                     fb.data as *mut _,
-                                    (fb.height as usize) * (fb.pitch as usize)
-                                        / mem::size_of::<u32>(),
+                                    (fb.height as usize) * fb.pitch / mem::size_of::<u32>(),
                                 ))),
                             ),
                             2 => (
                                 fb.data,
                                 Box::new(Rgb565VideoSink::new(slice::from_raw_parts_mut(
                                     fb.data as *mut _,
-                                    (fb.height as usize) * (fb.pitch as usize)
-                                        / mem::size_of::<u16>(),
+                                    (fb.height as usize) * fb.pitch / mem::size_of::<u16>(),
                                 ))),
                             ),
                             _ => panic!(

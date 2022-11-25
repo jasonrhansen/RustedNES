@@ -187,9 +187,9 @@ static WEB_PALETTE: Lazy<[u32; 64]> = Lazy::new(|| {
     let mut palette = [0; 64];
     for n in 0..64 {
         let color = XRGB8888_PALETTE[n];
-        let r = ((color >> 16) & 0xFF) as u32;
-        let g = ((color >> 8) & 0xFF) as u32;
-        let b = (color & 0xFF) as u32;
+        let r = (color >> 16) & 0xFF;
+        let g = (color >> 8) & 0xFF;
+        let b = color & 0xFF;
         palette[n] = 0xFF00_0000 | (b << 16) | (g << 8) | r;
     }
     palette
