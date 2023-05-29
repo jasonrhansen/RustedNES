@@ -215,8 +215,8 @@ impl Ppu {
         self.cycles = 0;
         self.frame = 0;
         *self.regs.ppu_ctrl = 0;
-        *self.regs.ppu_mask = 0;
-        *self.regs.ppu_status = !0x80;
+        self.regs.ppu_mask = PpuMask::NONE;
+        self.regs.ppu_status = PpuStatus::RESET_VALUE;
         self.ppu_data_read_buffer = 0;
     }
 
@@ -225,7 +225,7 @@ impl Ppu {
         self.regs.w = WriteToggle::FirstWrite;
 
         let vblank = if self.nmi_occurred { 0x80 } else { 0x00 };
-        let status = vblank | (*self.regs.ppu_status & 0x60) | (self.ppu_gen_latch & 0x1F);
+        let status = vblank | (self.regs.ppu_status.bits() & 0x60) | (self.ppu_gen_latch & 0x1F);
 
         self.nmi_occurred = false;
 
@@ -842,7 +842,7 @@ impl Memory for Ppu {
 
         match address {
             PPUCTRL_ADDRESS => self.write_ppu_ctrl(value),
-            PPUMASK_ADDRESS => *self.regs.ppu_mask = value,
+            PPUMASK_ADDRESS => self.regs.ppu_mask = PpuMask::from_bits(value).unwrap(),
             OAMADDR_ADDRESS => self.regs.oam_addr = value,
             OAMDATA_ADDRESS => self.write_oam_byte(value),
             PPUSCROLL_ADDRESS => self.write_ppu_scroll(value),
@@ -928,7 +928,7 @@ impl DerefMut for PpuCtrl {
 }
 
 bitflags! {
-    #[derive(Deserialize, Serialize)]
+    #[derive(Copy, Clone, Deserialize, Serialize)]
     struct PpuMask: u8 {
         const NONE                   = 0;
 
@@ -951,40 +951,13 @@ bitflags! {
     }
 }
 
-impl Deref for PpuMask {
-    type Target = u8;
-
-    fn deref(&self) -> &u8 {
-        &self.bits
-    }
-}
-
-impl DerefMut for PpuMask {
-    fn deref_mut(&mut self) -> &mut u8 {
-        &mut self.bits
-    }
-}
-
 bitflags! {
-    #[derive(Deserialize, Serialize)]
+    #[derive(Copy, Clone, Deserialize, Serialize)]
     struct PpuStatus: u8 {
         const NONE            = 0;
         const SPRITE_OVERFLOW = 1 << 5;
         const SPRITE_ZERO_HIT = 1 << 6;
-    }
-}
-
-impl Deref for PpuStatus {
-    type Target = u8;
-
-    fn deref(&self) -> &u8 {
-        &self.bits
-    }
-}
-
-impl DerefMut for PpuStatus {
-    fn deref_mut(&mut self) -> &mut u8 {
-        &mut self.bits
+        const RESET_VALUE     = !0x80;
     }
 }
 

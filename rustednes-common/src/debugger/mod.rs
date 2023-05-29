@@ -18,7 +18,7 @@ use crate::emulation_mode::EmulationMode;
 use command::Command;
 
 use rustyline::error::ReadlineError;
-use rustyline::Editor;
+use rustyline::DefaultEditor;
 use tracing::{debug, error};
 
 pub struct Debugger {
@@ -58,7 +58,7 @@ impl Debugger {
 
     fn input_loop(stdin_sender: Sender<String>, prompt_receiver: Receiver<String>) {
         let history_filename = "history.txt";
-        let mut rl = Editor::<()>::new().unwrap();
+        let mut rl = DefaultEditor::new().unwrap();
         if rl.load_history(history_filename).is_err() {
             debug!("No previous history.");
         }
@@ -67,7 +67,7 @@ impl Debugger {
                 let readline = rl.readline(&prompt);
                 match readline {
                     Ok(line) => {
-                        rl.add_history_entry(line.as_str());
+                        rl.add_history_entry(line.as_str()).unwrap();
                         stdin_sender.send(line.as_str().into()).unwrap();
                     }
                     Err(ReadlineError::Interrupted) => {

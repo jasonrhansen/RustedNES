@@ -2,8 +2,9 @@ use crate::memory::Memory;
 
 use serde_derive::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Deserialize, Serialize)]
+#[derive(Copy, Clone, Default, Deserialize, Serialize)]
 pub enum Button {
+    #[default]
     A,
     B,
     Select,
@@ -12,12 +13,6 @@ pub enum Button {
     Down,
     Left,
     Right,
-}
-
-impl Default for Button {
-    fn default() -> Self {
-        Button::A
-    }
 }
 
 #[derive(Copy, Clone, Default, Deserialize, Serialize)]
