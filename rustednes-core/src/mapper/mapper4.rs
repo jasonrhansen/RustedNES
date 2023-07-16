@@ -222,10 +222,8 @@ impl Mapper for Mapper4 {
             } else {
                 self.irq_counter = 0;
             }
-        } else if address & 0x01 == 0 {
-            self.irq_enable = false;
         } else {
-            self.irq_enable = true;
+            self.irq_enable = address & 0x01 != 0;
         }
     }
 
