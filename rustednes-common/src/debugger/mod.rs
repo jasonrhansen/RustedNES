@@ -17,8 +17,7 @@ use crate::emulation_mode::EmulationMode;
 
 use command::Command;
 
-use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
+use reedline::{DefaultPrompt, DefaultPromptSegment, FileBackedHistory, Reedline, Signal};
 use tracing::{debug, error};
 
 pub struct Debugger {
@@ -57,24 +56,35 @@ impl Debugger {
     }
 
     fn input_loop(stdin_sender: Sender<String>, prompt_receiver: Receiver<String>) {
+        let mut line_editor = Reedline::create();
+
         let history_filename = "history.txt";
-        let mut rl = DefaultEditor::new().unwrap();
-        if rl.load_history(history_filename).is_err() {
-            debug!("No previous history.");
-        }
+        match FileBackedHistory::with_file(100, history_filename.into()) {
+            Ok(history) => {
+                line_editor = line_editor.with_history(Box::new(history));
+            }
+            Err(err) => {
+                debug!("Error loading history file: {:?}", err);
+            }
+        };
+
         loop {
             if let Ok(prompt) = prompt_receiver.recv() {
-                let readline = rl.readline(&prompt);
-                match readline {
-                    Ok(line) => {
-                        rl.add_history_entry(line.as_str()).unwrap();
+                let prompt = DefaultPrompt::new(
+                    DefaultPromptSegment::Basic(prompt),
+                    DefaultPromptSegment::Empty,
+                );
+
+                let sig = line_editor.read_line(&prompt);
+                match sig {
+                    Ok(Signal::Success(line)) => {
                         stdin_sender.send(line.as_str().into()).unwrap();
                     }
-                    Err(ReadlineError::Interrupted) => {
+                    Ok(Signal::CtrlC) => {
                         println!("CTRL-C");
                         break;
                     }
-                    Err(ReadlineError::Eof) => {
+                    Ok(Signal::CtrlD) => {
                         println!("CTRL-D");
                         break;
                     }
@@ -85,7 +95,9 @@ impl Debugger {
                 }
             }
         }
-        rl.save_history(history_filename).unwrap();
+        line_editor.sync_history().unwrap_or_else(|err| {
+            debug!("Error syncing history: {:?}", err);
+        });
     }
 
     pub fn start(&mut self, nes: &mut Nes) {
@@ -295,7 +307,7 @@ impl Debugger {
 
     fn print_cursor(&self) {
         self.prompt_sender
-            .send(format!("(rustednes-debug 0x{:04x}) > ", self.cursor))
+            .send(format!("(rustednes-debug 0x{:04x})", self.cursor))
             .unwrap();
     }
 
