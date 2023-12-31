@@ -10,7 +10,7 @@ default-run = "rustednes-sdl"
 [dependencies]
 rustednes-core = { path = "../rustednes-core" }
 rustednes-common = { path = "../rustednes-common" }
-sdl2 = "0.35"
+sdl2 = "0.36"
 clap = { version = "4.1", features = ["derive"] }
 clap-verbosity-flag = "2.0"
 zip = "0.6"
