@@ -29,7 +29,7 @@ struct Opt {
     verbose: Verbosity<InfoLevel>,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let opt: Opt = clap::Parser::parse();
 
     logger::initialize(&opt.verbose);
@@ -38,10 +38,12 @@ fn main() {
         Ok(rom) => {
             info!("{:?}", rom);
             let rom_path = opt.rom_path.to_path_buf();
-            run_rom(rom, opt, rom_path);
+            run_rom(rom, opt, rom_path)?;
         }
         Err(e) => error!("Error: {}", e),
-    }
+    };
+
+    Ok(())
 }
 
 fn load_rom(filename: &Path) -> Result<Cartridge, Box<dyn Error>> {

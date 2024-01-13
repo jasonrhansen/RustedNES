@@ -22,6 +22,7 @@ const CPU_CYCLE_TIME_NS: u64 = (1e9_f64 / CPU_FREQUENCY as f64) as u64 + 1;
 
 pub struct Emulator {
     nes: Nes,
+    rom_path: PathBuf,
 
     time_source: SystemTimeSource,
     start_time_ns: u64,
@@ -68,8 +69,12 @@ impl Application for Emulator {
         let time_source = SystemTimeSource {};
         let start_time_ns = time_source.time_ns();
 
+        println!("rom path: {:?}", flags.rom_path);
+
         let emulator = Self {
             nes: Nes::new(flags.rom.expect("No ROM passed to emulator")),
+
+            rom_path: flags.rom_path.clone(),
 
             time_source,
             start_time_ns,
@@ -87,7 +92,11 @@ impl Application for Emulator {
     }
 
     fn title(&self) -> String {
-        "RustedNES iced".to_string()
+        if let Some(rom_name) = self.rom_path.file_name() {
+            format!("RustedNES - {}", rom_name.to_string_lossy())
+        } else {
+            "RustedNES".to_string()
+        }
     }
 
     fn update(&mut self, message: Self::Message) -> Command<Self::Message> {
