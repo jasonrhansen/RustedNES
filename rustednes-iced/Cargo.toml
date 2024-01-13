@@ -1,0 +1,16 @@
+[package]
+name = "rustednes-iced"
+version = "0.1.0"
+authors = ["Jason Rodney Hansen <jasonrodneyhansen@gmail.com>"]
+description = "An iced frontend for rustednes-core"
+license = "MIT/Apache-2.0"
+edition = "2021"
+
+[dependencies]
+rustednes-core = { path = "../rustednes-core" }
+rustednes-common = { path = "../rustednes-common" }
+iced = { version = "0.10", features = ["image", "advanced"] }
+clap = { version = "4.1", features = ["derive"] }
+clap-verbosity-flag = "2.0"
+zip = "0.6"
+tracing = "0.1"
