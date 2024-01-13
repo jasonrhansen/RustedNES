@@ -144,12 +144,8 @@ impl Application for Emulator {
         let pixels = Arc::clone(&self.pixels);
         let pixels = pixels.lock().unwrap();
 
-        let image_handle = image::Handle::from_pixels(
-            SCREEN_WIDTH as u32,
-            SCREEN_HEIGHT as u32,
-            unsafe { std::slice::from_raw_parts(pixels.as_ptr() as *const u8, pixels.len() * 4) }
-                .to_vec(),
-        );
+        let image_handle =
+            image::Handle::from_pixels(SCREEN_WIDTH as u32, SCREEN_HEIGHT as u32, *pixels);
 
         column!(
             text(format!(
@@ -206,9 +202,9 @@ impl<'a> VideoSink for VideoFrameSink<'a> {
             let pixel = XRGB8888_PALETTE[*palette_index as usize];
             let offset = i * 4;
 
-            self.pixels[offset + 2] = pixel as u8;
-            self.pixels[offset + 1] = (pixel >> 8) as u8;
             self.pixels[offset] = (pixel >> 16) as u8;
+            self.pixels[offset + 1] = (pixel >> 8) as u8;
+            self.pixels[offset + 2] = pixel as u8;
             self.pixels[offset + 3] = (pixel >> 24) as u8;
         }
         self.frame_written = true;
