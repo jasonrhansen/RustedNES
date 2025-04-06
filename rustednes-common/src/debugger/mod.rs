@@ -5,7 +5,7 @@ pub use debug_emulator::DebugEmulator;
 
 use std::cmp::min;
 use std::collections::{HashMap, HashSet};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
 use rustednes_core::disassembler::Disassembler;
@@ -17,8 +17,8 @@ use crate::emulation_mode::EmulationMode;
 
 use command::Command;
 
-use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 use tracing::{debug, error};
 
 pub struct Debugger {

@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Jason Rodney Hansen <jasonrodneyhansen@gmail.com>"]
 description = "An SDL2 frontend for rustednes-core"
 license = "MIT/Apache-2.0"
-edition = "2021"
+edition = "2024"
 default-run = "rustednes-sdl"
 
 [dependencies]

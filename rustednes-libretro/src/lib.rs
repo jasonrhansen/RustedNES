@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 #![allow(clippy::missing_safety_doc)]
+#![allow(static_mut_refs)]
 
 // This module is based on the rustual-boy-libretro module (https://github.com/emu-rs/rustual-boy/blob/libretro/rustual-boy-libretro).
 
@@ -228,49 +229,54 @@ impl Context {
     }
 
     unsafe fn handle_input(system: &mut System) {
-        {
-            let game_pad = &mut system.nes.interconnect.input.game_pad_1;
-            Context::handle_game_pad(game_pad, 0);
-        }
-        {
-            let game_pad = &mut system.nes.interconnect.input.game_pad_2;
-            Context::handle_game_pad(game_pad, 1);
+        unsafe {
+            {
+                let game_pad = &mut system.nes.interconnect.input.game_pad_1;
+                Context::handle_game_pad(game_pad, 0);
+            }
+            {
+                let game_pad = &mut system.nes.interconnect.input.game_pad_2;
+                Context::handle_game_pad(game_pad, 1);
+            }
         }
     }
 
     unsafe fn handle_game_pad(game_pad: &mut GamePad, index: u32) {
-        game_pad.set_button_pressed(Button::A, CALLBACKS.joypad_button(JoypadButton::A, index));
-        game_pad.set_button_pressed(Button::B, CALLBACKS.joypad_button(JoypadButton::B, index));
-        game_pad.set_button_pressed(
-            Button::Start,
-            CALLBACKS.joypad_button(JoypadButton::Start, index),
-        );
-        game_pad.set_button_pressed(
-            Button::Select,
-            CALLBACKS.joypad_button(JoypadButton::Select, index),
-        );
+        unsafe {
+            game_pad.set_button_pressed(Button::A, CALLBACKS.joypad_button(JoypadButton::A, index));
+            game_pad.set_button_pressed(Button::B, CALLBACKS.joypad_button(JoypadButton::B, index));
+            game_pad.set_button_pressed(
+                Button::Start,
+                CALLBACKS.joypad_button(JoypadButton::Start, index),
+            );
+            game_pad.set_button_pressed(
+                Button::Select,
+                CALLBACKS.joypad_button(JoypadButton::Select, index),
+            );
 
-        let joypad_left_pressed = CALLBACKS.joypad_button(JoypadButton::Left, index);
-        let joypad_right_pressed = CALLBACKS.joypad_button(JoypadButton::Right, index);
-        let joypad_up_pressed = CALLBACKS.joypad_button(JoypadButton::Up, index);
-        let joypad_down_pressed = CALLBACKS.joypad_button(JoypadButton::Down, index);
+            let joypad_left_pressed = CALLBACKS.joypad_button(JoypadButton::Left, index);
+            let joypad_right_pressed = CALLBACKS.joypad_button(JoypadButton::Right, index);
+            let joypad_up_pressed = CALLBACKS.joypad_button(JoypadButton::Up, index);
+            let joypad_down_pressed = CALLBACKS.joypad_button(JoypadButton::Down, index);
 
-        const ANALOG_THRESHOLD: i16 = 0x7fff / 2;
+            const ANALOG_THRESHOLD: i16 = 0x7fff / 2;
 
-        let (left_x, left_y) = CALLBACKS.analog_xy(AnalogStick::Left, index);
-        game_pad.set_button_pressed(
-            Button::Left,
-            left_x < -ANALOG_THRESHOLD || joypad_left_pressed,
-        );
-        game_pad.set_button_pressed(
-            Button::Right,
-            left_x > ANALOG_THRESHOLD || joypad_right_pressed,
-        );
-        game_pad.set_button_pressed(Button::Up, left_y < -ANALOG_THRESHOLD || joypad_up_pressed);
-        game_pad.set_button_pressed(
-            Button::Down,
-            left_y > ANALOG_THRESHOLD || joypad_down_pressed,
-        );
+            let (left_x, left_y) = CALLBACKS.analog_xy(AnalogStick::Left, index);
+            game_pad.set_button_pressed(
+                Button::Left,
+                left_x < -ANALOG_THRESHOLD || joypad_left_pressed,
+            );
+            game_pad.set_button_pressed(
+                Button::Right,
+                left_x > ANALOG_THRESHOLD || joypad_right_pressed,
+            );
+            game_pad
+                .set_button_pressed(Button::Up, left_y < -ANALOG_THRESHOLD || joypad_up_pressed);
+            game_pad.set_button_pressed(
+                Button::Down,
+                left_y > ANALOG_THRESHOLD || joypad_down_pressed,
+            );
+        }
     }
 }
 
@@ -285,72 +291,90 @@ static mut CALLBACKS: Callbacks = Callbacks {
 
 static mut CONTEXT: *mut Context = 0 as *mut _;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn retro_api_version() -> u32 {
     API_VERSION
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_init() {
-    CONTEXT = Box::into_raw(Box::new(Context::new()));
-    CALLBACKS.set_support_achievements(true);
+    unsafe {
+        CONTEXT = Box::into_raw(Box::new(Context::new()));
+        CALLBACKS.set_support_achievements(true);
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_deinit() {
-    drop(Box::from_raw(CONTEXT)); // Take ownership of CONTEXT and drop it
-    CONTEXT = ptr::null_mut();
+    unsafe {
+        drop(Box::from_raw(CONTEXT)); // Take ownership of CONTEXT and drop it
+        CONTEXT = ptr::null_mut();
+    }
 }
 
 // These `retro_set` fn's can be called _before_ retro_init, so they can't touch any context state
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_set_video_refresh(callback: VideoRefreshCallback) {
-    CALLBACKS.video_refresh = Some(callback);
+    unsafe {
+        CALLBACKS.video_refresh = Some(callback);
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_set_audio_sample(callback: AudioSampleCallback) {
-    CALLBACKS.audio_sample = Some(callback);
+    unsafe {
+        CALLBACKS.audio_sample = Some(callback);
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_set_audio_sample_batch(callback: AudioSampleBatchCallback) {
-    CALLBACKS.audio_sample_batch = Some(callback);
+    unsafe {
+        CALLBACKS.audio_sample_batch = Some(callback);
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_set_input_poll(callback: InputPollCallback) {
-    CALLBACKS.input_poll = Some(callback);
+    unsafe {
+        CALLBACKS.input_poll = Some(callback);
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_set_input_state(callback: InputStateCallback) {
-    CALLBACKS.input_state = Some(callback);
+    unsafe {
+        CALLBACKS.input_state = Some(callback);
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_set_environment(callback: EnvironmentCallback) {
-    CALLBACKS.environment = Some(callback);
+    unsafe {
+        CALLBACKS.environment = Some(callback);
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_set_controller_port_device(_port: u32, _device: u32) {
     // TODO
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_get_system_info(info: *mut SystemInfo) {
-    // This can be called _before_ retro_init, so this can't be part of the context
-    *info = SystemInfo::new();
+    unsafe {
+        // This can be called _before_ retro_init, so this can't be part of the context
+        *info = SystemInfo::new();
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_load_game(game_info: *const GameInfo) -> bool {
-    (*CONTEXT).load_game(&*game_info)
+    unsafe { (*CONTEXT).load_game(&*game_info) }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_load_game_special(
     _game_type: u32,
     _game_infos: *const GameInfo,
@@ -360,137 +384,157 @@ pub unsafe extern "C" fn retro_load_game_special(
     false
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_get_system_av_info(av_info: *mut SystemAvInfo) {
-    *av_info = (*CONTEXT).system_av_info();
+    unsafe {
+        *av_info = (*CONTEXT).system_av_info();
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_unload_game() {
-    (*CONTEXT).unload_game();
+    unsafe {
+        (*CONTEXT).unload_game();
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_reset() {
-    (*CONTEXT).reset();
+    unsafe {
+        (*CONTEXT).reset();
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_run() {
-    (*CONTEXT).run_frame();
+    unsafe {
+        (*CONTEXT).run_frame();
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_get_region() -> u32 {
     REGION_NTSC
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_get_memory_data(id: u32) -> *mut c_void {
-    if let Some(ref mut system) = (*CONTEXT).system {
-        match id & MEMORY_MASK {
-            MEMORY_SYSTEM_RAM => system.nes.interconnect.ram.as_mut_ptr() as *mut _,
-            MEMORY_VIDEO_RAM => system.nes.interconnect.ppu.mem.vram.as_mut_ptr() as *mut _,
-            MEMORY_SAVE_RAM => {
-                let mut mapper = system.nes.interconnect.mapper.borrow_mut();
-                mapper.sram() as *mut _
-            }
+    unsafe {
+        match (*CONTEXT).system {
+            Some(ref mut system) => match id & MEMORY_MASK {
+                MEMORY_SYSTEM_RAM => system.nes.interconnect.ram.as_mut_ptr() as *mut _,
+                MEMORY_VIDEO_RAM => system.nes.interconnect.ppu.mem.vram.as_mut_ptr() as *mut _,
+                MEMORY_SAVE_RAM => {
+                    let mut mapper = system.nes.interconnect.mapper.borrow_mut();
+                    mapper.sram() as *mut _
+                }
+                _ => ptr::null_mut(),
+            },
             _ => ptr::null_mut(),
         }
-    } else {
-        ptr::null_mut()
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_get_memory_size(id: u32) -> size_t {
-    if let Some(ref mut system) = (*CONTEXT).system {
-        match id & MEMORY_MASK {
-            MEMORY_SYSTEM_RAM => system.nes.interconnect.ram.len(),
-            MEMORY_VIDEO_RAM => system.nes.interconnect.ppu.mem.vram.len(),
-            MEMORY_SAVE_RAM => {
-                let mapper = system.nes.interconnect.mapper.borrow_mut();
-                mapper.sram_size()
-            }
+    unsafe {
+        match (*CONTEXT).system {
+            Some(ref mut system) => match id & MEMORY_MASK {
+                MEMORY_SYSTEM_RAM => system.nes.interconnect.ram.len(),
+                MEMORY_VIDEO_RAM => system.nes.interconnect.ppu.mem.vram.len(),
+                MEMORY_SAVE_RAM => {
+                    let mapper = system.nes.interconnect.mapper.borrow_mut();
+                    mapper.sram_size()
+                }
+                _ => 0,
+            },
             _ => 0,
         }
-    } else {
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn retro_serialize_size() -> size_t {
+    unsafe {
+        if let Some(ref mut system) = (*CONTEXT).system {
+            let state = system.get_nes_state();
+
+            // Serialize to get size and cache result to use in retro_serialize
+            (*CONTEXT).serialized = match (*CONTEXT).serialized {
+                Some(_) => serde_cbor::ser::to_vec_packed(&state).ok(),
+                // The first time we get the size return non packed version to make sure we have enough room for all future save states
+                None => serde_cbor::ser::to_vec(&state).ok(),
+            };
+
+            if let Some(ref s) = (*CONTEXT).serialized {
+                return s.len();
+            }
+        }
+
         0
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn retro_serialize_size() -> size_t {
-    if let Some(ref mut system) = (*CONTEXT).system {
-        let state = system.get_nes_state();
-
-        // Serialize to get size and cache result to use in retro_serialize
-        (*CONTEXT).serialized = match (*CONTEXT).serialized {
-            Some(_) => serde_cbor::ser::to_vec_packed(&state).ok(),
-            // The first time we get the size return non packed version to make sure we have enough room for all future save states
-            None => serde_cbor::ser::to_vec(&state).ok(),
-        };
-
-        if let Some(ref s) = (*CONTEXT).serialized {
-            return s.len();
-        }
-    }
-
-    0
-}
-
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_serialize(data: *mut c_void, size: size_t) -> bool {
-    // Use cached serialization that was created in retro_serialize_size
-    if let Some(ref serialized) = (*CONTEXT).serialized {
-        if serialized.len() <= size {
-            ptr::copy_nonoverlapping(serialized.as_ptr(), data as *mut u8, serialized.len());
+    unsafe {
+        // Use cached serialization that was created in retro_serialize_size
+        if let Some(ref serialized) = (*CONTEXT).serialized {
+            if serialized.len() <= size {
+                ptr::copy_nonoverlapping(serialized.as_ptr(), data as *mut u8, serialized.len());
 
-            return true;
-        } else {
-            println!(
-                "Couldn't serialize. Size of serialize buffer is smaller than the serialized data"
-            );
-        }
-    }
-
-    false
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn retro_unserialize(data: *const c_void, size: size_t) -> bool {
-    if let Some(ref mut system) = (*CONTEXT).system {
-        match serde_cbor::from_slice(slice::from_raw_parts(data as _, size)) {
-            Ok(state) => {
-                system.apply_nes_state(state);
                 return true;
-            }
-            Err(e) => {
-                println!("Unable to deserialize data. {:?}", e);
+            } else {
+                println!(
+                    "Couldn't serialize. Size of serialize buffer is smaller than the serialized data"
+                );
             }
         }
-    }
 
-    false
+        false
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn retro_unserialize(data: *const c_void, size: size_t) -> bool {
+    unsafe {
+        if let Some(ref mut system) = (*CONTEXT).system {
+            match serde_cbor::from_slice(slice::from_raw_parts(data as _, size)) {
+                Ok(state) => {
+                    system.apply_nes_state(state);
+                    return true;
+                }
+                Err(e) => {
+                    println!("Unable to deserialize data. {:?}", e);
+                }
+            }
+        }
+
+        false
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_cheat_reset() {
-    if let Some(ref mut system) = (*CONTEXT).system {
-        system.nes.clear_cheats();
+    unsafe {
+        if let Some(ref mut system) = (*CONTEXT).system {
+            system.nes.clear_cheats();
+        }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn retro_cheat_set(_index: u32, enabled: bool, code: *const c_char) {
-    if let Some(ref mut system) = (*CONTEXT).system {
-        let code = CStr::from_ptr(code).to_bytes();
+    unsafe {
+        if let Some(ref mut system) = (*CONTEXT).system {
+            let code = CStr::from_ptr(code).to_bytes();
 
-        if let Ok(cheat) = Cheat::from_code(code) {
-            if enabled {
-                system.nes.add_cheat(cheat);
-            } else {
-                system.nes.remove_cheat(cheat);
+            if let Ok(cheat) = Cheat::from_code(code) {
+                if enabled {
+                    system.nes.add_cheat(cheat);
+                } else {
+                    system.nes.remove_cheat(cheat);
+                }
             }
         }
     }

@@ -1,9 +1,7 @@
 use libc::c_char;
 
 macro_rules! cstring {
-    ($ex:expr) => {{
-        (concat!($ex, "\0")).as_ptr() as *const c_char
-    }};
+    ($ex:expr_2021) => {{ (concat!($ex, "\0")).as_ptr() as *const c_char }};
 }
 
 #[repr(C)]

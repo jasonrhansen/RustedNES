@@ -27,7 +27,7 @@ impl<'a> AudioSinkF32<'a> {
     }
 }
 
-impl<'a> AudioSink for AudioSinkF32<'a> {
+impl AudioSink for AudioSinkF32<'_> {
     fn write_sample(&mut self, sample: f32) {
         self.buffer[self.buffer_pos] = (sample, sample);
         self.buffer_pos += 1;
@@ -52,7 +52,7 @@ impl<'a> AudioSinkI16<'a> {
     }
 }
 
-impl<'a> AudioSink for AudioSinkI16<'a> {
+impl AudioSink for AudioSinkI16<'_> {
     fn write_sample(&mut self, sample: f32) {
         let sample = (sample * 32768.0) as i16;
         self.buffer[self.buffer_pos] = (sample, sample);
@@ -78,7 +78,7 @@ impl<'a> AudioSinkU16<'a> {
     }
 }
 
-impl<'a> AudioSink for AudioSinkU16<'a> {
+impl AudioSink for AudioSinkU16<'_> {
     fn write_sample(&mut self, sample: f32) {
         let sample = ((sample * 32768.0) + 32768.0) as u16;
         self.buffer[self.buffer_pos] = (sample, sample);

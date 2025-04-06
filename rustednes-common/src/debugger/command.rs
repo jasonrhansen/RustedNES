@@ -1,9 +1,9 @@
+use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{alphanumeric1, digit1, space0, space1};
 use nom::combinator::{all_consuming, map, map_res, opt};
 use nom::sequence::{preceded, tuple};
-use nom::IResult;
 use std::str::FromStr;
 
 #[derive(Debug, Clone)]

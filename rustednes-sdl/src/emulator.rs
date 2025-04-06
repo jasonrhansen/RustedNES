@@ -573,7 +573,7 @@ impl<'a> CanvasVideoSink<'a> {
     }
 }
 
-impl<'a> VideoSink for CanvasVideoSink<'a> {
+impl VideoSink for CanvasVideoSink<'_> {
     fn write_frame(&mut self, frame_buffer: &[u8]) {
         let pixel_format = PixelFormatEnum::RGB888.try_into().unwrap();
         for (i, palette_index) in frame_buffer.iter().enumerate() {

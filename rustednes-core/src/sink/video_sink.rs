@@ -36,7 +36,7 @@ impl<'a> Rgb565VideoSink<'a> {
     }
 }
 
-impl<'a> VideoSink for Rgb565VideoSink<'a> {
+impl VideoSink for Rgb565VideoSink<'_> {
     fn write_frame(&mut self, frame_buffer: &[u8]) {
         for (i, palette_index) in frame_buffer.iter().enumerate() {
             self.buffer[i] = RGB565_PALETTE[*palette_index as usize];
@@ -67,7 +67,7 @@ impl<'a> Xrgb1555VideoSink<'a> {
     }
 }
 
-impl<'a> VideoSink for Xrgb1555VideoSink<'a> {
+impl VideoSink for Xrgb1555VideoSink<'_> {
     fn write_frame(&mut self, frame_buffer: &[u8]) {
         for (i, palette_index) in frame_buffer.iter().enumerate() {
             self.buffer[i] = XRGB1555_PALETTE[*palette_index as usize];
@@ -99,7 +99,7 @@ impl<'a> WebVideoSink<'a> {
     }
 }
 
-impl<'a> VideoSink for WebVideoSink<'a> {
+impl VideoSink for WebVideoSink<'_> {
     fn write_frame(&mut self, frame_buffer: &[u8]) {
         for (i, palette_index) in frame_buffer.iter().enumerate() {
             self.buffer[i] = WEB_PALETTE[*palette_index as usize];
@@ -130,7 +130,7 @@ impl<'a> Xrgb8888VideoSink<'a> {
     }
 }
 
-impl<'a> VideoSink for Xrgb8888VideoSink<'a> {
+impl VideoSink for Xrgb8888VideoSink<'_> {
     fn write_frame(&mut self, frame_buffer: &[u8]) {
         for (i, palette_index) in frame_buffer.iter().enumerate() {
             self.buffer[i] = XRGB8888_PALETTE[*palette_index as usize];

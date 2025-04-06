@@ -1,6 +1,6 @@
 // Used by Cpu and Disassembler to decode opcodes and handle the instructions
 macro_rules! handle_opcode {
-    ($opcode:expr, $this:ident, $mem:ident) => {
+    ($opcode:expr_2021, $this:ident, $mem:ident) => {
         match $opcode {
             0xA9 => $this.lda($mem, AddressMode::Immediate),
             0xA5 => $this.lda($mem, AddressMode::ZeroPage),

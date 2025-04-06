@@ -1,4 +1,4 @@
-use crate::cpu::{Cpu, Interrupt, CPU_FREQUENCY};
+use crate::cpu::{CPU_FREQUENCY, Cpu, Interrupt};
 use crate::mapper::{Mapper, MapperEnum};
 use crate::memory::Memory;
 use crate::sink::*;

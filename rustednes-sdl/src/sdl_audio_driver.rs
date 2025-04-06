@@ -7,8 +7,8 @@ use std::error;
 use std::sync::atomic::{self, AtomicU64};
 use std::sync::{Arc, Mutex};
 
-use sdl2::audio::{AudioCallback, AudioDevice, AudioSpecDesired};
 use sdl2::Sdl;
+use sdl2::audio::{AudioCallback, AudioDevice, AudioSpecDesired};
 
 pub struct SdlBufferSink {
     sample_buffer: Arc<Mutex<SampleBuffer>>,

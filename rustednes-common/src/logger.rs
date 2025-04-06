@@ -10,13 +10,16 @@ where
     }
 
     if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var(
-            "RUST_LOG",
-            verbosity
-                .log_level()
-                .map(|level| level.as_str().to_lowercase())
-                .unwrap_or_else(|| "trace".to_owned()),
-        )
+        // safety: Environment access only happens in single-threaded code.
+        unsafe {
+            std::env::set_var(
+                "RUST_LOG",
+                verbosity
+                    .log_level()
+                    .map(|level| level.as_str().to_lowercase())
+                    .unwrap_or_else(|| "trace".to_owned()),
+            )
+        }
     }
 
     let format = tracing_subscriber::fmt::format()

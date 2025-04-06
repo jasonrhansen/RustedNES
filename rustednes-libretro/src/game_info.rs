@@ -14,6 +14,6 @@ pub struct GameInfo {
 
 impl GameInfo {
     pub unsafe fn data_ref(&self) -> &[u8] {
-        slice::from_raw_parts(self.data as *const u8, self.size)
+        unsafe { slice::from_raw_parts(self.data as *const u8, self.size) }
     }
 }
