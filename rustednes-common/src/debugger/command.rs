@@ -1,9 +1,9 @@
-use nom::IResult;
 use nom::branch::alt;
 use nom::bytes::complete::tag;
 use nom::character::complete::{alphanumeric1, digit1, space0, space1};
 use nom::combinator::{all_consuming, map, map_res, opt};
-use nom::sequence::{preceded, tuple};
+use nom::sequence::preceded;
+use nom::{IResult, Parser};
 use std::str::FromStr;
 
 #[derive(Debug, Clone)]
@@ -40,13 +40,13 @@ impl FromStr for Command {
 }
 
 fn u16_(input: &str) -> IResult<&str, u16> {
-    map_res(digit1, |s: &str| s.parse::<u16>())(input)
+    map_res(digit1, |s: &str| s.parse::<u16>()).parse(input)
 }
 
 fn u16_hex(input: &str) -> IResult<&str, u16> {
     let prefix = alt((tag("0x"), tag("$")));
     let digits = map_res(alphanumeric1, |s: &str| u16::from_str_radix(s, 16));
-    preceded(opt(prefix), digits)(input)
+    preceded(opt(prefix), digits).parse(input)
 }
 
 fn command(input: &str) -> IResult<&str, Command> {
@@ -85,7 +85,7 @@ fn command(input: &str) -> IResult<&str, Command> {
 
     let add_label = all_consuming(preceded(
         alt((tag("addlabel"), tag("al"))),
-        tuple((preceded(space1, alphanumeric1), preceded(space1, u16_hex))),
+        (preceded(space1, alphanumeric1), preceded(space1, u16_hex)),
     ));
 
     let remove_label = all_consuming(preceded(
@@ -153,5 +153,5 @@ fn command(input: &str) -> IResult<&str, Command> {
         map(repeat, |_| Command::Repeat),
     ));
 
-    commands(input)
+    commands.parse(input)
 }
