@@ -7,7 +7,7 @@ license = "MIT/Apache-2.0"
 edition = "2024"
 
 [dependencies]
-bitflags = { version = "2.9", features = ["serde"] }
+bitflags = { version = "2.10", features = ["serde"] }
 byteorder = "1.5"
 bit_reverse = "0.1.8"
 serde = "1.0"
