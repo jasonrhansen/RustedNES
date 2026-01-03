@@ -26,19 +26,18 @@ pub enum Mirroring {
 
 impl Mirroring {
     pub fn mirror_address(self, address: u16) -> u16 {
-        let address = address & 0x2FFF;
+        // Fold the $3000-$3EFF range into $2000-$2EFF.
+        let address = (address - 0x2000) & 0x0FFF;
+
+        // Determine which 1KB page of the nametable we are in.
+        let page = address / 0x0400;
+        let offset = address % 0x0400;
+
         match self {
-            Mirroring::Horizontal => {
-                let address = address & 0x2BFF;
-                if address < 0x2800 {
-                    address
-                } else {
-                    address - 0x0400
-                }
-            }
-            Mirroring::Vertical => address & 0x27FF,
-            Mirroring::OneScreenLower => address & 0x23FF,
-            Mirroring::OneScreenUpper => (address & 0x27FF) | 0x0400,
+            Mirroring::Horizontal => (page / 2) * 0x0400 + offset,
+            Mirroring::Vertical => (page % 2) * 0x0400 + offset,
+            Mirroring::OneScreenLower => offset,
+            Mirroring::OneScreenUpper => 0x0400 + offset,
             Mirroring::FourScreen => address,
         }
     }

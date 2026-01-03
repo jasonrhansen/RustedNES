@@ -34,7 +34,7 @@ impl Mapper7 {
 
 impl Mapper for Mapper7 {
     fn prg_read_byte(&mut self, address: u16) -> u8 {
-        if address < 0x6000 {
+        if address < 0x8000 {
             0
         } else {
             self.read_prg_rom(address)
@@ -45,9 +45,9 @@ impl Mapper for Mapper7 {
         if address >= 0x8000 {
             self.prg_rom_bank = value & 0x07;
             self.cartridge.mirroring = if value & 0x10 == 0 {
-                Mirroring::OneScreenUpper
-            } else {
                 Mirroring::OneScreenLower
+            } else {
+                Mirroring::OneScreenUpper
             };
         }
     }
