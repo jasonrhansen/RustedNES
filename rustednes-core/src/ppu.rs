@@ -306,7 +306,7 @@ impl Ppu {
             WriteToggle::SecondWrite => {
                 // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242006_second_write_.28w_is_1.29
                 self.regs.t = (self.regs.t & 0xFF00) | (value as u16);
-                self.regs.v = self.regs.t;
+                self.regs.v = self.regs.t & 0x3FFF;
                 self.regs.w = WriteToggle::FirstWrite;
             }
         }
@@ -546,6 +546,11 @@ impl Ppu {
             // Sprite 0 hit is not detected at x=255
             if self.sprite_0_on_scanline
                 && sprite_index == 0
+                && self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND)
+                && self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES)
+                && !(x < 8
+                    && (!self.regs.ppu_mask.contains(PpuMask::SHOW_BACKGROUND_LEFT_8)
+                        || !self.regs.ppu_mask.contains(PpuMask::SHOW_SPRITES_LEFT_8)))
                 && x < 255
                 && !self.regs.ppu_status.contains(PpuStatus::SPRITE_ZERO_HIT)
             {
@@ -1162,8 +1167,7 @@ impl Memory for MemMap {
         } else if address < PaletteRam::START_ADDRESS {
             let mapper = self.mapper.borrow();
             let mirroring = mapper.mirroring();
-            self.vram
-                .read_byte(mirroring.mirror_address(address) & 0x07FF)
+            self.vram.read_byte(mirroring.mirror_address(address))
         } else if address < 0x4000 {
             // Palette RAM is not configurable, always mapped to the
             // internal palette control in VRAM.
