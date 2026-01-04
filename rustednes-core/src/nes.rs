@@ -75,11 +75,20 @@ impl Nes {
         for _ in 0..cycles {
             // There are 3 PPU cycles per CPU cycle.
             for _ in 0..3 {
-                self.ppu
-                    .tick(&mut self.cpu, &mut self.mapper, video_frame_sink);
+                let request_nmi = self.ppu.tick(&mut self.mapper, video_frame_sink);
+                if request_nmi {
+                    self.cpu.request_interrupt(cpu::Interrupt::Nmi);
+                }
             }
-            self.apu
-                .tick(&mut self.cpu, &mut self.mapper, audio_frame_sink);
+
+            // There is 1 APU cycle per CPU cycle.
+            let (request_irq, cpu_stall_cycles) = self.apu.tick(&mut self.mapper, audio_frame_sink);
+            if request_irq {
+                self.cpu.request_interrupt(cpu::Interrupt::Irq);
+            }
+            if cpu_stall_cycles > 0 {
+                self.cpu.stall(cpu_stall_cycles);
+            }
         }
 
         self.cycles += cycles as usize;

@@ -1,4 +1,3 @@
-use crate::cpu::{Cpu, Interrupt};
 use crate::mapper::{Mapper, MapperEnum};
 use crate::sink::*;
 
@@ -653,12 +652,14 @@ impl Ppu {
         self.cycles - self.scanline_start_cycle
     }
 
+    /// Run one PPU cycle. There are 3 PPU cycles per CPU cycle.
+    /// Returns whether an NMI should be requested.
     pub fn tick<V: VideoSink>(
         &mut self,
-        cpu: &mut Cpu,
         mapper: &mut MapperEnum,
         video_frame_sink: &mut V,
-    ) {
+    ) -> bool {
+        let mut request_nmi = false;
         let scanline_cycle = self.scanline_cycle();
 
         let on_prerender_scanline = self.scanline == PRE_RENDER_SCANLINE;
@@ -766,7 +767,7 @@ impl Ppu {
                 if scanline_cycle == 1 {
                     self.set_vblank();
                     if self.nmi_output && self.nmi_occurred {
-                        cpu.request_interrupt(Interrupt::Nmi);
+                        request_nmi = true;
                     }
                 }
             }
@@ -800,6 +801,8 @@ impl Ppu {
             self.scanline = VISIBLE_START_SCANLINE;
             self.frame += 1;
         }
+
+        request_nmi
     }
 
     pub fn read_byte(&mut self, mapper: &mut MapperEnum, address: u16) -> u8 {

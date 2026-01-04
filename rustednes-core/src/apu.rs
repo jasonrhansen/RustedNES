@@ -1,4 +1,4 @@
-use crate::cpu::{CPU_FREQUENCY, Cpu, Interrupt};
+use crate::cpu::CPU_FREQUENCY;
 use crate::mapper::{Mapper, MapperEnum};
 use crate::memory::Memory;
 use crate::sink::*;
@@ -144,20 +144,21 @@ impl Apu {
         self.frame_counter = state.frame_counter;
     }
 
+    /// Run one APU cycle. There is one APU cycle per CPU cycle.
+    /// Returns whether an IRQ should be requested and number of CPU cycles to stall.
     pub fn tick<A: AudioSink>(
         &mut self,
-        cpu: &mut Cpu,
         mapper: &mut MapperEnum,
         audio_frame_sink: &mut A,
-    ) {
+    ) -> (bool, u8) {
         self.cycles += 1;
 
-        self.step_timer(cpu, mapper);
+        let (mut request_irq, cpu_stall_cycles) = self.step_timer(mapper);
 
         if self.cycles % 2 == 0 {
             if self.frame_counter.divider_count == 0 {
                 self.frame_counter.divider_count = FrameCounter::DIVIDER_COUNT_RELOAD_VALUE;
-                self.step_frame_counter(cpu);
+                request_irq |= self.step_frame_counter();
             } else {
                 self.frame_counter.divider_count -= 1;
             }
@@ -171,6 +172,8 @@ impl Apu {
             }
             audio_frame_sink.write_sample(sample);
         }
+
+        (request_irq, cpu_stall_cycles)
     }
 
     fn generate_sample(&mut self) -> f32 {
@@ -206,7 +209,7 @@ impl Apu {
         pulse_out + tnd_out
     }
 
-    fn step_frame_counter(&mut self, cpu: &mut Cpu) {
+    fn step_frame_counter(&mut self) -> bool {
         // Four Step  Five Step    Function
         // ---------  -----------  -----------------------------
         // - - - f    - - - - -    IRQ (if bit 6 is clear)
@@ -254,10 +257,7 @@ impl Apu {
             }
         }
 
-        // Handle IRQ
-        if self.frame_counter.interrupt_flag {
-            cpu.request_interrupt(Interrupt::Irq);
-        }
+        self.frame_counter.interrupt_flag
     }
 
     fn step_length_counter(&mut self) {
@@ -279,15 +279,19 @@ impl Apu {
         self.noise.envelope.step();
     }
 
-    fn step_timer(&mut self, cpu: &mut Cpu, mapper: &mut MapperEnum) {
+    fn step_timer(&mut self, mapper: &mut MapperEnum) -> (bool, u8) {
+        let mut request_irq = false;
+        let mut cpu_stall_cycles = 0;
         if self.cycles % 2 == 0 {
             self.pulse_1.step_timer();
             self.pulse_2.step_timer();
             self.noise.step_timer();
-            self.dmc.step_timer(cpu, mapper);
+            (request_irq, cpu_stall_cycles) = self.dmc.step_timer(mapper);
         }
 
         self.triangle.step_timer();
+
+        (request_irq, cpu_stall_cycles)
     }
 
     fn read_status(&mut self) -> u8 {
@@ -858,12 +862,14 @@ impl Dmc {
         self.current_length = self.sample_length;
     }
 
-    fn step_timer(&mut self, cpu: &mut Cpu, mapper: &mut MapperEnum) {
+    fn step_timer(&mut self, mapper: &mut MapperEnum) -> (bool, u8) {
+        let mut request_irq = false;
+        let mut cpu_stall_cycles = 0;
         if self.enable_flag {
             if self.irq_flag {
-                cpu.request_interrupt(Interrupt::Irq);
+                request_irq = true;
             }
-            self.step_reader(cpu, mapper);
+            cpu_stall_cycles = self.step_reader(mapper);
             if self.tick_value == 0 {
                 self.tick_value = self.tick_period;
                 self.step_shifter();
@@ -871,11 +877,14 @@ impl Dmc {
                 self.tick_value -= 1;
             }
         }
+
+        (request_irq, cpu_stall_cycles)
     }
 
-    fn step_reader(&mut self, cpu: &mut Cpu, mapper: &mut MapperEnum) {
+    fn step_reader(&mut self, mapper: &mut MapperEnum) -> u8 {
+        let mut cpu_stall_cycles = 0;
         if self.current_length > 0 && self.bit_count == 0 {
-            cpu.stall(4);
+            cpu_stall_cycles = 4;
             self.shift_register = mapper.prg_read_byte(self.current_address);
             self.bit_count = 8;
             self.current_address += 1;
@@ -887,6 +896,8 @@ impl Dmc {
                 self.restart();
             }
         }
+
+        cpu_stall_cycles
     }
 
     fn step_shifter(&mut self) {
