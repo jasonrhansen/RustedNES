@@ -23,7 +23,6 @@ use rustednes_core::apu::SAMPLE_RATE;
 use rustednes_core::cartridge::*;
 use rustednes_core::game_genie::Cheat;
 use rustednes_core::input::*;
-use rustednes_core::mapper::Mapper;
 use rustednes_core::nes::*;
 use rustednes_core::ppu::*;
 use rustednes_core::serialize;
@@ -231,11 +230,11 @@ impl Context {
     unsafe fn handle_input(system: &mut System) {
         unsafe {
             {
-                let game_pad = &mut system.nes.interconnect.input.game_pad_1;
+                let game_pad = system.nes.game_pad_1();
                 Context::handle_game_pad(game_pad, 0);
             }
             {
-                let game_pad = &mut system.nes.interconnect.input.game_pad_2;
+                let game_pad = system.nes.game_pad_2();
                 Context::handle_game_pad(game_pad, 1);
             }
         }
@@ -422,12 +421,9 @@ pub unsafe extern "C" fn retro_get_memory_data(id: u32) -> *mut c_void {
     unsafe {
         match (*CONTEXT).system {
             Some(ref mut system) => match id & MEMORY_MASK {
-                MEMORY_SYSTEM_RAM => system.nes.interconnect.ram.as_mut_ptr() as *mut _,
-                MEMORY_VIDEO_RAM => system.nes.interconnect.ppu.mem.vram.as_mut_ptr() as *mut _,
-                MEMORY_SAVE_RAM => {
-                    let mut mapper = system.nes.interconnect.mapper.borrow_mut();
-                    mapper.sram() as *mut _
-                }
+                MEMORY_SYSTEM_RAM => system.nes.system_ram().as_mut_ptr() as *mut _,
+                MEMORY_VIDEO_RAM => system.nes.video_ram().as_mut_ptr() as *mut _,
+                MEMORY_SAVE_RAM => system.nes.save_ram() as *mut _,
                 _ => ptr::null_mut(),
             },
             _ => ptr::null_mut(),
@@ -440,12 +436,9 @@ pub unsafe extern "C" fn retro_get_memory_size(id: u32) -> size_t {
     unsafe {
         match (*CONTEXT).system {
             Some(ref mut system) => match id & MEMORY_MASK {
-                MEMORY_SYSTEM_RAM => system.nes.interconnect.ram.len(),
-                MEMORY_VIDEO_RAM => system.nes.interconnect.ppu.mem.vram.len(),
-                MEMORY_SAVE_RAM => {
-                    let mapper = system.nes.interconnect.mapper.borrow_mut();
-                    mapper.sram_size()
-                }
+                MEMORY_SYSTEM_RAM => system.nes.system_ram().len(),
+                MEMORY_VIDEO_RAM => system.nes.video_ram().len(),
+                MEMORY_SAVE_RAM => system.nes.save_ram_size(),
                 _ => 0,
             },
             _ => 0,

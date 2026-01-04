@@ -9,7 +9,6 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread;
 
 use rustednes_core::disassembler::Disassembler;
-use rustednes_core::memory::Memory;
 use rustednes_core::nes::Nes;
 use rustednes_core::sink::{AudioSink, VideoSink};
 
@@ -189,12 +188,14 @@ impl Debugger {
 
                 self.print_labels_at_cursor();
 
+                let mut bus = emulator.nes().system_bus();
+
                 const NUM_ROWS: u32 = 16;
                 const NUM_COLS: u32 = 16;
                 for _ in 0..NUM_ROWS {
                     print!("0x{:04x}  ", self.cursor);
                     for x in 0..NUM_COLS {
-                        let byte = emulator.nes().interconnect.read_byte(self.cursor);
+                        let byte = bus.read_byte(self.cursor);
                         self.cursor = self.cursor.wrapping_add(1);
                         print!("{:02x}", byte);
                         if x < NUM_COLS - 1 {
@@ -207,12 +208,16 @@ impl Debugger {
             Command::ShowPpuMem(address) => {
                 let mut cursor = address;
 
+                let nes = emulator.nes();
+                let ppu = &mut nes.ppu;
+                let mapper = &mut nes.mapper;
+
                 const NUM_ROWS: u32 = 16;
                 const NUM_COLS: u32 = 16;
                 for _ in 0..NUM_ROWS {
                     print!("0x{:04x}  ", cursor);
                     for x in 0..NUM_COLS {
-                        let byte = emulator.nes().interconnect.ppu.mem.read_byte(cursor);
+                        let byte = ppu.mem.read_byte(mapper, cursor);
                         cursor = (cursor + 1) % 0x4000;
                         print!("{:02x}", byte);
                         if x < NUM_COLS - 1 {
@@ -226,8 +231,9 @@ impl Debugger {
                 let sp = emulator.nes().cpu.regs().sp;
                 let addr = 0x0100 | sp as u16;
 
+                let mut bus = emulator.nes().system_bus();
                 for i in 0..min(10, 0x01FF - addr + 1) {
-                    let byte = emulator.nes().interconnect.read_byte(addr + i);
+                    let byte = bus.read_byte(addr + i);
                     println!("0x{:04x}  {:02x}", addr + i, byte);
                 }
             }
@@ -289,7 +295,8 @@ impl Debugger {
     fn disassemble_instruction(&mut self, nes: &mut Nes) -> u16 {
         self.print_labels_at_cursor();
         let mut d = Disassembler::new(self.cursor);
-        println!("{}", d.disassemble_next(&mut nes.interconnect));
+        let mut bus = nes.system_bus();
+        println!("{}", d.disassemble_next(&mut bus));
         d.pc
     }
 

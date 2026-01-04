@@ -6,9 +6,6 @@ use crate::sink::*;
 use once_cell::sync::Lazy;
 use serde_derive::{Deserialize, Serialize};
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 pub const CPU_CYCLES_PER_SAMPLE: u64 = 41;
 pub const SAMPLE_RATE: u32 = (CPU_FREQUENCY / CPU_CYCLES_PER_SAMPLE) as u32;
 
@@ -69,8 +66,6 @@ pub struct Apu {
     dmc: Dmc,
     frame_counter: FrameCounter,
 
-    mapper: Rc<RefCell<MapperEnum>>,
-
     filter: Box<dyn Filter>,
 
     pub settings: Settings,
@@ -89,7 +84,7 @@ pub struct State {
 }
 
 impl Apu {
-    pub fn new(mapper: Rc<RefCell<MapperEnum>>) -> Apu {
+    pub fn new() -> Apu {
         Apu {
             cycles: 0,
             last_sampled_cycles: 0,
@@ -99,7 +94,6 @@ impl Apu {
             noise: Noise::new(),
             dmc: Dmc::new(),
             frame_counter: FrameCounter::new(),
-            mapper,
             filter: Box::new(
                 LowPassFilter::new(0.815_686)
                     .chain(HighPassFilter::new(0.996_039))
@@ -150,10 +144,15 @@ impl Apu {
         self.frame_counter = state.frame_counter;
     }
 
-    pub fn step<A: AudioSink>(&mut self, cpu: &mut Cpu, audio_frame_sink: &mut A) {
+    pub fn tick<A: AudioSink>(
+        &mut self,
+        cpu: &mut Cpu,
+        mapper: &mut MapperEnum,
+        audio_frame_sink: &mut A,
+    ) {
         self.cycles += 1;
 
-        self.step_timer(cpu);
+        self.step_timer(cpu, mapper);
 
         if self.cycles % 2 == 0 {
             if self.frame_counter.divider_count == 0 {
@@ -280,12 +279,12 @@ impl Apu {
         self.noise.envelope.step();
     }
 
-    fn step_timer(&mut self, cpu: &mut Cpu) {
+    fn step_timer(&mut self, cpu: &mut Cpu, mapper: &mut MapperEnum) {
         if self.cycles % 2 == 0 {
             self.pulse_1.step_timer();
             self.pulse_2.step_timer();
             self.noise.step_timer();
-            self.dmc.step_timer(cpu, self.mapper.clone());
+            self.dmc.step_timer(cpu, mapper);
         }
 
         self.triangle.step_timer();
@@ -859,7 +858,7 @@ impl Dmc {
         self.current_length = self.sample_length;
     }
 
-    fn step_timer(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<MapperEnum>>) {
+    fn step_timer(&mut self, cpu: &mut Cpu, mapper: &mut MapperEnum) {
         if self.enable_flag {
             if self.irq_flag {
                 cpu.request_interrupt(Interrupt::Irq);
@@ -874,10 +873,9 @@ impl Dmc {
         }
     }
 
-    fn step_reader(&mut self, cpu: &mut Cpu, mapper: Rc<RefCell<MapperEnum>>) {
+    fn step_reader(&mut self, cpu: &mut Cpu, mapper: &mut MapperEnum) {
         if self.current_length > 0 && self.bit_count == 0 {
             cpu.stall(4);
-            let mut mapper = mapper.borrow_mut();
             self.shift_register = mapper.prg_read_byte(self.current_address);
             self.bit_count = 8;
             self.current_address += 1;

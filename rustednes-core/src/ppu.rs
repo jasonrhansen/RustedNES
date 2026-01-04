@@ -1,16 +1,13 @@
 use crate::cpu::{Cpu, Interrupt};
 use crate::mapper::{Mapper, MapperEnum};
-use crate::memory::Memory;
 use crate::sink::*;
 
 use bit_reverse::ParallelReverse;
 use bitflags::bitflags;
 use serde_derive::{Deserialize, Serialize};
 
-use std::cell::RefCell;
 use std::default::Default;
 use std::ops::{Deref, DerefMut};
-use std::rc::Rc;
 
 pub const SCREEN_WIDTH: usize = 256;
 pub const SCREEN_HEIGHT: usize = 240;
@@ -123,12 +120,12 @@ pub struct State {
 }
 
 impl Ppu {
-    pub fn new(mapper: Rc<RefCell<MapperEnum>>) -> Ppu {
+    pub fn new() -> Ppu {
         Ppu {
             cycles: 0,
             regs: Regs::new(),
             ppu_data_read_buffer: 0,
-            mem: MemMap::new(mapper),
+            mem: MemMap::new(),
             oam: Oam::new(),
             scanline: 0,
             scanline_start_cycle: 0,
@@ -312,19 +309,19 @@ impl Ppu {
         }
     }
 
-    fn read_ppu_data_byte(&mut self) -> u8 {
+    fn read_ppu_data_byte(&mut self, mapper: &mut MapperEnum) -> u8 {
         let address = self.regs.v;
 
         let data = if address < PaletteRam::START_ADDRESS {
             // Return contents of read buffer before the read.
             let read_buffer = self.ppu_data_read_buffer;
-            self.ppu_data_read_buffer = self.mem.read_byte(address);
+            self.ppu_data_read_buffer = self.mem.read_byte(mapper, address);
             read_buffer
         } else {
             // Palette data is returned immediately, but we need
             // fill read buffer with VRAM hidden by palette.
-            self.ppu_data_read_buffer = self.mem.read_byte(address - 0x1000);
-            self.mem.read_byte(address)
+            self.ppu_data_read_buffer = self.mem.read_byte(mapper, address - 0x1000);
+            self.mem.read_byte(mapper, address)
         };
 
         self.inc_ppu_addr();
@@ -332,9 +329,9 @@ impl Ppu {
         data
     }
 
-    fn write_ppu_data_byte(&mut self, val: u8) {
+    fn write_ppu_data_byte(&mut self, mapper: &mut MapperEnum, val: u8) {
         let address = self.regs.v;
-        self.mem.write_byte(address, val);
+        self.mem.write_byte(mapper, address, val);
         self.inc_ppu_addr();
     }
 
@@ -411,20 +408,22 @@ impl Ppu {
             + (self.name_table_byte as u16 * 16 + fine_y)
     }
 
-    fn fetch_name_table_byte(&mut self) {
-        self.name_table_byte = self.mem.read_byte(self.current_name_address());
+    fn fetch_name_table_byte(&mut self, mapper: &mut MapperEnum) {
+        self.name_table_byte = self.mem.read_byte(mapper, self.current_name_address());
     }
 
-    fn fetch_attribute_table_byte(&mut self) {
-        self.attribute_table_byte = self.mem.read_byte(self.current_attribute_address());
+    fn fetch_attribute_table_byte(&mut self, mapper: &mut MapperEnum) {
+        self.attribute_table_byte = self.mem.read_byte(mapper, self.current_attribute_address());
     }
 
-    fn fetch_bitmap_byte_lo(&mut self) {
-        self.tile_bitmap_byte_lo = self.mem.read_byte(self.current_pattern_address());
+    fn fetch_bitmap_byte_lo(&mut self, mapper: &mut MapperEnum) {
+        self.tile_bitmap_byte_lo = self.mem.read_byte(mapper, self.current_pattern_address());
     }
 
-    fn fetch_bitmap_byte_hi(&mut self) {
-        self.tile_bitmap_byte_hi = self.mem.read_byte(self.current_pattern_address() + 8);
+    fn fetch_bitmap_byte_hi(&mut self, mapper: &mut MapperEnum) {
+        self.tile_bitmap_byte_hi = self
+            .mem
+            .read_byte(mapper, self.current_pattern_address() + 8);
     }
 
     fn load_background_registers(&mut self) {
@@ -449,7 +448,7 @@ impl Ppu {
         self.background_palette_shift_hi <<= 1;
     }
 
-    fn fetch_sprite_tile(&mut self, sprite_index: usize) {
+    fn fetch_sprite_tile(&mut self, mapper: &mut MapperEnum, sprite_index: usize) {
         // Don't attempt to fetch tiles for empty sprite slots.
         if sprite_index >= self.oam.secondary_write_index / 4 {
             self.sprite_attribute_latches[sprite_index] = SpriteAttributes(0xFF);
@@ -494,8 +493,8 @@ impl Ppu {
             }
         };
 
-        let mut pattern_lo = self.mem.read_byte(pattern_addr);
-        let mut pattern_hi = self.mem.read_byte(pattern_addr + 8);
+        let mut pattern_lo = self.mem.read_byte(mapper, pattern_addr);
+        let mut pattern_hi = self.mem.read_byte(mapper, pattern_addr + 8);
 
         if sprite.flip_horizontally() {
             pattern_lo = pattern_lo.swap_bits();
@@ -523,6 +522,7 @@ impl Ppu {
 
     fn color_from_palette_index(&mut self, index: u8) -> u8 {
         self.mem
+            .palette_ram
             .read_byte(PaletteRam::START_ADDRESS | (index & 0x1F) as u16)
     }
 
@@ -653,7 +653,12 @@ impl Ppu {
         self.cycles - self.scanline_start_cycle
     }
 
-    pub fn step<V: VideoSink>(&mut self, cpu: &mut Cpu, video_frame_sink: &mut V) {
+    pub fn tick<V: VideoSink>(
+        &mut self,
+        cpu: &mut Cpu,
+        mapper: &mut MapperEnum,
+        video_frame_sink: &mut V,
+    ) {
         let scanline_cycle = self.scanline_cycle();
 
         let on_prerender_scanline = self.scanline == PRE_RENDER_SCANLINE;
@@ -686,10 +691,10 @@ impl Ppu {
 
                     if on_bg_fetch_cycle {
                         match scanline_cycle % 8 {
-                            1 => self.fetch_name_table_byte(),
-                            3 => self.fetch_attribute_table_byte(),
-                            5 => self.fetch_bitmap_byte_lo(),
-                            7 => self.fetch_bitmap_byte_hi(),
+                            1 => self.fetch_name_table_byte(mapper),
+                            3 => self.fetch_attribute_table_byte(mapper),
+                            5 => self.fetch_bitmap_byte_lo(mapper),
+                            7 => self.fetch_bitmap_byte_hi(mapper),
                             0 => self.load_background_registers(),
                             _ => (),
                         }
@@ -697,7 +702,7 @@ impl Ppu {
 
                     // Unused NT fetches
                     if scanline_cycle == 337 || scanline_cycle == 339 {
-                        self.mem.read_byte(self.current_name_address());
+                        self.mem.read_byte(mapper, self.current_name_address());
                     }
 
                     // Increment the effective x scroll coordinate every 8 cycles
@@ -750,7 +755,7 @@ impl Ppu {
                 if on_visible_scanline || on_prerender_scanline {
                     // Fetch sprite tile data for the _next_ scanline.
                     if (257..=320).contains(&scanline_cycle) && scanline_cycle % 8 == 0 {
-                        self.fetch_sprite_tile(((scanline_cycle - 264) / 8) as usize);
+                        self.fetch_sprite_tile(mapper, ((scanline_cycle - 264) / 8) as usize);
                     }
                 }
             }
@@ -796,11 +801,8 @@ impl Ppu {
             self.frame += 1;
         }
     }
-}
 
-// Implements mapping of PPU registers into CPU address space
-impl Memory for Ppu {
-    fn read_byte(&mut self, address: u16) -> u8 {
+    pub fn read_byte(&mut self, mapper: &mut MapperEnum, address: u16) -> u8 {
         if !((0x2000..0x4000).contains(&address)) {
             panic!(
                 "Invalid read from PPU memory-mapped registers: {:X}",
@@ -813,7 +815,7 @@ impl Memory for Ppu {
         let val = match address {
             PPUSTATUS_ADDRESS => self.read_ppu_status(),
             OAMDATA_ADDRESS => self.read_oam_byte(),
-            PPUDATA_ADDRESS => self.read_ppu_data_byte(),
+            PPUDATA_ADDRESS => self.read_ppu_data_byte(mapper),
             _ => self.ppu_gen_latch,
         };
 
@@ -822,7 +824,7 @@ impl Memory for Ppu {
         val
     }
 
-    fn write_byte(&mut self, address: u16, value: u8) {
+    pub fn write_byte(&mut self, mapper: &mut MapperEnum, address: u16, value: u8) {
         if !((0x2000..0x4000).contains(&address)) {
             panic!(
                 "Invalid write to PPU memory-mapped registers, address: {:X}, value: {}",
@@ -852,7 +854,7 @@ impl Memory for Ppu {
             OAMDATA_ADDRESS => self.write_oam_byte(value),
             PPUSCROLL_ADDRESS => self.write_ppu_scroll(value),
             PPUADDR_ADDRESS => self.write_ppu_addr(value),
-            PPUDATA_ADDRESS => self.write_ppu_data_byte(value),
+            PPUDATA_ADDRESS => self.write_ppu_data_byte(mapper, value),
             _ => (),
         }
     }
@@ -1039,16 +1041,6 @@ impl Oam {
     }
 }
 
-impl Memory for Oam {
-    fn read_byte(&mut self, address: u16) -> u8 {
-        self[address as usize]
-    }
-
-    fn write_byte(&mut self, address: u16, value: u8) {
-        self[address as usize] = value;
-    }
-}
-
 impl Deref for Oam {
     type Target = Vec<u8>;
 
@@ -1078,9 +1070,7 @@ impl Vram {
             bytes: vec![0u8; Vram::SIZE],
         }
     }
-}
 
-impl Memory for Vram {
     fn read_byte(&mut self, address: u16) -> u8 {
         self.bytes[address as usize]
     }
@@ -1129,9 +1119,7 @@ impl PaletteRam {
             index
         }
     }
-}
 
-impl Memory for PaletteRam {
     fn read_byte(&mut self, address: u16) -> u8 {
         self.bytes[PaletteRam::index(address)]
     }
@@ -1142,30 +1130,24 @@ impl Memory for PaletteRam {
 }
 
 pub struct MemMap {
-    pub vram: Vram,
+    pub(crate) vram: Vram,
     palette_ram: PaletteRam,
-    mapper: Rc<RefCell<MapperEnum>>,
 }
 
 impl MemMap {
-    pub fn new(mapper: Rc<RefCell<MapperEnum>>) -> Self {
+    pub fn new() -> Self {
         MemMap {
             vram: Vram::new(),
             palette_ram: PaletteRam::new(),
-            mapper,
         }
     }
-}
 
-impl Memory for MemMap {
-    fn read_byte(&mut self, address: u16) -> u8 {
+    pub fn read_byte(&mut self, mapper: &mut MapperEnum, address: u16) -> u8 {
         let address = address & 0x3FFF;
 
         if address < 0x2000 {
-            let mut mapper = self.mapper.borrow_mut();
             mapper.chr_read_byte(address)
         } else if address < PaletteRam::START_ADDRESS {
-            let mapper = self.mapper.borrow();
             let mirroring = mapper.mirroring();
             self.vram.read_byte(mirroring.mirror_address(address))
         } else if address < 0x4000 {
@@ -1177,14 +1159,12 @@ impl Memory for MemMap {
         }
     }
 
-    fn write_byte(&mut self, address: u16, value: u8) {
+    fn write_byte(&mut self, mapper: &mut MapperEnum, address: u16, value: u8) {
         let address = address & 0x3FFF;
 
         if address < 0x2000 {
-            let mut mapper = self.mapper.borrow_mut();
             mapper.chr_write_byte(address, value);
         } else if address < PaletteRam::START_ADDRESS {
-            let mapper = self.mapper.borrow();
             let mirroring = mapper.mirroring();
             self.vram
                 .write_byte(mirroring.mirror_address(address) & 0x07FF, value)

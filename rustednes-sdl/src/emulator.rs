@@ -7,7 +7,6 @@ use rustednes_core::cartridge::Cartridge;
 use rustednes_core::cpu::CPU_FREQUENCY;
 use rustednes_core::input::Button;
 use rustednes_core::mapper::Mapper;
-use rustednes_core::memory::Memory;
 use rustednes_core::nes::Nes;
 use rustednes_core::ppu::{SCREEN_HEIGHT, SCREEN_WIDTH};
 use rustednes_core::sink::*;
@@ -289,27 +288,27 @@ where
                             self.cycle_debug_palette_selector();
                         }
                         (Keycode::P, Mod::NOMOD) => {
-                            let settings = &mut self.nes.interconnect.apu.settings;
+                            let settings = &mut self.nes.apu.settings;
                             settings.pulse_1_enabled = !settings.pulse_1_enabled;
                         }
                         (Keycode::LeftBracket, Mod::NOMOD) => {
-                            let settings = &mut self.nes.interconnect.apu.settings;
+                            let settings = &mut self.nes.apu.settings;
                             settings.pulse_2_enabled = !settings.pulse_2_enabled;
                         }
                         (Keycode::T, Mod::NOMOD) => {
-                            let settings = &mut self.nes.interconnect.apu.settings;
+                            let settings = &mut self.nes.apu.settings;
                             settings.triangle_enabled = !settings.triangle_enabled;
                         }
                         (Keycode::N, Mod::NOMOD) => {
-                            let settings = &mut self.nes.interconnect.apu.settings;
+                            let settings = &mut self.nes.apu.settings;
                             settings.noise_enabled = !settings.noise_enabled;
                         }
                         (Keycode::D, Mod::NOMOD) => {
-                            let settings = &mut self.nes.interconnect.apu.settings;
+                            let settings = &mut self.nes.apu.settings;
                             settings.dmc_enabled = !settings.dmc_enabled;
                         }
                         (Keycode::F, Mod::NOMOD) => {
-                            let settings = &mut self.nes.interconnect.apu.settings;
+                            let settings = &mut self.nes.apu.settings;
                             settings.filter_enabled = !settings.filter_enabled;
                         }
                         _ => {}
@@ -356,7 +355,7 @@ where
     }
 
     fn update_gamepad(&mut self, keyboard_state: KeyboardState) {
-        let game_pad_1 = &mut self.nes.interconnect.input.game_pad_1;
+        let game_pad_1 = &mut self.nes.input.game_pad_1;
 
         game_pad_1.set_button_pressed(Button::A, keyboard_state.is_scancode_pressed(Scancode::X));
         game_pad_1.set_button_pressed(Button::B, keyboard_state.is_scancode_pressed(Scancode::Z));
@@ -443,16 +442,18 @@ where
         // $3F15-$3F17 	Sprite palette 1
         // $3F19-$3F1B 	Sprite palette 2
         // $3F1D-$3F1F 	Sprite palette 3
+        let ppu = &mut self.nes.ppu;
+        let mapper = &mut self.nes.mapper;
         let palette: Vec<u32> = (0x3F00..=0x3F1F)
             .map(|addr| {
                 let addr = if addr % 4 == 0 { 0x3F00 } else { addr };
-                XRGB8888_PALETTE[(self.nes.interconnect.ppu.mem.read_byte(addr) & 0x3F) as usize]
+                XRGB8888_PALETTE[(ppu.mem.read_byte(mapper, addr) & 0x3F) as usize]
             })
             .collect();
 
         let pixel_format: PixelFormat = PixelFormatEnum::RGB888.try_into().unwrap();
 
-        let mut mapper = self.nes.interconnect.mapper.borrow_mut();
+        let mapper = &mut self.nes.mapper;
 
         let texture_creator = debug_canvas.texture_creator();
         let mut texture = texture_creator
