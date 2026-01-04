@@ -707,7 +707,7 @@ impl Ppu {
                     }
 
                     // Increment the effective x scroll coordinate every 8 cycles
-                    if on_bg_fetch_cycle && scanline_cycle % 8 == 0 {
+                    if on_bg_fetch_cycle && scanline_cycle.is_multiple_of(8) {
                         self.inc_coarse_x_with_wrap();
                     }
 
@@ -738,7 +738,7 @@ impl Ppu {
                             self.sprite_evaluation_init();
                         }
                         2..=64 => {
-                            if scanline_cycle % 2 == 0 {
+                            if scanline_cycle.is_multiple_of(2) {
                                 self.oam.secondary[((scanline_cycle / 2) - 1) as usize] = 0xFF;
                             }
                         }
@@ -755,7 +755,7 @@ impl Ppu {
 
                 if on_visible_scanline || on_prerender_scanline {
                     // Fetch sprite tile data for the _next_ scanline.
-                    if (257..=320).contains(&scanline_cycle) && scanline_cycle % 8 == 0 {
+                    if (257..=320).contains(&scanline_cycle) && scanline_cycle.is_multiple_of(8) {
                         self.fetch_sprite_tile(mapper, ((scanline_cycle - 264) / 8) as usize);
                     }
                 }
@@ -789,7 +789,7 @@ impl Ppu {
             (self.rendering_enabled() &&
             self.scanline == PRE_RENDER_SCANLINE &&
             scanline_cycle == CYCLES_PER_SCANLINE - 2 &&
-            self.frame % 2 != 0)
+            !self.frame.is_multiple_of(2))
         {
             self.scanline_start_cycle = self.cycles;
             self.scanline += 1;
@@ -860,6 +860,12 @@ impl Ppu {
             PPUDATA_ADDRESS => self.write_ppu_data_byte(mapper, value),
             _ => (),
         }
+    }
+}
+
+impl Default for Ppu {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -1116,7 +1122,7 @@ impl PaletteRam {
         let index = (address & 0x001F) as usize;
 
         // Addresses 0x3F10/0x3F14/0x3F18/0x3F1C are mirrors of 0x3F00/0x3F04/0x3F08/0x3F0C
-        if index >= 0x10 && index % 4 == 0 {
+        if index >= 0x10 && index.is_multiple_of(4) {
             index - 0x10
         } else {
             index
@@ -1181,6 +1187,12 @@ impl MemMap {
                 address, value
             )
         }
+    }
+}
+
+impl Default for MemMap {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

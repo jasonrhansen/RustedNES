@@ -39,7 +39,7 @@ impl<'a> SystemBus<'a> {
         let byte = if address < 0x2000 {
             self.ram.read_byte(address)
         } else if address < 0x4000 {
-            self.ppu.read_byte(&mut self.mapper, address & 0x2007)
+            self.ppu.read_byte(self.mapper, address & 0x2007)
         } else if address < 0x4016 {
             self.apu.read_byte(address)
         } else if address < 0x4018 {
@@ -62,7 +62,7 @@ impl<'a> SystemBus<'a> {
         if address < 0x2000 {
             self.ram.write_byte(address, value);
         } else if address < 0x4000 {
-            self.ppu.write_byte(&mut self.mapper, address, value);
+            self.ppu.write_byte(self.mapper, address, value);
         } else if address < 0x4016 || address == 0x4017 {
             self.apu.write_byte(address, value);
         } else if address < 0x4018 {

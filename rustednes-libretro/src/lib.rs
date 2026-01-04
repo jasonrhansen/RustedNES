@@ -288,7 +288,7 @@ static mut CALLBACKS: Callbacks = Callbacks {
     environment: None,
 };
 
-static mut CONTEXT: *mut Context = 0 as *mut _;
+static mut CONTEXT: *mut Context = std::ptr::null_mut();
 
 #[unsafe(no_mangle)]
 pub extern "C" fn retro_api_version() -> u32 {

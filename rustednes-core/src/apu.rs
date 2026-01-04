@@ -155,7 +155,7 @@ impl Apu {
 
         let (mut request_irq, cpu_stall_cycles) = self.step_timer(mapper);
 
-        if self.cycles % 2 == 0 {
+        if self.cycles.is_multiple_of(2) {
             if self.frame_counter.divider_count == 0 {
                 self.frame_counter.divider_count = FrameCounter::DIVIDER_COUNT_RELOAD_VALUE;
                 request_irq |= self.step_frame_counter();
@@ -282,7 +282,7 @@ impl Apu {
     fn step_timer(&mut self, mapper: &mut MapperEnum) -> (bool, u8) {
         let mut request_irq = false;
         let mut cpu_stall_cycles = 0;
-        if self.cycles % 2 == 0 {
+        if self.cycles.is_multiple_of(2) {
             self.pulse_1.step_timer();
             self.pulse_2.step_timer();
             self.noise.step_timer();
@@ -379,6 +379,12 @@ impl Apu {
             self.step_sweep();
             self.step_envelope_and_linear_counter();
         }
+    }
+}
+
+impl Default for Apu {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
