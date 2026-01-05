@@ -28,7 +28,7 @@ impl Mapper3 {
 }
 
 impl Mapper for Mapper3 {
-    fn prg_read_byte(&mut self, address: u16) -> u8 {
+    fn prg_peek_byte(&self, address: u16) -> u8 {
         if address < 0x8000 {
             0
         } else {

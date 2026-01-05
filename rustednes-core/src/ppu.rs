@@ -23,7 +23,7 @@ const PPUCTRL_ADDRESS: u16 = 0x2000;
 const PPUMASK_ADDRESS: u16 = 0x2001;
 const PPUSTATUS_ADDRESS: u16 = 0x2002;
 const OAMADDR_ADDRESS: u16 = 0x2003;
-const OAMDATA_ADDRESS: u16 = 0x2004;
+pub const OAMDATA_ADDRESS: u16 = 0x2004;
 const PPUSCROLL_ADDRESS: u16 = 0x2005;
 const PPUADDR_ADDRESS: u16 = 0x2006;
 const PPUDATA_ADDRESS: u16 = 0x2007;
@@ -85,8 +85,8 @@ pub struct Ppu {
     sprite_x_counters: [u8; 8],
     sprite_0_on_scanline: bool,
 
-    nmi_occurred: bool,
-    nmi_output: bool,
+    pub nmi_occurred: bool,
+    pub nmi_output: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -214,6 +214,11 @@ impl Ppu {
         self.regs.ppu_mask = PpuMask::NONE;
         self.regs.ppu_status = PpuStatus::RESET_VALUE;
         self.ppu_data_read_buffer = 0;
+    }
+
+    pub fn initialize_nestest(&mut self) {
+        self.scanline = 0;
+        self.cycles = 21;
     }
 
     fn read_ppu_status(&mut self) -> u8 {
@@ -654,12 +659,7 @@ impl Ppu {
 
     /// Run one PPU cycle. There are 3 PPU cycles per CPU cycle.
     /// Returns whether an NMI should be requested.
-    pub fn tick<V: VideoSink>(
-        &mut self,
-        mapper: &mut MapperEnum,
-        video_frame_sink: &mut V,
-    ) -> bool {
-        let mut request_nmi = false;
+    pub fn tick<V: VideoSink>(&mut self, mapper: &mut MapperEnum, video_frame_sink: &mut V) {
         let scanline_cycle = self.scanline_cycle();
 
         let on_prerender_scanline = self.scanline == PRE_RENDER_SCANLINE;
@@ -766,9 +766,6 @@ impl Ppu {
             VBLANK_START_SCANLINE => {
                 if scanline_cycle == 1 {
                     self.set_vblank();
-                    if self.nmi_output && self.nmi_occurred {
-                        request_nmi = true;
-                    }
                 }
             }
             PRE_RENDER_SCANLINE => {
@@ -801,12 +798,10 @@ impl Ppu {
             self.scanline = VISIBLE_START_SCANLINE;
             self.frame += 1;
         }
-
-        request_nmi
     }
 
     pub fn read_byte(&mut self, mapper: &mut MapperEnum, address: u16) -> u8 {
-        if !((0x2000..0x4000).contains(&address)) {
+        if !((0x2000..=0x3FFF).contains(&address)) {
             panic!(
                 "Invalid read from PPU memory-mapped registers: {:X}",
                 address
@@ -823,6 +818,26 @@ impl Ppu {
         };
 
         self.ppu_gen_latch = val;
+
+        val
+    }
+
+    pub fn peek_byte(&self, address: u16) -> u8 {
+        if !((0x2000..=0x3FFF).contains(&address)) {
+            panic!(
+                "Invalid read from PPU memory-mapped registers: {:X}",
+                address
+            )
+        }
+
+        let address = address & 0x2007;
+
+        let val = match address {
+            PPUSTATUS_ADDRESS => self.regs.ppu_status.bits(),
+            OAMDATA_ADDRESS => self.read_oam_byte(),
+            PPUDATA_ADDRESS => self.mem.vram.read_byte(address),
+            _ => self.ppu_gen_latch,
+        };
 
         val
     }
@@ -1080,7 +1095,7 @@ impl Vram {
         }
     }
 
-    fn read_byte(&mut self, address: u16) -> u8 {
+    fn read_byte(&self, address: u16) -> u8 {
         self.bytes[address as usize]
     }
 

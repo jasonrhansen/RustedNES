@@ -33,6 +33,10 @@ impl Ram {
     pub fn new() -> Self {
         Default::default()
     }
+
+    pub fn peek_byte(&self, address: u16) -> u8 {
+        self[address as usize & (RAM_SIZE - 1)]
+    }
 }
 
 // For the RAM we only use the bottom 11 bits of the address.

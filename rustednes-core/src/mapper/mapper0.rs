@@ -18,7 +18,7 @@ pub struct State {
 }
 
 impl Mapper for Mapper0 {
-    fn prg_read_byte(&mut self, address: u16) -> u8 {
+    fn prg_peek_byte(&self, address: u16) -> u8 {
         if address < 0x6000 {
             0
         } else if address < 0x8000 {

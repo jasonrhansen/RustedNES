@@ -26,14 +26,14 @@ impl Mapper7 {
         (bank as usize * 0x8000) | (address as usize & 0x7FFF)
     }
 
-    fn read_prg_rom(&mut self, address: u16) -> u8 {
+    fn read_prg_rom(&self, address: u16) -> u8 {
         let rom_addr = Mapper7::prg_rom_address(self.prg_rom_bank, address);
         self.cartridge.prg_rom[rom_addr]
     }
 }
 
 impl Mapper for Mapper7 {
-    fn prg_read_byte(&mut self, address: u16) -> u8 {
+    fn prg_peek_byte(&self, address: u16) -> u8 {
         if address < 0x8000 {
             0
         } else {

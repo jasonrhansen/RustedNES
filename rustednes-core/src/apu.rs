@@ -110,6 +110,14 @@ impl Apu {
         }
     }
 
+    pub fn peek_byte(&self, address: u16) -> u8 {
+        if address == 0x4015 {
+            self.read_status()
+        } else {
+            0
+        }
+    }
+
     pub fn reset(&mut self) {
         self.cycles = 0;
         self.pulse_1 = Pulse::new(SweepNegationType::OnesComplement);
@@ -145,20 +153,16 @@ impl Apu {
     }
 
     /// Run one APU cycle. There is one APU cycle per CPU cycle.
-    /// Returns whether an IRQ should be requested and number of CPU cycles to stall.
-    pub fn tick<A: AudioSink>(
-        &mut self,
-        mapper: &mut MapperEnum,
-        audio_frame_sink: &mut A,
-    ) -> (bool, u8) {
+    /// Returns the number of CPU cycles to stall.
+    pub fn tick<A: AudioSink>(&mut self, mapper: &mut MapperEnum, audio_frame_sink: &mut A) -> u8 {
         self.cycles += 1;
 
-        let (mut request_irq, cpu_stall_cycles) = self.step_timer(mapper);
+        let cpu_stall_cycles = self.step_timer(mapper);
 
         if self.cycles.is_multiple_of(2) {
             if self.frame_counter.divider_count == 0 {
                 self.frame_counter.divider_count = FrameCounter::DIVIDER_COUNT_RELOAD_VALUE;
-                request_irq |= self.step_frame_counter();
+                self.step_frame_counter();
             } else {
                 self.frame_counter.divider_count -= 1;
             }
@@ -173,7 +177,7 @@ impl Apu {
             audio_frame_sink.write_sample(sample);
         }
 
-        (request_irq, cpu_stall_cycles)
+        cpu_stall_cycles
     }
 
     fn generate_sample(&mut self) -> f32 {
@@ -209,7 +213,7 @@ impl Apu {
         pulse_out + tnd_out
     }
 
-    fn step_frame_counter(&mut self) -> bool {
+    fn step_frame_counter(&mut self) {
         // Four Step  Five Step    Function
         // ---------  -----------  -----------------------------
         // - - - f    - - - - -    IRQ (if bit 6 is clear)
@@ -231,7 +235,7 @@ impl Apu {
                     }
                     3 => {
                         if !self.frame_counter.interrupt_inhibit_flag {
-                            self.frame_counter.interrupt_flag = true;
+                            self.frame_counter.irq_pending = true;
                         }
                         self.step_length_counter();
                         self.step_sweep();
@@ -256,8 +260,6 @@ impl Apu {
                 self.frame_counter.sequence_frame = (self.frame_counter.sequence_frame + 1) % 5;
             }
         }
-
-        self.frame_counter.interrupt_flag
     }
 
     fn step_length_counter(&mut self) {
@@ -279,22 +281,21 @@ impl Apu {
         self.noise.envelope.step();
     }
 
-    fn step_timer(&mut self, mapper: &mut MapperEnum) -> (bool, u8) {
-        let mut request_irq = false;
+    fn step_timer(&mut self, mapper: &mut MapperEnum) -> u8 {
         let mut cpu_stall_cycles = 0;
         if self.cycles.is_multiple_of(2) {
             self.pulse_1.step_timer();
             self.pulse_2.step_timer();
             self.noise.step_timer();
-            (request_irq, cpu_stall_cycles) = self.dmc.step_timer(mapper);
+            cpu_stall_cycles = self.dmc.step_timer(mapper);
         }
 
         self.triangle.step_timer();
 
-        (request_irq, cpu_stall_cycles)
+        cpu_stall_cycles
     }
 
-    fn read_status(&mut self) -> u8 {
+    fn read_status(&self) -> u8 {
         let mut status = 0x00;
 
         if self.pulse_1.length_counter.count > 0 {
@@ -317,7 +318,7 @@ impl Apu {
             status |= 0x10;
         }
 
-        if self.frame_counter.interrupt_flag {
+        if self.frame_counter.irq_pending {
             status |= 0x40;
         }
 
@@ -325,12 +326,12 @@ impl Apu {
             status |= 0x80;
         }
 
-        self.frame_counter.interrupt_flag = false;
-
         status
     }
 
     fn write_status(&mut self, value: u8) {
+        self.dmc.irq_pending = false;
+
         self.pulse_1.enabled = (value & 0x01) != 0;
         if !self.pulse_1.enabled {
             self.pulse_1.length_counter.reset();
@@ -370,15 +371,17 @@ impl Apu {
         self.frame_counter.divider_count = FrameCounter::DIVIDER_COUNT_RELOAD_VALUE;
 
         self.frame_counter.interrupt_inhibit_flag = value & 0x40 != 0;
-        if self.frame_counter.interrupt_inhibit_flag {
-            self.frame_counter.interrupt_flag = false;
-        }
+        self.frame_counter.irq_pending = false;
 
         if self.frame_counter.mode == FrameCounterMode::FiveStep {
             self.step_length_counter();
             self.step_sweep();
             self.step_envelope_and_linear_counter();
         }
+    }
+
+    pub fn irq_pending(&self) -> bool {
+        self.frame_counter.irq_pending || self.dmc.irq_pending
     }
 }
 
@@ -391,6 +394,7 @@ impl Default for Apu {
 impl Memory for Apu {
     fn read_byte(&mut self, address: u16) -> u8 {
         if address == 0x4015 {
+            self.frame_counter.irq_pending = false;
             self.read_status()
         } else {
             0
@@ -816,6 +820,7 @@ pub struct Dmc {
     enable_flag: bool,
     loop_flag: bool,
     irq_flag: bool,
+    irq_pending: bool,
     value: u8,
     sample_address: u16,
     sample_length: u16,
@@ -833,6 +838,7 @@ impl Dmc {
             enable_flag: false,
             loop_flag: false,
             irq_flag: false,
+            irq_pending: false,
             value: 0,
             sample_address: 0,
             sample_length: 0,
@@ -868,12 +874,11 @@ impl Dmc {
         self.current_length = self.sample_length;
     }
 
-    fn step_timer(&mut self, mapper: &mut MapperEnum) -> (bool, u8) {
-        let mut request_irq = false;
+    fn step_timer(&mut self, mapper: &mut MapperEnum) -> u8 {
         let mut cpu_stall_cycles = 0;
         if self.enable_flag {
             if self.irq_flag {
-                request_irq = true;
+                self.irq_pending = true;
             }
             cpu_stall_cycles = self.step_reader(mapper);
             if self.tick_value == 0 {
@@ -884,7 +889,7 @@ impl Dmc {
             }
         }
 
-        (request_irq, cpu_stall_cycles)
+        cpu_stall_cycles
     }
 
     fn step_reader(&mut self, mapper: &mut MapperEnum) -> u8 {
@@ -939,7 +944,7 @@ pub struct FrameCounter {
     divider_count: u16,
     sequence_frame: u8,
     mode: FrameCounterMode,
-    interrupt_flag: bool,
+    irq_pending: bool,
     interrupt_inhibit_flag: bool,
 }
 
@@ -951,7 +956,7 @@ impl FrameCounter {
             divider_count: FrameCounter::DIVIDER_COUNT_RELOAD_VALUE,
             sequence_frame: 0,
             mode: FrameCounterMode::FourStep,
-            interrupt_flag: false,
+            irq_pending: false,
             interrupt_inhibit_flag: false,
         }
     }

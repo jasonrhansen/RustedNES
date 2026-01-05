@@ -16,5 +16,5 @@ where
     fn mode(&self) -> EmulationMode;
     fn set_mode(&mut self, mode: EmulationMode);
     fn reset_start_time(&mut self);
-    fn step(&mut self, video_frame_sink: &mut V) -> (u32, bool);
+    fn step(&mut self, video_frame_sink: &mut V) -> usize;
 }
