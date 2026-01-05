@@ -6,6 +6,14 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
+pub type CycleFn = fn(&mut Cpu, bus: &mut SystemBus) -> bool;
+
+#[derive(Copy, Clone)]
+pub struct Instruction {
+    name: &'static str,
+    cycles: &'static [CycleFn],
+}
+
 pub const OAMDATA_ADDRESS: u16 = 0x2004;
 pub const OAMDMA_ADDRESS: u16 = 0x4014;
 pub const CPU_FREQUENCY: u64 = 1_789_773;
@@ -124,7 +132,6 @@ fn mem_pages_same(m1: u16, m2: u16) -> bool {
 
 #[derive(Default)]
 pub struct Cpu {
-    pub cycles: u64,
     stall_cycles: u8,
     regs: Regs,
     flags: Flags,
@@ -132,11 +139,17 @@ pub struct Cpu {
 
     pub watchpoints: HashSet<u16>,
     trigger_watchpoint: bool,
+
+    // Tempory mid-instruction data to be able to run one cycle at a time.
+    opcode: u8,
+    cycle: u8,
+    addr_abs: u16,
+    rel_offset: i16,
+    fetched_data: u8,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct State {
-    pub cycles: u64,
     pub stall_cycles: u8,
     pub regs: Regs,
     pub flags: Flags,
@@ -150,7 +163,6 @@ impl Cpu {
 
     pub fn get_state(&self) -> State {
         State {
-            cycles: self.cycles,
             stall_cycles: self.stall_cycles,
             regs: self.regs,
             flags: self.flags,
@@ -159,7 +171,6 @@ impl Cpu {
     }
 
     pub fn apply_state(&mut self, state: &State) {
-        self.cycles = state.cycles;
         self.stall_cycles = state.stall_cycles;
         self.regs = state.regs;
         self.flags = state.flags;
@@ -192,6 +203,41 @@ impl Cpu {
             n: false,
         };
         self.interrupt = None;
+    }
+
+    /// Runs a single CPU cycle.
+    pub fn tick(&mut self, bus: &mut SystemBus) -> (bool, bool) {
+        self.trigger_watchpoint = false;
+
+        if self.stall_cycles > 0 {
+            self.stall_cycles -= 1;
+            return (false, false);
+        }
+
+        // TODO: Handle interrupts one cycle at a time.
+
+        if self.cycle == 0 {
+            // Fetch new instruction.
+            self.opcode = self.next_pc_byte(bus);
+            self.cycle = 1;
+        } else {
+            // Continue in-progress instruction.
+            let instr = match &OPCODES[self.opcode as usize] {
+                Some(instr) => instr,
+                None => panic!("Unsupported opcode: {:X}", self.opcode),
+            };
+
+            let cycle_fn = instr.cycles[self.cycle as usize - 1];
+            let completed = cycle_fn(self, bus);
+
+            self.cycle += 1;
+
+            if completed || self.cycle as usize > instr.cycles.len() {
+                self.cycle = 0;
+            }
+        }
+
+        (self.cycle == 0, self.trigger_watchpoint)
     }
 
     pub fn step(&mut self, bus: &mut SystemBus) -> (u32, bool) {
@@ -230,13 +276,6 @@ impl Cpu {
             let val = self.read_byte(bus, start + i);
             self.write_byte(bus, OAMDATA_ADDRESS, val);
         }
-    }
-
-    #[inline(always)]
-    fn read_byte(&mut self, bus: &mut SystemBus, address: u16) -> u8 {
-        let b = bus.read_byte(address);
-        self.cycles += 1;
-        b
     }
 
     #[inline(always)]
@@ -732,62 +771,6 @@ impl Cpu {
         self.flags.v = false;
     }
 
-    fn jmp(&mut self, bus: &mut SystemBus) {
-        self.regs.pc = self.next_pc_word(bus);
-    }
-
-    fn jmpi(&mut self, bus: &mut SystemBus) {
-        let addr = self.next_pc_word(bus);
-
-        let lsb = self.read_byte(bus, addr);
-
-        // There is a hardware bug in this instruction. If the 16-bit argument of an indirect JMP is
-        // located between 2 pages (0x01FF and 0x0200 for example), then the LSB will be read from
-        // 0x01FF and the MSB will be read from 0x0100.
-        let msb = self.read_byte(
-            bus,
-            if (addr & 0xFF) == 0xFF {
-                addr & 0xff00
-            } else {
-                addr + 1
-            },
-        );
-
-        self.regs.pc = ((msb as u16) << 8) | (lsb as u16);
-    }
-
-    fn bmi(&mut self, bus: &mut SystemBus) {
-        self.branch(bus, self.flags.n);
-    }
-
-    fn bpl(&mut self, bus: &mut SystemBus) {
-        self.branch(bus, !self.flags.n);
-    }
-
-    fn bcc(&mut self, bus: &mut SystemBus) {
-        self.branch(bus, !self.flags.c);
-    }
-
-    fn bcs(&mut self, bus: &mut SystemBus) {
-        self.branch(bus, self.flags.c);
-    }
-
-    fn beq(&mut self, bus: &mut SystemBus) {
-        self.branch(bus, self.flags.z);
-    }
-
-    fn bne(&mut self, bus: &mut SystemBus) {
-        self.branch(bus, !self.flags.z);
-    }
-
-    fn bvs(&mut self, bus: &mut SystemBus) {
-        self.branch(bus, self.flags.v);
-    }
-
-    fn bvc(&mut self, bus: &mut SystemBus) {
-        self.branch(bus, !self.flags.v);
-    }
-
     fn cmp(&mut self, bus: &mut SystemBus, am: AddressMode) {
         self.compare(bus, am, Register8::A)
     }
@@ -1150,4 +1133,252 @@ impl Cpu {
         self.regs.pc = self.read_word(bus, vector);
         self.interrupt = None;
     }
+
+    fn fetch_rel_offset(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.rel_offset = self.next_pc_byte(bus) as i16;
+        false
+    }
+
+    fn check_branch_n(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.check_branch(bus, self.flags.n)
+    }
+
+    fn check_branch_not_n(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.check_branch(bus, !self.flags.n)
+    }
+
+    fn check_branch_c(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.check_branch(bus, self.flags.c)
+    }
+
+    fn check_branch_not_c(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.check_branch(bus, !self.flags.c)
+    }
+
+    fn check_branch_z(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.check_branch(bus, self.flags.z)
+    }
+
+    fn check_branch_not_z(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.check_branch(bus, !self.flags.z)
+    }
+
+    fn check_branch_v(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.check_branch(bus, self.flags.v)
+    }
+
+    fn check_branch_not_v(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.check_branch(bus, !self.flags.v)
+    }
+
+    fn check_branch(self: &mut Cpu, bus: &mut SystemBus, cond: bool) -> bool {
+        self.dummy_read(bus);
+
+        if !cond {
+            // Branch not taken.
+            return true;
+        }
+
+        let addr = (self.regs.pc as i16 + self.rel_offset) as u16;
+
+        let new_page = !mem_pages_same(self.regs.pc, addr);
+
+        self.regs.pc = addr;
+
+        // If no page was crossed, the branch is complete.
+        // Otherwise another cycle is required to fix the pc high byte
+        // (`fix_pc_high`).
+        !new_page
+    }
+
+    // Only called if there was a page cross.
+    fn branch_fix_pc_high(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
+        if self.rel_offset < 0x80 {
+            self.regs.pc += 0x0100;
+        } else {
+            self.regs.pc -= 0x0100;
+        }
+        true
+    }
+
+    fn fetch_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetched_data = self.next_pc_byte(bus);
+        false
+    }
+
+    fn fetch_abs_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.addr_abs = self.next_pc_byte(bus) as u16;
+        false
+    }
+
+    fn fetch_abs_high(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let high = (self.next_pc_byte(bus) as u16) << 8;
+        self.addr_abs |= high;
+        false
+    }
+
+    fn lda_execute_fetched_data(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.regs.a = self.fetched_data;
+        self.set_zero_negative(self.regs.a);
+        true
+    }
+
+    fn lda_execute_addr_abs(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.regs.a = bus.read_byte(self.addr_abs);
+        self.set_zero_negative(self.regs.a);
+        true
+    }
+
+    fn jmp_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let high = (self.next_pc_byte(bus) as u16) << 8;
+        self.regs.pc |= high;
+        true
+    }
+
+    fn jni_read_pointer_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetched_data = bus.read_byte(self.addr_abs);
+        false
+    }
+
+    fn jni_read_pointer_high(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        // There is a hardware bug in the JNI instruction. If the 16-bit argument of an indirect JMP is
+        // located between 2 pages (0x01FF and 0x0200 for example), then the LSB will be read from
+        // 0x01FF and the MSB will be read from 0x0100.
+        let msb = bus.read_byte(if (self.addr_abs & 0xFF) == 0xFF {
+            self.addr_abs & 0xff00
+        } else {
+            self.addr_abs + 1
+        });
+
+        let lsb = self.fetched_data;
+
+        self.regs.pc = ((msb as u16) << 8) | (lsb as u16);
+
+        true
+    }
 }
+
+pub const OPCODES: [Option<Instruction>; 256] = {
+    let mut opcodes = [None; 256];
+
+    // LDA Immediate
+    opcodes[0xA9] = Some(Instruction {
+        name: "LDA",
+        cycles: &[Cpu::fetch_immediate, Cpu::lda_execute_fetched_data],
+    });
+
+    // LDA Zero Page
+    opcodes[0xA5] = Some(Instruction {
+        name: "LDA",
+        cycles: &[Cpu::fetch_abs_low, Cpu::lda_execute_addr_abs],
+    });
+
+    // LDA Zero Page Indexed X
+    opcodes[0xA5] = Some(Instruction {
+        name: "LDA",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_tmp_addr,
+            Cpu::lda_execute_indexed_x,
+        ],
+    });
+
+    // LDA Absolute
+    opcodes[0xAD] = Some(Instruction {
+        name: "LDA",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::lda_execute_addr_abs,
+        ],
+    });
+
+    opcodes[0x4C] = Some(Instruction {
+        name: "JMP",
+        cycles: &[Cpu::fetch_abs_low, Cpu::jmp_abs_finish],
+    });
+
+    opcodes[0x6C] = Some(Instruction {
+        name: "JMPI",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::jni_read_pointer_low,
+            Cpu::jni_read_pointer_high,
+        ],
+    });
+
+    opcodes[0x30] = Some(Instruction {
+        name: "BMI",
+        cycles: &[
+            Cpu::fetch_rel_offset,
+            Cpu::check_branch_n,
+            Cpu::branch_fix_pc_high,
+        ],
+    });
+
+    opcodes[0x10] = Some(Instruction {
+        name: "BPL",
+        cycles: &[
+            Cpu::fetch_rel_offset,
+            Cpu::check_branch_not_n,
+            Cpu::branch_fix_pc_high,
+        ],
+    });
+
+    opcodes[0x90] = Some(Instruction {
+        name: "BCC",
+        cycles: &[
+            Cpu::fetch_rel_offset,
+            Cpu::check_branch_not_c,
+            Cpu::branch_fix_pc_high,
+        ],
+    });
+
+    opcodes[0xB0] = Some(Instruction {
+        name: "BCS",
+        cycles: &[
+            Cpu::fetch_rel_offset,
+            Cpu::check_branch_c,
+            Cpu::branch_fix_pc_high,
+        ],
+    });
+
+    opcodes[0xF0] = Some(Instruction {
+        name: "BEQ",
+        cycles: &[
+            Cpu::fetch_rel_offset,
+            Cpu::check_branch_z,
+            Cpu::branch_fix_pc_high,
+        ],
+    });
+
+    opcodes[0xD0] = Some(Instruction {
+        name: "BNE",
+        cycles: &[
+            Cpu::fetch_rel_offset,
+            Cpu::check_branch_not_z,
+            Cpu::branch_fix_pc_high,
+        ],
+    });
+
+    opcodes[0x70] = Some(Instruction {
+        name: "BVS",
+        cycles: &[
+            Cpu::fetch_rel_offset,
+            Cpu::check_branch_v,
+            Cpu::branch_fix_pc_high,
+        ],
+    });
+
+    opcodes[0x50] = Some(Instruction {
+        name: "BVC",
+        cycles: &[
+            Cpu::fetch_rel_offset,
+            Cpu::check_branch_not_v,
+            Cpu::branch_fix_pc_high,
+        ],
+    });
+
+    opcodes
+};
