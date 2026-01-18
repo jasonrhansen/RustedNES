@@ -1497,6 +1497,55 @@ impl Cpu {
         true
     }
 
+    fn and_addr_abs_indexed_x_optimistic(&mut self, bus: &mut SystemBus) -> bool {
+        self.and_addr_abs_indexed_optimistic(bus, Register8::X)
+    }
+
+    fn and_addr_abs_indexed_y_optimistic(&mut self, bus: &mut SystemBus) -> bool {
+        self.and_addr_abs_indexed_optimistic(bus, Register8::Y)
+    }
+
+    fn and_addr_abs_indexed_optimistic(
+        &mut self,
+        bus: &mut SystemBus,
+        index_reg: Register8,
+    ) -> bool {
+        let (low_byte, carry) = (self.addr_abs as u8).overflowing_add(self.get_register(index_reg));
+        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
+        self.fetched_data = bus.read_byte(uncorrected_addr);
+
+        if !carry {
+            // No page cross, so the instruction can finish without a fixup cycle.
+            self.sub_value(self.fetched_data);
+            return true;
+        }
+
+        // PAGE CROSS: We need to fix the address high byte next cycle
+        // Update addr_abs to the correct high byte for the fixup cycle
+        self.addr_abs = uncorrected_addr.wrapping_add(0x0100);
+        false // Proceed to Cycle 5
+    }
+
+    fn and_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetch_immediate(bus);
+        self.sub_value(self.fetched_data);
+        true
+    }
+
+    fn and_zero_page_indexed_x_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let index = self.regs.x;
+        let addr = (self.base_addr as u16 + index as u16) % 0x0100;
+        let value = bus.read_byte(addr);
+        self.sub_value(value);
+        true
+    }
+
+    fn and_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = bus.read_byte(self.addr_abs);
+        self.sub_value(value);
+        true
+    }
+
     fn jmp_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let high = (self.next_pc_byte(bus) as u16) << 8;
         self.regs.pc |= high;
@@ -1923,6 +1972,76 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::indexed_fetch_ptr_high,
             Cpu::sbc_addr_abs_indexed_y_optimistic,
             Cpu::sbc_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x29] = Some(Instruction {
+        name: "AND #Immediate",
+        cycles: &[Cpu::and_immediate],
+    });
+
+    opcodes[0x25] = Some(Instruction {
+        name: "AND Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::and_addr_abs_finish],
+    });
+
+    opcodes[0x35] = Some(Instruction {
+        name: "AND Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::and_zero_page_indexed_x_finish,
+        ],
+    });
+
+    opcodes[0x2D] = Some(Instruction {
+        name: "AND Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::and_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x3D] = Some(Instruction {
+        name: "AND Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::and_addr_abs_indexed_x_optimistic,
+            Cpu::and_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x39] = Some(Instruction {
+        name: "AND Absolute,Y",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::and_addr_abs_indexed_y_optimistic,
+            Cpu::and_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x21] = Some(Instruction {
+        name: "AND (Indirect,X)",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::indexed_x_dummy_read_and_add,
+            Cpu::indexed_fetch_ptr_low,
+            Cpu::indexed_fetch_ptr_high,
+            Cpu::and_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x31] = Some(Instruction {
+        name: "AND (Indirect),Y",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::indexed_fetch_ptr_low,
+            Cpu::indexed_fetch_ptr_high,
+            Cpu::and_addr_abs_indexed_y_optimistic,
+            Cpu::and_addr_abs_finish,
         ],
     });
 
