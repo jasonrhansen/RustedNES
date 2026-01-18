@@ -121,11 +121,11 @@ macro_rules! handle_opcode {
 
             // 0x24 => $this.bit($mem, AddressMode::ZeroPage),
             // 0x2C => $this.bit($mem, AddressMode::Absolute),
-            0xE6 => $this.inc($mem, AddressMode::ZeroPage),
-            0xF6 => $this.inc($mem, AddressMode::ZeroPageIndexed(Register8::X)),
-            0xEE => $this.inc($mem, AddressMode::Absolute),
-            0xFE => $this.inc($mem, AddressMode::AbsoluteIndexed(Register8::X)),
 
+            // 0xE6 => $this.inc($mem, AddressMode::ZeroPage),
+            // 0xF6 => $this.inc($mem, AddressMode::ZeroPageIndexed(Register8::X)),
+            // 0xEE => $this.inc($mem, AddressMode::Absolute),
+            // 0xFE => $this.inc($mem, AddressMode::AbsoluteIndexed(Register8::X)),
             0xC6 => $this.dec($mem, AddressMode::ZeroPage),
             0xD6 => $this.dec($mem, AddressMode::ZeroPageIndexed(Register8::X)),
             0xCE => $this.dec($mem, AddressMode::Absolute),

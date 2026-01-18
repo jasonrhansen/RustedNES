@@ -1236,7 +1236,7 @@ impl Cpu {
         // PAGE CROSS: We need to fix the address high byte next cycle
         // Update addr_abs to the correct high byte for the fixup cycle
         self.addr_abs = uncorrected_addr.wrapping_add(0x0100);
-        false // Proceed to Cycle 5
+        false
     }
 
     fn lda_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
@@ -1722,6 +1722,53 @@ impl Cpu {
         self.flags.v = (m & 0x40) != 0;
         self.flags.z = (m & a) == 0;
 
+        true
+    }
+
+    fn read_abs_addr_data(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetched_data = bus.read_byte(self.addr_abs);
+        false
+    }
+
+    fn read_zero_page_indexed_x_data(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let index = self.regs.x;
+        self.addr_abs = (self.base_addr as u16 + index as u16) % 0x0100;
+        self.fetched_data = bus.read_byte(self.addr_abs);
+        false
+    }
+
+    fn inc_abs_indexed_x_dummy_read(&mut self, bus: &mut SystemBus) -> bool {
+        let (low_byte, _) = (self.addr_abs as u8).overflowing_add(self.regs.x);
+        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
+        bus.read_byte(uncorrected_addr);
+        false
+    }
+
+    fn read_abs_indexed_x_data(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let index = self.regs.x;
+        self.addr_abs = (self.base_addr as u16 + index as u16) % 0x0100;
+        self.fetched_data = bus.read_byte(self.addr_abs);
+        false
+    }
+
+    fn inc_addr_abs_dummy_write(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        bus.write_byte(self.addr_abs, self.fetched_data);
+        false
+    }
+
+    fn inc_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = self.fetched_data.wrapping_add(1);
+        self.set_zero_negative(value);
+        self.write_byte(bus, self.addr_abs, value);
+        true
+    }
+
+    fn inc_zero_page_indexed_x_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let index = self.regs.x;
+        let addr = (self.base_addr as u16 + index as u16) % 0x0100;
+        let value = bus.read_byte(addr);
+        self.set_zero_negative(value);
+        self.write_byte(bus, self.addr_abs, value);
         true
     }
 
@@ -2518,6 +2565,49 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
             Cpu::bit_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xE6] = Some(Instruction {
+        name: "INC Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::inc_addr_abs_dummy_write,
+            Cpu::inc_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xF6] = Some(Instruction {
+        name: "INC Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::inc_addr_abs_dummy_write,
+            Cpu::inc_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xEE] = Some(Instruction {
+        name: "INC Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::inc_addr_abs_dummy_write,
+            Cpu::inc_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xFE] = Some(Instruction {
+        name: "INC Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::inc_abs_indexed_x_dummy_read,
+            Cpu::read_abs_indexed_x_data,
+            Cpu::inc_addr_abs_dummy_write,
+            Cpu::inc_addr_abs_finish,
         ],
     });
 
