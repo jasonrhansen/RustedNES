@@ -711,41 +711,6 @@ impl Cpu {
         self.eor_value(m);
     }
 
-    fn sec(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.flags.c = true;
-    }
-
-    fn clc(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.flags.c = false;
-    }
-
-    fn sei(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.flags.i = true;
-    }
-
-    fn cli(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.flags.i = false;
-    }
-
-    fn sed(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.flags.d = true;
-    }
-
-    fn cld(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.flags.d = false;
-    }
-
-    fn clv(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.flags.v = false;
-    }
-
     fn cmp(&mut self, bus: &mut SystemBus, am: AddressMode) {
         self.compare(bus, am, Register8::A)
     }
@@ -1636,6 +1601,48 @@ impl Cpu {
         true
     }
 
+    fn sec(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.flags.c = true;
+        true
+    }
+
+    fn clc(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.flags.c = false;
+        true
+    }
+
+    fn sei(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.flags.i = true;
+        true
+    }
+
+    fn cli(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.flags.i = false;
+        true
+    }
+
+    fn sed(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.flags.d = true;
+        true
+    }
+
+    fn cld(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.flags.d = false;
+        true
+    }
+
+    fn clv(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.flags.v = false;
+        true
+    }
+
     fn jmp_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let high = (self.next_pc_byte(bus) as u16) << 8;
         self.regs.pc |= high;
@@ -2273,6 +2280,41 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::eor_addr_abs_indexed_y_optimistic,
             Cpu::eor_addr_abs_finish,
         ],
+    });
+
+    opcodes[0x38] = Some(Instruction {
+        name: "SEC",
+        cycles: &[Cpu::sec],
+    });
+
+    opcodes[0x18] = Some(Instruction {
+        name: "CLC",
+        cycles: &[Cpu::clc],
+    });
+
+    opcodes[0x78] = Some(Instruction {
+        name: "SEI",
+        cycles: &[Cpu::sei],
+    });
+
+    opcodes[0x58] = Some(Instruction {
+        name: "CLI",
+        cycles: &[Cpu::cli],
+    });
+
+    opcodes[0xF8] = Some(Instruction {
+        name: "SED",
+        cycles: &[Cpu::sed],
+    });
+
+    opcodes[0xD8] = Some(Instruction {
+        name: "CLD",
+        cycles: &[Cpu::cld],
+    });
+
+    opcodes[0xB8] = Some(Instruction {
+        name: "CLV",
+        cycles: &[Cpu::clv],
     });
 
     opcodes[0x4C] = Some(Instruction {
