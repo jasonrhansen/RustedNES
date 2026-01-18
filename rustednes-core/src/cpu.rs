@@ -1595,6 +1595,55 @@ impl Cpu {
         true
     }
 
+    fn eor_addr_abs_indexed_x_optimistic(&mut self, bus: &mut SystemBus) -> bool {
+        self.eor_addr_abs_indexed_optimistic(bus, Register8::X)
+    }
+
+    fn eor_addr_abs_indexed_y_optimistic(&mut self, bus: &mut SystemBus) -> bool {
+        self.eor_addr_abs_indexed_optimistic(bus, Register8::Y)
+    }
+
+    fn eor_addr_abs_indexed_optimistic(
+        &mut self,
+        bus: &mut SystemBus,
+        index_reg: Register8,
+    ) -> bool {
+        let (low_byte, carry) = (self.addr_abs as u8).overflowing_add(self.get_register(index_reg));
+        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
+        self.fetched_data = bus.read_byte(uncorrected_addr);
+
+        if !carry {
+            // No page cross, so the instruction can finish without a fixup cycle.
+            self.eor_value(self.fetched_data);
+            return true;
+        }
+
+        // PAGE CROSS: We need to fix the address high byte next cycle
+        // Update addr_abs to the correct high byte for the fixup cycle
+        self.addr_abs = uncorrected_addr.wrapping_add(0x0100);
+        false // Proceed to Cycle 5
+    }
+
+    fn eor_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetch_immediate(bus);
+        self.eor_value(self.fetched_data);
+        true
+    }
+
+    fn eor_zero_page_indexed_x_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let index = self.regs.x;
+        let addr = (self.base_addr as u16 + index as u16) % 0x0100;
+        let value = bus.read_byte(addr);
+        self.eor_value(value);
+        true
+    }
+
+    fn eor_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = bus.read_byte(self.addr_abs);
+        self.eor_value(value);
+        true
+    }
+
     fn jmp_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let high = (self.next_pc_byte(bus) as u16) << 8;
         self.regs.pc |= high;
@@ -2161,6 +2210,76 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::indexed_fetch_ptr_high,
             Cpu::ora_addr_abs_indexed_y_optimistic,
             Cpu::ora_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x49] = Some(Instruction {
+        name: "EOR #Immediate",
+        cycles: &[Cpu::eor_immediate],
+    });
+
+    opcodes[0x45] = Some(Instruction {
+        name: "EOR Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::eor_addr_abs_finish],
+    });
+
+    opcodes[0x55] = Some(Instruction {
+        name: "EOR Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::eor_zero_page_indexed_x_finish,
+        ],
+    });
+
+    opcodes[0x4D] = Some(Instruction {
+        name: "EOR Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::eor_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x5D] = Some(Instruction {
+        name: "EOR Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::eor_addr_abs_indexed_x_optimistic,
+            Cpu::eor_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x59] = Some(Instruction {
+        name: "EOR Absolute,Y",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::eor_addr_abs_indexed_y_optimistic,
+            Cpu::eor_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x41] = Some(Instruction {
+        name: "EOR (Indirect,X)",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::indexed_x_dummy_read_and_add,
+            Cpu::indexed_fetch_ptr_low,
+            Cpu::indexed_fetch_ptr_high,
+            Cpu::eor_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x51] = Some(Instruction {
+        name: "EOR (Indirect),Y",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::indexed_fetch_ptr_low,
+            Cpu::indexed_fetch_ptr_high,
+            Cpu::eor_addr_abs_indexed_y_optimistic,
+            Cpu::eor_addr_abs_finish,
         ],
     });
 
