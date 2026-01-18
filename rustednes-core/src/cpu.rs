@@ -487,14 +487,6 @@ impl Cpu {
         self.compare_value(m, reg);
     }
 
-    fn compare_value(&mut self, value: u8, reg: Register8) {
-        let r = self.get_register(reg);
-        let result = r.wrapping_sub(value);
-
-        self.set_zero_negative(result);
-        self.flags.c = value <= r;
-    }
-
     fn add_value(&mut self, value: u8) {
         let result = self.regs.a as u32 + value as u32 + self.flags.c as u32;
 
@@ -1643,6 +1635,61 @@ impl Cpu {
         true
     }
 
+    fn cmp_addr_abs_indexed_x_optimistic(&mut self, bus: &mut SystemBus) -> bool {
+        self.cmp_addr_abs_indexed_optimistic(bus, Register8::X)
+    }
+
+    fn cmp_addr_abs_indexed_y_optimistic(&mut self, bus: &mut SystemBus) -> bool {
+        self.cmp_addr_abs_indexed_optimistic(bus, Register8::Y)
+    }
+
+    fn cmp_addr_abs_indexed_optimistic(
+        &mut self,
+        bus: &mut SystemBus,
+        index_reg: Register8,
+    ) -> bool {
+        let (low_byte, carry) = (self.addr_abs as u8).overflowing_add(self.get_register(index_reg));
+        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
+        self.fetched_data = bus.read_byte(uncorrected_addr);
+
+        if !carry {
+            // No page cross, so the instruction can finish without a fixup cycle.
+            self.cmp_value(self.fetched_data);
+            return true;
+        }
+
+        // PAGE CROSS: We need to fix the address high byte next cycle
+        // Update addr_abs to the correct high byte for the fixup cycle
+        self.addr_abs = uncorrected_addr.wrapping_add(0x0100);
+        false // Proceed to Cycle 5
+    }
+
+    fn compare_value(&mut self, value: u8, reg_value: u8) {
+        let result = reg_value.wrapping_sub(value);
+        self.set_zero_negative(result);
+        self.flags.c = value <= reg_value;
+    }
+
+    fn cmp_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetch_immediate(bus);
+        self.compare_value(self.fetched_data, self.regs.a);
+        true
+    }
+
+    fn cmp_zero_page_indexed_x_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let index = self.regs.x;
+        let addr = (self.base_addr as u16 + index as u16) % 0x0100;
+        let value = bus.read_byte(addr);
+        self.compare_value(value, self.regs.a);
+        true
+    }
+
+    fn cmp_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = bus.read_byte(self.addr_abs);
+        self.compare_value(value, self.regs.a);
+        true
+    }
+
     fn jmp_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let high = (self.next_pc_byte(bus) as u16) << 8;
         self.regs.pc |= high;
@@ -2315,6 +2362,76 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0xB8] = Some(Instruction {
         name: "CLV",
         cycles: &[Cpu::clv],
+    });
+
+    opcodes[0xC9] = Some(Instruction {
+        name: "CMP #Immediate",
+        cycles: &[Cpu::cmp_immediate],
+    });
+
+    opcodes[0xC5] = Some(Instruction {
+        name: "CMP Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::cmp_addr_abs_finish],
+    });
+
+    opcodes[0xD5] = Some(Instruction {
+        name: "CMP Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::cmp_zero_page_indexed_x_finish,
+        ],
+    });
+
+    opcodes[0xCD] = Some(Instruction {
+        name: "CMP Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::cmp_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xDD] = Some(Instruction {
+        name: "CMP Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::cmp_addr_abs_indexed_x_optimistic,
+            Cpu::cmp_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xD9] = Some(Instruction {
+        name: "CMP Absolute,Y",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::cmp_addr_abs_indexed_y_optimistic,
+            Cpu::cmp_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xC1] = Some(Instruction {
+        name: "CMP (Indirect,X)",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::indexed_x_dummy_read_and_add,
+            Cpu::indexed_fetch_ptr_low,
+            Cpu::indexed_fetch_ptr_high,
+            Cpu::cmp_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xD1] = Some(Instruction {
+        name: "CMP (Indirect),Y",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::indexed_fetch_ptr_low,
+            Cpu::indexed_fetch_ptr_high,
+            Cpu::cmp_addr_abs_indexed_y_optimistic,
+            Cpu::cmp_addr_abs_finish,
+        ],
     });
 
     opcodes[0x4C] = Some(Instruction {
