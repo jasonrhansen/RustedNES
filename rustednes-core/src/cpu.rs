@@ -1337,8 +1337,28 @@ impl Cpu {
         true
     }
 
+    fn stx_write_byte_abs(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.write_byte(bus, self.addr_abs, self.regs.x);
+        true
+    }
+
+    fn sty_write_byte_abs(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.write_byte(bus, self.addr_abs, self.regs.y);
+        true
+    }
+
     fn sta_write_byte_zp(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         self.write_byte(bus, self.addr_abs, self.regs.a);
+        true
+    }
+
+    fn stx_write_byte_zp(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.write_byte(bus, self.addr_abs, self.regs.x);
+        true
+    }
+
+    fn sty_write_byte_zp(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.write_byte(bus, self.addr_abs, self.regs.y);
         true
     }
 
@@ -1346,6 +1366,20 @@ impl Cpu {
         let index = self.regs.x;
         let addr = (self.base_addr as u16 + index as u16) % 0x0100;
         self.write_byte(bus, addr, self.regs.a);
+        true
+    }
+
+    fn stx_write_byte_abs_indexed_y(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let index = self.regs.y;
+        let addr = (self.base_addr as u16 + index as u16) % 0x0100;
+        self.write_byte(bus, addr, self.regs.x);
+        true
+    }
+
+    fn sty_write_byte_abs_indexed_x(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let index = self.regs.x;
+        let addr = (self.base_addr as u16 + index as u16) % 0x0100;
+        self.write_byte(bus, addr, self.regs.y);
         true
     }
 
@@ -1605,6 +1639,52 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::indexed_fetch_ptr_high,
             Cpu::st_abs_indexed_y_dummy_read,
             Cpu::sta_write_byte_abs,
+        ],
+    });
+
+    opcodes[0x86] = Some(Instruction {
+        name: "STX Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::stx_write_byte_zp],
+    });
+
+    opcodes[0x96] = Some(Instruction {
+        name: "STX Zero Page,Y",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::stx_write_byte_abs_indexed_y,
+        ],
+    });
+
+    opcodes[0x8E] = Some(Instruction {
+        name: "STX Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::stx_write_byte_abs,
+        ],
+    });
+
+    opcodes[0x84] = Some(Instruction {
+        name: "STY Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::sty_write_byte_zp],
+    });
+
+    opcodes[0x94] = Some(Instruction {
+        name: "STY Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::sty_write_byte_abs_indexed_x,
+        ],
+    });
+
+    opcodes[0x8C] = Some(Instruction {
+        name: "STY Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::sty_write_byte_abs,
         ],
     });
 
