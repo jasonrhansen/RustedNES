@@ -1225,19 +1225,19 @@ impl Cpu {
         false
     }
 
-    fn lda_execute_fetched_data(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
+    fn lda_fetched_data_finish(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
         self.regs.a = self.fetched_data;
         self.set_zero_negative(self.regs.a);
         true
     }
 
-    fn ldx_execute_fetched_data(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
+    fn ldx_fetched_data_finish(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
         self.regs.x = self.fetched_data;
         self.set_zero_negative(self.regs.x);
         true
     }
 
-    fn ldy_execute_fetched_data(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
+    fn ldy_fetched_data_finish(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
         self.regs.y = self.fetched_data;
         self.set_zero_negative(self.regs.y);
         true
@@ -1282,25 +1282,25 @@ impl Cpu {
         false // Proceed to Cycle 5
     }
 
-    fn lda_execute_addr_abs(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn lda_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         self.regs.a = bus.read_byte(self.addr_abs);
         self.set_zero_negative(self.regs.a);
         true
     }
 
-    fn ldx_execute_addr_abs(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn ldx_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         self.regs.x = bus.read_byte(self.addr_abs);
         self.set_zero_negative(self.regs.x);
         true
     }
 
-    fn ldy_execute_addr_abs(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn ldy_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         self.regs.y = bus.read_byte(self.addr_abs);
         self.set_zero_negative(self.regs.y);
         true
     }
 
-    fn lda_execute_indexed_x(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn lda_indexed_x_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let index = self.regs.x as u16;
         let addr = (self.base_addr as u16 + index) % 0x0100;
         self.regs.a = bus.read_byte(addr);
@@ -1308,15 +1308,7 @@ impl Cpu {
         true
     }
 
-    fn lda_execute_indexed_y(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        let index = self.regs.y as u16;
-        let addr = (self.base_addr as u16 + index) % 0x0100;
-        self.regs.a = bus.read_byte(addr);
-        self.set_zero_negative(self.regs.a);
-        true
-    }
-
-    fn ldx_execute_indexed_y(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn ldx_indexed_y_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let index = self.regs.y as u16;
         let addr = (self.base_addr as u16 + index) % 0x0100;
         self.regs.x = bus.read_byte(addr);
@@ -1324,7 +1316,7 @@ impl Cpu {
         true
     }
 
-    fn ldy_execute_indexed_x(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn ldy_indexed_x_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let index = self.regs.x as u16;
         let addr = (self.base_addr as u16 + index) % 0x0100;
         self.regs.y = bus.read_byte(addr);
@@ -1650,12 +1642,12 @@ impl Cpu {
         true
     }
 
-    fn jni_read_pointer_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn jmp_indirect_read_pointer_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         self.fetched_data = bus.read_byte(self.addr_abs);
         false
     }
 
-    fn jni_read_pointer_high(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn jump_indirect_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         // There is a hardware bug in the JNI instruction. If the 16-bit argument of an indirect JMP is
         // located between 2 pages (0x01FF and 0x0200 for example), then the LSB will be read from
         // 0x01FF and the MSB will be read from 0x0100.
@@ -1678,12 +1670,12 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0xA9] = Some(Instruction {
         name: "LDA #Immediate",
-        cycles: &[Cpu::fetch_immediate, Cpu::lda_execute_fetched_data],
+        cycles: &[Cpu::fetch_immediate, Cpu::lda_fetched_data_finish],
     });
 
     opcodes[0xA5] = Some(Instruction {
         name: "LDA Zero Page",
-        cycles: &[Cpu::fetch_abs_low, Cpu::lda_execute_addr_abs],
+        cycles: &[Cpu::fetch_abs_low, Cpu::lda_addr_abs_finish],
     });
 
     opcodes[0xB5] = Some(Instruction {
@@ -1691,7 +1683,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
-            Cpu::lda_execute_indexed_x,
+            Cpu::lda_indexed_x_finish,
         ],
     });
 
@@ -1700,7 +1692,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
-            Cpu::lda_execute_addr_abs,
+            Cpu::lda_addr_abs_finish,
         ],
     });
 
@@ -1710,7 +1702,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
             Cpu::lda_abs_indexed_x_optimistic,
-            Cpu::lda_execute_addr_abs,
+            Cpu::lda_addr_abs_finish,
         ],
     });
 
@@ -1720,7 +1712,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
             Cpu::lda_abs_indexed_y_optimistic,
-            Cpu::lda_execute_addr_abs,
+            Cpu::lda_addr_abs_finish,
         ],
     });
 
@@ -1731,7 +1723,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
-            Cpu::lda_execute_addr_abs,
+            Cpu::lda_addr_abs_finish,
         ],
     });
 
@@ -1742,18 +1734,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
             Cpu::lda_abs_indexed_y_optimistic,
-            Cpu::lda_execute_addr_abs,
+            Cpu::lda_addr_abs_finish,
         ],
     });
 
     opcodes[0xA2] = Some(Instruction {
         name: "LDX #Immediate",
-        cycles: &[Cpu::fetch_immediate, Cpu::ldx_execute_fetched_data],
+        cycles: &[Cpu::fetch_immediate, Cpu::ldx_fetched_data_finish],
     });
 
     opcodes[0xA6] = Some(Instruction {
         name: "LDX Zero Page",
-        cycles: &[Cpu::fetch_abs_low, Cpu::ldx_execute_addr_abs],
+        cycles: &[Cpu::fetch_abs_low, Cpu::ldx_addr_abs_finish],
     });
 
     opcodes[0xB6] = Some(Instruction {
@@ -1761,7 +1753,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
-            Cpu::ldx_execute_indexed_y,
+            Cpu::ldx_indexed_y_finish,
         ],
     });
 
@@ -1770,7 +1762,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
-            Cpu::ldx_execute_addr_abs,
+            Cpu::ldx_addr_abs_finish,
         ],
     });
 
@@ -1780,18 +1772,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
             Cpu::ldx_abs_indexed_y_optimistic,
-            Cpu::ldx_execute_addr_abs,
+            Cpu::ldx_addr_abs_finish,
         ],
     });
 
     opcodes[0xA0] = Some(Instruction {
         name: "LDY #Immediate",
-        cycles: &[Cpu::fetch_immediate, Cpu::ldy_execute_fetched_data],
+        cycles: &[Cpu::fetch_immediate, Cpu::ldy_fetched_data_finish],
     });
 
     opcodes[0xA4] = Some(Instruction {
         name: "LDY Zero Page",
-        cycles: &[Cpu::fetch_abs_low, Cpu::ldy_execute_addr_abs],
+        cycles: &[Cpu::fetch_abs_low, Cpu::ldy_addr_abs_finish],
     });
 
     opcodes[0xB4] = Some(Instruction {
@@ -1799,7 +1791,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
-            Cpu::ldy_execute_indexed_x,
+            Cpu::ldy_indexed_x_finish,
         ],
     });
 
@@ -1808,7 +1800,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
-            Cpu::ldy_execute_addr_abs,
+            Cpu::ldy_addr_abs_finish,
         ],
     });
 
@@ -1818,7 +1810,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
             Cpu::ldy_abs_indexed_x_optimistic,
-            Cpu::ldy_execute_addr_abs,
+            Cpu::ldy_addr_abs_finish,
         ],
     });
 
@@ -2284,17 +2276,17 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x4C] = Some(Instruction {
-        name: "JMP",
+        name: "JMP Absolute",
         cycles: &[Cpu::fetch_abs_low, Cpu::jmp_abs_finish],
     });
 
     opcodes[0x6C] = Some(Instruction {
-        name: "JMPI",
+        name: "JMP (Indirect)",
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
-            Cpu::jni_read_pointer_low,
-            Cpu::jni_read_pointer_high,
+            Cpu::jmp_indirect_read_pointer_low,
+            Cpu::jump_indirect_finish,
         ],
     });
 
