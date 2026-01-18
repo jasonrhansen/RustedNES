@@ -1714,6 +1714,17 @@ impl Cpu {
         true
     }
 
+    fn bit_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let m = bus.read_byte(self.addr_abs);
+        let a = self.regs.a;
+
+        self.flags.n = (m & 0x80) != 0;
+        self.flags.v = (m & 0x40) != 0;
+        self.flags.z = (m & a) == 0;
+
+        true
+    }
+
     fn jmp_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let high = (self.next_pc_byte(bus) as u16) << 8;
         self.regs.pc |= high;
@@ -2493,6 +2504,20 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
             Cpu::cpy_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x24] = Some(Instruction {
+        name: "BIT Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::bit_addr_abs_finish],
+    });
+
+    opcodes[0x2C] = Some(Instruction {
+        name: "BIT Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::bit_addr_abs_finish,
         ],
     });
 

@@ -118,9 +118,9 @@ macro_rules! handle_opcode {
             // 0xC0 => $this.cpy($mem, AddressMode::Immediate),
             // 0xC4 => $this.cpy($mem, AddressMode::ZeroPage),
             // 0xCC => $this.cpy($mem, AddressMode::Absolute),
-            0x24 => $this.bit($mem, AddressMode::ZeroPage),
-            0x2C => $this.bit($mem, AddressMode::Absolute),
 
+            // 0x24 => $this.bit($mem, AddressMode::ZeroPage),
+            // 0x2C => $this.bit($mem, AddressMode::Absolute),
             0xE6 => $this.inc($mem, AddressMode::ZeroPage),
             0xF6 => $this.inc($mem, AddressMode::ZeroPageIndexed(Register8::X)),
             0xEE => $this.inc($mem, AddressMode::Absolute),
