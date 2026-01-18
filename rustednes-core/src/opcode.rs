@@ -110,14 +110,14 @@ macro_rules! handle_opcode {
             // 0xD9 => $this.cmp($mem, AddressMode::AbsoluteIndexed(Register8::Y)),
             // 0xC1 => $this.cmp($mem, AddressMode::IndexedIndirect(Register8::X)),
             // 0xD1 => $this.cmp($mem, AddressMode::IndirectIndexed(Register8::Y)),
-            0xE0 => $this.cpx($mem, AddressMode::Immediate),
-            0xE4 => $this.cpx($mem, AddressMode::ZeroPage),
-            0xEC => $this.cpx($mem, AddressMode::Absolute),
 
-            0xC0 => $this.cpy($mem, AddressMode::Immediate),
-            0xC4 => $this.cpy($mem, AddressMode::ZeroPage),
-            0xCC => $this.cpy($mem, AddressMode::Absolute),
+            // 0xE0 => $this.cpx($mem, AddressMode::Immediate),
+            // 0xE4 => $this.cpx($mem, AddressMode::ZeroPage),
+            // 0xEC => $this.cpx($mem, AddressMode::Absolute),
 
+            // 0xC0 => $this.cpy($mem, AddressMode::Immediate),
+            // 0xC4 => $this.cpy($mem, AddressMode::ZeroPage),
+            // 0xCC => $this.cpy($mem, AddressMode::Absolute),
             0x24 => $this.bit($mem, AddressMode::ZeroPage),
             0x2C => $this.bit($mem, AddressMode::Absolute),
 

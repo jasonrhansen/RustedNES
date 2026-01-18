@@ -1676,6 +1676,18 @@ impl Cpu {
         true
     }
 
+    fn cpx_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetch_immediate(bus);
+        self.compare_value(self.fetched_data, self.regs.x);
+        true
+    }
+
+    fn cpy_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetch_immediate(bus);
+        self.compare_value(self.fetched_data, self.regs.y);
+        true
+    }
+
     fn cmp_zero_page_indexed_x_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let index = self.regs.x;
         let addr = (self.base_addr as u16 + index as u16) % 0x0100;
@@ -1687,6 +1699,18 @@ impl Cpu {
     fn cmp_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let value = bus.read_byte(self.addr_abs);
         self.compare_value(value, self.regs.a);
+        true
+    }
+
+    fn cpx_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = bus.read_byte(self.addr_abs);
+        self.compare_value(value, self.regs.x);
+        true
+    }
+
+    fn cpy_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = bus.read_byte(self.addr_abs);
+        self.compare_value(value, self.regs.y);
         true
     }
 
@@ -2431,6 +2455,44 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::indexed_fetch_ptr_high,
             Cpu::cmp_addr_abs_indexed_y_optimistic,
             Cpu::cmp_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xE0] = Some(Instruction {
+        name: "CPX #Immediate",
+        cycles: &[Cpu::cpx_immediate],
+    });
+
+    opcodes[0xE4] = Some(Instruction {
+        name: "CPX Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::cpx_addr_abs_finish],
+    });
+
+    opcodes[0xEC] = Some(Instruction {
+        name: "CPX Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::cpx_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xC0] = Some(Instruction {
+        name: "CPY #Immediate",
+        cycles: &[Cpu::cpy_immediate],
+    });
+
+    opcodes[0xC4] = Some(Instruction {
+        name: "CPY Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::cpy_addr_abs_finish],
+    });
+
+    opcodes[0xCC] = Some(Instruction {
+        name: "CPY Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::cpy_addr_abs_finish,
         ],
     });
 
