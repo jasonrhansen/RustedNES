@@ -633,10 +633,10 @@ impl Cpu {
         let s = self.regs.sp + 1;
         self.regs.sp = s;
 
-        self.read_byte(bus, 0x0100 | (s as u16))
+        bus.read_byte(0x0100 | (s as u16))
     }
 
-    // Push word onto the stack
+    // Push word onto the ;stack
     fn push_word(&mut self, bus: &mut SystemBus, val: u16) {
         self.push_byte(bus, (val >> 8) as u8);
         self.push_byte(bus, val as u8);
@@ -1093,6 +1093,11 @@ impl Cpu {
 
     fn dummy_read_base(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         bus.read_byte(self.base_addr as u16);
+        false
+    }
+
+    fn dummy_fetch(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        bus.read_byte(self.regs.pc);
         false
     }
 
@@ -1777,6 +1782,44 @@ impl Cpu {
     fn txs(&mut self, bus: &mut SystemBus) -> bool {
         self.dummy_read(bus);
         self.regs.sp = self.regs.x;
+        true
+    }
+
+    fn dummy_cycle(&mut self, bus: &mut SystemBus) -> bool {
+        false
+    }
+
+    fn push_pc_high(&mut self, bus: &mut SystemBus) -> bool {
+        self.push_byte(bus, (self.regs.pc >> 8) as u8);
+        false
+    }
+
+    fn push_pc_low(&mut self, bus: &mut SystemBus) -> bool {
+        self.push_byte(bus, self.regs.pc as u8);
+        false
+    }
+
+    fn pull_low(&mut self, bus: &mut SystemBus) -> bool {
+        self.addr_abs = self.pull_byte(bus) as u16;
+        false
+    }
+
+    fn pull_high(&mut self, bus: &mut SystemBus) -> bool {
+        let lo = self.addr_abs;
+        let hi = self.pull_byte(bus) as u16;
+        self.addr_abs = (hi << 8) | lo;
+        false
+    }
+
+    fn jsr_finish(&mut self, bus: &mut SystemBus) -> bool {
+        let addr_lo = self.addr_abs;
+        let addr_hi = self.next_pc_byte(bus) as u16;
+        self.regs.pc = (addr_hi << 8) | addr_lo;
+        true
+    }
+
+    fn rts_finish(&mut self, _bus: &mut SystemBus) -> bool {
+        self.regs.pc = self.addr_abs + 1;
         true
     }
 
@@ -2710,6 +2753,28 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0x9A] = Some(Instruction {
         name: "TXS",
         cycles: &[Cpu::txs],
+    });
+
+    opcodes[0x20] = Some(Instruction {
+        name: "JSR",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::dummy_cycle,
+            Cpu::push_pc_high,
+            Cpu::push_pc_low,
+            Cpu::jsr_finish,
+        ],
+    });
+
+    opcodes[0x60] = Some(Instruction {
+        name: "RTS",
+        cycles: &[
+            Cpu::dummy_fetch,
+            Cpu::pull_low,
+            Cpu::pull_high,
+            Cpu::dummy_fetch,
+            Cpu::rts_finish,
+        ],
     });
 
     opcodes[0x4C] = Some(Instruction {

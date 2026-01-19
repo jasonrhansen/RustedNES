@@ -143,9 +143,9 @@ macro_rules! handle_opcode {
             // 0x98 => $this.tya($mem),
             // 0xBA => $this.tsx($mem),
             // 0x9A => $this.txs($mem),
-            0x20 => $this.jsr($mem),
-            0x60 => $this.rts($mem),
 
+            // 0x20 => $this.jsr($mem),
+            // 0x60 => $this.rts($mem),
             0x48 => $this.pha($mem),
             0x68 => $this.pla($mem),
             0x08 => $this.php($mem),
