@@ -1,6 +1,3 @@
-#[macro_use]
-mod opcode;
-
 pub mod apu;
 pub mod cartridge;
 pub mod cpu;
@@ -14,4 +11,3 @@ pub mod ppu;
 pub mod serialize;
 pub mod sink;
 pub mod system_bus;
-
