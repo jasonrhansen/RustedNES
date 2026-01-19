@@ -625,15 +625,14 @@ impl Cpu {
     fn push_byte(&mut self, bus: &mut SystemBus, val: u8) {
         let s = self.regs.sp;
         self.write_byte(bus, 0x0100 | (s as u16), val);
-        self.regs.sp = s - 1;
+        self.regs.sp = s.wrapping_sub(1);
     }
 
     // Pull byte from the stack
     fn pull_byte(&mut self, bus: &mut SystemBus) -> u8 {
-        let s = self.regs.sp + 1;
-        self.regs.sp = s;
+        self.regs.sp = self.regs.sp.wrapping_add(1);
 
-        bus.read_byte(0x0100 | (s as u16))
+        bus.read_byte(0x0100 | (self.regs.sp as u16))
     }
 
     // Push word onto the ;stack
@@ -1823,6 +1822,38 @@ impl Cpu {
         true
     }
 
+    fn pha_finish(&mut self, bus: &mut SystemBus) -> bool {
+        self.push_byte(bus, self.regs.a);
+        true
+    }
+
+    fn inc_sp(&mut self, _bus: &mut SystemBus) -> bool {
+        self.regs.sp = self.regs.sp.wrapping_add(1);
+        false
+    }
+
+    fn pla_finish(&mut self, bus: &mut SystemBus) -> bool {
+        let val = bus.read_byte(0x0100 | (self.regs.sp as u16));
+        self.set_zero_negative(val);
+        self.regs.a = val;
+        true
+    }
+
+    fn php_finish(&mut self, bus: &mut SystemBus) -> bool {
+        let mut status = self.flags;
+        status.b = true;
+        status.e = true;
+        self.push_byte(bus, status.into());
+        true
+    }
+
+    fn plp_finish(&mut self, bus: &mut SystemBus) -> bool {
+        let val = bus.read_byte(0x0100 | (self.regs.sp as u16));
+        let flags: u8 = self.flags.into();
+        self.flags = ((val & 0xCF) | (flags & 0x30)).into();
+        true
+    }
+
     fn jmp_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let high = (self.next_pc_byte(bus) as u16) << 8;
         self.regs.pc |= high;
@@ -2775,6 +2806,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::dummy_fetch,
             Cpu::rts_finish,
         ],
+    });
+
+    opcodes[0x48] = Some(Instruction {
+        name: "PHA",
+        cycles: &[Cpu::dummy_fetch, Cpu::pha_finish],
+    });
+
+    opcodes[0x68] = Some(Instruction {
+        name: "PLA",
+        cycles: &[Cpu::dummy_fetch, Cpu::inc_sp, Cpu::pla_finish],
+    });
+
+    opcodes[0x08] = Some(Instruction {
+        name: "PHP",
+        cycles: &[Cpu::dummy_fetch, Cpu::php_finish],
+    });
+
+    opcodes[0x28] = Some(Instruction {
+        name: "PLP",
+        cycles: &[Cpu::dummy_fetch, Cpu::inc_sp, Cpu::plp_finish],
     });
 
     opcodes[0x4C] = Some(Instruction {

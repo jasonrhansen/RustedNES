@@ -146,11 +146,11 @@ macro_rules! handle_opcode {
 
             // 0x20 => $this.jsr($mem),
             // 0x60 => $this.rts($mem),
-            0x48 => $this.pha($mem),
-            0x68 => $this.pla($mem),
-            0x08 => $this.php($mem),
-            0x28 => $this.plp($mem),
 
+            // 0x48 => $this.pha($mem),
+            // 0x68 => $this.pla($mem),
+            // 0x08 => $this.php($mem),
+            // 0x28 => $this.plp($mem),
             0x4A => $this.lsr($mem, AddressMode::Register(Register8::A)),
             0x46 => $this.lsr($mem, AddressMode::ZeroPage),
             0x56 => $this.lsr($mem, AddressMode::ZeroPageIndexed(Register8::X)),
