@@ -1737,7 +1737,7 @@ impl Cpu {
         false
     }
 
-    fn inc_abs_indexed_x_dummy_read(&mut self, bus: &mut SystemBus) -> bool {
+    fn incdec_abs_indexed_x_dummy_read(&mut self, bus: &mut SystemBus) -> bool {
         let (low_byte, _) = (self.addr_abs as u8).overflowing_add(self.regs.x);
         let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
         bus.read_byte(uncorrected_addr);
@@ -1751,7 +1751,7 @@ impl Cpu {
         false
     }
 
-    fn inc_addr_abs_dummy_write(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn addr_abs_fetched_data_dummy_write(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         bus.write_byte(self.addr_abs, self.fetched_data);
         false
     }
@@ -1763,10 +1763,8 @@ impl Cpu {
         true
     }
 
-    fn inc_zero_page_indexed_x_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        let index = self.regs.x;
-        let addr = (self.base_addr as u16 + index as u16) % 0x0100;
-        let value = bus.read_byte(addr);
+    fn dec_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = self.fetched_data.wrapping_sub(1);
         self.set_zero_negative(value);
         self.write_byte(bus, self.addr_abs, value);
         true
@@ -2573,7 +2571,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
-            Cpu::inc_addr_abs_dummy_write,
+            Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::inc_addr_abs_finish,
         ],
     });
@@ -2584,7 +2582,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
             Cpu::read_zero_page_indexed_x_data,
-            Cpu::inc_addr_abs_dummy_write,
+            Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::inc_addr_abs_finish,
         ],
     });
@@ -2594,7 +2592,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
-            Cpu::inc_addr_abs_dummy_write,
+            Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::inc_addr_abs_finish,
         ],
     });
@@ -2604,10 +2602,53 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
-            Cpu::inc_abs_indexed_x_dummy_read,
+            Cpu::incdec_abs_indexed_x_dummy_read,
             Cpu::read_abs_indexed_x_data,
-            Cpu::inc_addr_abs_dummy_write,
+            Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::inc_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xC6] = Some(Instruction {
+        name: "DEC Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::dec_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xD6] = Some(Instruction {
+        name: "DEC Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::dec_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xCE] = Some(Instruction {
+        name: "DEC Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::dec_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xDE] = Some(Instruction {
+        name: "DEC Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::incdec_abs_indexed_x_dummy_read,
+            Cpu::read_abs_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::dec_addr_abs_finish,
         ],
     });
 
