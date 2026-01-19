@@ -1,5 +1,5 @@
 use crate::cartridge::{self, Cartridge, Mirroring};
-use crate::cpu::{Cpu, Interrupt};
+use crate::cpu::Cpu;
 use crate::mapper::{self, Mapper};
 use crate::ppu::{self, Ppu};
 
@@ -164,7 +164,9 @@ impl Mapper4 {
             self.irq_counter -= 1;
 
             if self.irq_counter == 0 && self.irq_enable {
-                cpu.request_interrupt(Interrupt::Irq);
+                cpu.request_irq();
+            } else {
+                cpu.reset_irq();
             }
         }
     }

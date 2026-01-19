@@ -77,14 +77,16 @@ impl Nes {
             for _ in 0..3 {
                 let request_nmi = self.ppu.tick(&mut self.mapper, video_frame_sink);
                 if request_nmi {
-                    self.cpu.request_interrupt(cpu::Interrupt::Nmi);
+                    self.cpu.request_nmi();
                 }
             }
 
             // There is 1 APU cycle per CPU cycle.
             let (request_irq, cpu_stall_cycles) = self.apu.tick(&mut self.mapper, audio_frame_sink);
             if request_irq {
-                self.cpu.request_interrupt(cpu::Interrupt::Irq);
+                self.cpu.request_irq();
+            } else {
+                self.cpu.reset_irq();
             }
             if cpu_stall_cycles > 0 {
                 self.cpu.stall(cpu_stall_cycles);

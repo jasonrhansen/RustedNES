@@ -17,12 +17,6 @@ pub const OAMDATA_ADDRESS: u16 = 0x2004;
 pub const OAMDMA_ADDRESS: u16 = 0x4014;
 pub const CPU_FREQUENCY: u64 = 1_789_773;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub enum Interrupt {
-    Nmi, // NMI (Non-Maskable Interrupt)
-    Irq,
-}
-
 const NMI_VECTOR: u16 = 0xFFFA;
 const IRQ_VECTOR: u16 = 0xFFFE;
 const RESET_VECTOR: u16 = 0xFFFC;
@@ -134,7 +128,10 @@ pub struct Cpu {
     stall_cycles: u8,
     regs: Regs,
     flags: Flags,
-    interrupt: Option<Interrupt>,
+    instruction: Option<Instruction>,
+    active_interrupt: Option<Instruction>,
+    pending_nmi: bool,
+    irq_line_low: bool,
 
     // Tempory mid-instruction data to be able to run one cycle at a time.
     opcode: u8,
@@ -164,7 +161,7 @@ impl Cpu {
             stall_cycles: self.stall_cycles,
             regs: self.regs,
             flags: self.flags,
-            interrupt: self.interrupt,
+            interrupt: self.active_interrupt,
         }
     }
 
@@ -172,7 +169,7 @@ impl Cpu {
         self.stall_cycles = state.stall_cycles;
         self.regs = state.regs;
         self.flags = state.flags;
-        self.interrupt = state.interrupt;
+        self.active_interrupt = state.interrupt;
     }
 
     pub fn stall(&mut self, cycles: u8) {
@@ -200,7 +197,7 @@ impl Cpu {
             v: false,
             n: false,
         };
-        self.interrupt = None;
+        self.active_interrupt = None;
     }
 
     /// Runs a single CPU cycle.
@@ -210,15 +207,30 @@ impl Cpu {
             return false;
         }
 
-        // TODO: Handle interrupts one cycle at a time.
-
         if self.cycle == 0 {
-            // Fetch new instruction.
-            self.opcode = self.next_pc_byte(bus);
+            if self.pending_nmi {
+                self.pending_nmi = false;
+                self.active_interrupt = Some(NMI_INTERRUPT);
+            } else if self.irq_line_low && !self.flags.i {
+                self.active_interrupt = Some(IRQ_INTERRUPT);
+            } else {
+                self.active_interrupt = None;
+            }
+
+            if let Some(interrupt) = self.active_interrupt {
+                // Hijack fetching instruction and run interrupt sequence.
+                self.instruction = Some(interrupt);
+            } else {
+                // Fetch new instruction.
+                self.opcode = self.next_pc_byte(bus);
+                self.regs.pc += 1;
+                self.instruction = OPCODES[self.opcode as usize];
+            }
+
             self.cycle = 1;
         } else {
             // Continue in-progress instruction.
-            let instr = match &OPCODES[self.opcode as usize] {
+            let instr = match self.instruction {
                 Some(instr) => instr,
                 None => panic!("Unsupported opcode: {:X}", self.opcode),
             };
@@ -522,44 +534,18 @@ impl Cpu {
     // Interrupts
     ///////////////
 
-    // Request interrupt to be run on next step
-    pub fn request_interrupt(&mut self, interrupt: Interrupt) {
-        match interrupt {
-            Interrupt::Nmi => self.interrupt = Some(interrupt),
-            Interrupt::Irq => {
-                if self.interrupt.is_none() {
-                    self.interrupt = Some(interrupt);
-                }
-            }
-        }
+    // Request NMI to be run on next instruction fetch attempt.
+    pub fn request_nmi(&mut self) {
+        self.pending_nmi = true;
     }
 
-    fn handle_interrupts(&mut self, bus: &mut SystemBus) -> bool {
-        if let Some(interrupt) = self.interrupt {
-            match interrupt {
-                Interrupt::Nmi => self.handle_interrupt(bus, NMI_VECTOR),
-                Interrupt::Irq => {
-                    if !self.flags.i {
-                        self.handle_interrupt(bus, IRQ_VECTOR);
-                        self.flags.i = true;
-                    }
-                }
-            }
-            true
-        } else {
-            false
-        }
+    // Request IRQ to be run on next instruction fetch attempt.
+    pub fn request_irq(&mut self) {
+        self.irq_line_low = true;
     }
 
-    fn handle_interrupt(&mut self, bus: &mut SystemBus, vector: u16) {
-        self.dummy_read(bus);
-        self.push_word(bus, self.regs.pc);
-        let mut status = self.flags;
-        status.b = true;
-        status.e = true;
-        self.push_byte(bus, status.into());
-        self.regs.pc = self.read_word(bus, vector);
-        self.interrupt = None;
+    pub fn reset_irq(&mut self) {
+        self.irq_line_low = false;
     }
 
     // Instruction Cycle Functions
@@ -1366,12 +1352,22 @@ impl Cpu {
         false
     }
 
-    fn push_status(&mut self, bus: &mut SystemBus) -> bool {
+    #[inline(always)]
+    fn push_status(&mut self, bus: &mut SystemBus) {
         let mut status = self.flags;
         status.b = true;
         status.e = true;
         self.push_byte(bus, status.into());
+    }
+
+    fn brk_push_status(&mut self, bus: &mut SystemBus) -> bool {
+        self.push_status(bus);
         self.flags.i = true;
+        false
+    }
+
+    fn interrupt_push_status(&mut self, bus: &mut SystemBus) -> bool {
+        self.push_status(bus);
         false
     }
 
@@ -1511,7 +1507,29 @@ impl Cpu {
         true
     }
 
-    fn rti_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn read_nmi_vector_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.temp_addr_low = bus.read_byte(NMI_VECTOR);
+        false
+    }
+
+    fn nmi_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let hi = bus.read_byte(NMI_VECTOR + 1);
+        self.regs.pc = ((hi << 8) as u16) | (self.temp_addr_low as u16);
+        true
+    }
+
+    fn read_irq_vector_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.temp_addr_low = bus.read_byte(IRQ_VECTOR);
+        false
+    }
+
+    fn irq_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let hi = bus.read_byte(IRQ_VECTOR + 1);
+        self.regs.pc = ((hi << 8) as u16) | (self.temp_addr_low as u16);
+        true
+    }
+
+    fn rti_finish(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
         self.regs.pc = self.addr_abs;
         true
     }
@@ -2693,7 +2711,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::dummy_fetch_and_inc_pc,
             Cpu::push_pc_high,
             Cpu::push_pc_low,
-            Cpu::push_status,
+            Cpu::brk_push_status,
             Cpu::read_brk_vector_low,
             Cpu::brk_finish,
         ],
@@ -2803,4 +2821,28 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes
+};
+
+pub const NMI_INTERRUPT: Instruction = Instruction {
+    name: "NMI",
+    cycles: &[
+        Cpu::dummy_fetch,
+        Cpu::push_pc_high,
+        Cpu::push_pc_low,
+        Cpu::interrupt_push_status,
+        Cpu::read_nmi_vector_low,
+        Cpu::nmi_finish,
+    ],
+};
+
+pub const IRQ_INTERRUPT: Instruction = Instruction {
+    name: "IRQ",
+    cycles: &[
+        Cpu::dummy_fetch,
+        Cpu::push_pc_high,
+        Cpu::push_pc_low,
+        Cpu::interrupt_push_status,
+        Cpu::read_irq_vector_low,
+        Cpu::irq_finish,
+    ],
 };
