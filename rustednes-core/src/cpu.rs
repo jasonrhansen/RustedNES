@@ -732,69 +732,6 @@ impl Cpu {
         self.decrement(bus, am);
     }
 
-    fn inx(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        let val = self.regs.x.wrapping_add(1);
-        self.set_zero_negative(val);
-        self.regs.x = val;
-    }
-
-    fn iny(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        let val = self.regs.y.wrapping_add(1);
-        self.set_zero_negative(val);
-        self.regs.y = val;
-    }
-
-    fn dex(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        let val = self.regs.x.wrapping_sub(1);
-        self.set_zero_negative(val);
-        self.regs.x = val;
-    }
-
-    fn dey(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        let val = self.regs.y.wrapping_sub(1);
-        self.set_zero_negative(val);
-        self.regs.y = val;
-    }
-
-    fn tax(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.set_zero_negative(self.regs.a);
-        self.regs.x = self.regs.a;
-    }
-
-    fn txa(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.set_zero_negative(self.regs.x);
-        self.regs.a = self.regs.x;
-    }
-
-    fn tay(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.set_zero_negative(self.regs.a);
-        self.regs.y = self.regs.a;
-    }
-
-    fn tya(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.set_zero_negative(self.regs.y);
-        self.regs.a = self.regs.y;
-    }
-
-    fn tsx(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.set_zero_negative(self.regs.sp);
-        self.regs.x = self.regs.sp;
-    }
-
-    fn txs(&mut self, bus: &mut SystemBus) {
-        self.dummy_read(bus);
-        self.regs.sp = self.regs.x;
-    }
-
     fn jsr(&mut self, bus: &mut SystemBus) {
         let addr_lo = self.next_pc_byte(bus);
         self.cycles += 1;
@@ -1770,6 +1707,79 @@ impl Cpu {
         true
     }
 
+    fn inx(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        let val = self.regs.x.wrapping_add(1);
+        self.set_zero_negative(val);
+        self.regs.x = val;
+        true
+    }
+
+    fn iny(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        let val = self.regs.y.wrapping_add(1);
+        self.set_zero_negative(val);
+        self.regs.y = val;
+        true
+    }
+
+    fn dex(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        let val = self.regs.x.wrapping_sub(1);
+        self.set_zero_negative(val);
+        self.regs.x = val;
+        true
+    }
+
+    fn dey(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        let val = self.regs.y.wrapping_sub(1);
+        self.set_zero_negative(val);
+        self.regs.y = val;
+        true
+    }
+
+    fn tax(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.set_zero_negative(self.regs.a);
+        self.regs.x = self.regs.a;
+        true
+    }
+
+    fn txa(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.set_zero_negative(self.regs.x);
+        self.regs.a = self.regs.x;
+        true
+    }
+
+    fn tay(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.set_zero_negative(self.regs.a);
+        self.regs.y = self.regs.a;
+        true
+    }
+
+    fn tya(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.set_zero_negative(self.regs.y);
+        self.regs.a = self.regs.y;
+        true
+    }
+
+    fn tsx(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.set_zero_negative(self.regs.sp);
+        self.regs.x = self.regs.sp;
+        true
+    }
+
+    fn txs(&mut self, bus: &mut SystemBus) -> bool {
+        self.dummy_read(bus);
+        self.regs.sp = self.regs.x;
+        true
+    }
+
     fn jmp_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let high = (self.next_pc_byte(bus) as u16) << 8;
         self.regs.pc |= high;
@@ -2650,6 +2660,56 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::dec_addr_abs_finish,
         ],
+    });
+
+    opcodes[0xE8] = Some(Instruction {
+        name: "INX",
+        cycles: &[Cpu::inx],
+    });
+
+    opcodes[0xC8] = Some(Instruction {
+        name: "INY",
+        cycles: &[Cpu::iny],
+    });
+
+    opcodes[0xCA] = Some(Instruction {
+        name: "DEX",
+        cycles: &[Cpu::dex],
+    });
+
+    opcodes[0x88] = Some(Instruction {
+        name: "DEY",
+        cycles: &[Cpu::dey],
+    });
+
+    opcodes[0xAA] = Some(Instruction {
+        name: "TAX",
+        cycles: &[Cpu::tax],
+    });
+
+    opcodes[0x8A] = Some(Instruction {
+        name: "TXA",
+        cycles: &[Cpu::txa],
+    });
+
+    opcodes[0xA8] = Some(Instruction {
+        name: "TAY",
+        cycles: &[Cpu::tay],
+    });
+
+    opcodes[0x98] = Some(Instruction {
+        name: "TYA",
+        cycles: &[Cpu::tya],
+    });
+
+    opcodes[0xBA] = Some(Instruction {
+        name: "TSX",
+        cycles: &[Cpu::tsx],
+    });
+
+    opcodes[0x9A] = Some(Instruction {
+        name: "TXS",
+        cycles: &[Cpu::txs],
     });
 
     opcodes[0x4C] = Some(Instruction {
