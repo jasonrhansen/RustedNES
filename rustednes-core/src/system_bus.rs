@@ -3,15 +3,19 @@ use crate::game_genie::Cheat;
 use crate::input::Input;
 use crate::mapper::{Mapper, MapperEnum};
 use crate::memory::{Memory, Ram};
+use crate::oam_dma::OamDma;
 use crate::ppu::Ppu;
 
 use std::collections::HashMap;
+
+pub const OAMDMA_ADDRESS: u16 = 0x4014;
 
 pub struct SystemBus<'a> {
     ram: &'a mut Ram,
     mapper: &'a mut MapperEnum,
     ppu: &'a mut Ppu,
     apu: &'a mut Apu,
+    oam_dma: &'a mut OamDma,
     input: &'a mut Input,
     cheats: &'a HashMap<u16, Cheat>,
 }
@@ -22,6 +26,7 @@ impl<'a> SystemBus<'a> {
         mapper: &'a mut MapperEnum,
         ppu: &'a mut Ppu,
         apu: &'a mut Apu,
+        oam_dma: &'a mut OamDma,
         input: &'a mut Input,
         cheats: &'a HashMap<u16, Cheat>,
     ) -> Self {
@@ -30,6 +35,7 @@ impl<'a> SystemBus<'a> {
             mapper,
             ppu,
             apu,
+            oam_dma,
             input,
             cheats,
         }
@@ -59,7 +65,9 @@ impl<'a> SystemBus<'a> {
     }
 
     pub fn write_byte(&mut self, address: u16, value: u8) {
-        if address < 0x2000 {
+        if address == OAMDMA_ADDRESS {
+            self.oam_dma.activate(value);
+        } else if address < 0x2000 {
             self.ram.write_byte(address, value);
         } else if address < 0x4000 {
             self.ppu.write_byte(self.mapper, address, value);

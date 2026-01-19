@@ -4,9 +4,10 @@ use crate::cpu::Cpu;
 use crate::game_genie::Cheat;
 use crate::input::{GamePad, Input};
 use crate::mapper::{Mapper, MapperEnum};
-use crate::memory::Ram;
-use crate::ppu::Ppu;
+use crate::memory::{Memory, Ram};
+use crate::oam_dma::OamDma;
 use crate::ppu::{self, Vram};
+use crate::ppu::{OAMDATA_ADDRESS, Ppu};
 use crate::sink::*;
 use crate::system_bus::SystemBus;
 use crate::{cpu, input, mapper};
@@ -21,6 +22,7 @@ pub struct Nes {
     pub cpu: Cpu,
     pub ppu: Ppu,
     pub apu: Apu,
+    pub oam_dma: OamDma,
     pub input: Input,
     cheats: HashMap<u16, Cheat>,
     cycles: usize,
@@ -46,6 +48,7 @@ impl Nes {
             cpu: Cpu::new(),
             ppu: Ppu::new(),
             apu: Apu::new(),
+            oam_dma: OamDma::new(),
             input: Input::new(),
             cheats: HashMap::new(),
             cycles: 0,
@@ -56,46 +59,88 @@ impl Nes {
         nes
     }
 
+    // Runs all hardware for a single CPU instruction and returns the number of cycles that
+    // were run.
     pub fn step<A: AudioSink, V: VideoSink + Sized>(
         &mut self,
         video_frame_sink: &mut V,
         audio_frame_sink: &mut A,
-    ) -> (u32, bool) {
-        let mut bus = SystemBus::new(
-            &mut self.ram,
-            &mut self.mapper,
-            &mut self.ppu,
-            &mut self.apu,
-            &mut self.input,
-            &self.cheats,
-        );
+    ) -> usize {
+        let prev_cycles = self.cycles;
+        // Run cycles until a CPU instruction completes.
+        while !self.tick(video_frame_sink, audio_frame_sink) {}
+        self.cycles - prev_cycles
+    }
 
-        let (cycles, trigger_watchpoint) = self.cpu.step(&mut bus);
+    // Run all hardware for the duration of a single CPU cycle. Returns whether a CPU instruction completed in this cycle.
+    pub fn tick<A: AudioSink, V: VideoSink + Sized>(
+        &mut self,
+        video_frame_sink: &mut V,
+        audio_frame_sink: &mut A,
+    ) -> bool {
+        let completed_instruction = if self.oam_dma.active {
+            self.handle_oam_dma();
+            false
+        } else {
+            let mut bus = SystemBus::new(
+                &mut self.ram,
+                &mut self.mapper,
+                &mut self.ppu,
+                &mut self.apu,
+                &mut self.oam_dma,
+                &mut self.input,
+                &self.cheats,
+            );
+            self.cpu.tick(&mut bus)
+        };
 
-        for _ in 0..cycles {
-            // There are 3 PPU cycles per CPU cycle.
-            for _ in 0..3 {
-                let request_nmi = self.ppu.tick(&mut self.mapper, video_frame_sink);
-                if request_nmi {
-                    self.cpu.request_nmi();
-                }
-            }
-
-            // There is 1 APU cycle per CPU cycle.
-            let (request_irq, cpu_stall_cycles) = self.apu.tick(&mut self.mapper, audio_frame_sink);
-            if request_irq {
-                self.cpu.request_irq();
-            } else {
-                self.cpu.reset_irq();
-            }
-            if cpu_stall_cycles > 0 {
-                self.cpu.stall(cpu_stall_cycles);
+        // There are 3 PPU cycles per CPU cycle.
+        for _ in 0..3 {
+            let request_nmi = self.ppu.tick(&mut self.mapper, video_frame_sink);
+            if request_nmi {
+                self.cpu.request_nmi();
             }
         }
 
-        self.cycles += cycles as usize;
+        // There is 1 APU cycle per CPU cycle.
+        let (request_irq, cpu_stall_cycles) = self.apu.tick(&mut self.mapper, audio_frame_sink);
+        if request_irq {
+            self.cpu.request_irq();
+        } else {
+            self.cpu.reset_irq();
+        }
+        if cpu_stall_cycles > 0 {
+            self.cpu.stall(cpu_stall_cycles);
+        }
 
-        (cycles, trigger_watchpoint)
+        self.cycles += 1;
+
+        completed_instruction
+    }
+
+    fn handle_oam_dma(&mut self) {
+        if self.oam_dma.dummy_read {
+            // Needs an extra cycle to align on odd cycles.
+            if !self.cycles.is_multiple_of(2) {
+                self.oam_dma.dummy_read = false;
+            }
+            return;
+        }
+
+        // ON even cycles read from CPU RAM.
+        if self.cycles.is_multiple_of(2) {
+            let addr = ((self.oam_dma.page as u16) << 8) | (self.oam_dma.count & 0xFF);
+            self.oam_dma.data = self.ram.read_byte(addr);
+        }
+        // ON odd cycles write to PPU OAMDATA.
+        else {
+            self.ppu
+                .write_byte(&mut self.mapper, OAMDATA_ADDRESS, self.oam_dma.data);
+            self.oam_dma.count += 1;
+            if self.oam_dma.count == 256 {
+                self.oam_dma.active = false;
+            }
+        }
     }
 
     pub fn get_state(&self) -> State {
@@ -126,6 +171,7 @@ impl Nes {
             &mut self.mapper,
             &mut self.ppu,
             &mut self.apu,
+            &mut self.oam_dma,
             &mut self.input,
             &self.cheats,
         )
@@ -137,6 +183,7 @@ impl Nes {
             &mut self.mapper,
             &mut self.ppu,
             &mut self.apu,
+            &mut self.oam_dma,
             &mut self.input,
             &self.cheats,
         );

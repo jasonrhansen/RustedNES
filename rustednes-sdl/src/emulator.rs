@@ -177,14 +177,14 @@ where
                         EmulationMode::Running => {
                             let mut start_debugger = false;
                             while self.emulated_cycles < target_cycles && !start_debugger {
-                                let (cycles, trigger_watchpoint) = self
+                                let cycles = self
                                     .nes
                                     .step(&mut video_frame_sink, &mut self.audio_frame_sink);
 
                                 self.emulated_cycles += cycles as u64;
                                 self.emulated_instructions += 1;
 
-                                if trigger_watchpoint || debugger.at_breakpoint(&self.nes) {
+                                if debugger.at_breakpoint(&self.nes) {
                                     start_debugger = true;
                                 }
                             }
@@ -227,14 +227,13 @@ where
         self.cleanup(&mut canvas);
     }
 
-    fn step<V: VideoSink>(&mut self, video_frame_sink: &mut V) -> (u32, bool) {
-        let (cycles, trigger_watchpoint) =
-            self.nes.step(video_frame_sink, &mut self.audio_frame_sink);
+    fn step<V: VideoSink>(&mut self, video_frame_sink: &mut V) -> usize {
+        let cycles = self.nes.step(video_frame_sink, &mut self.audio_frame_sink);
 
         self.emulated_cycles += cycles as u64;
         self.emulated_instructions += 1;
 
-        (cycles, trigger_watchpoint)
+        cycles
     }
 
     /// Returns false to signal to end emulation.
@@ -633,7 +632,7 @@ where
             self.time_source.time_ns() - (self.emulated_cycles * CPU_CYCLE_TIME_NS);
     }
 
-    fn step(&mut self, video_frame_sink: &mut V) -> (u32, bool) {
+    fn step(&mut self, video_frame_sink: &mut V) -> usize {
         Emulator::step(self, video_frame_sink)
     }
 }

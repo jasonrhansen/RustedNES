@@ -8,13 +8,12 @@ use std::fmt::{Debug, Formatter};
 pub type CycleFn = fn(&mut Cpu, bus: &mut SystemBus) -> bool;
 
 #[derive(Copy, Clone)]
+#[allow(dead_code)]
 pub struct Instruction {
     name: &'static str,
     cycles: &'static [CycleFn],
 }
 
-pub const OAMDATA_ADDRESS: u16 = 0x2004;
-pub const OAMDMA_ADDRESS: u16 = 0x4014;
 pub const CPU_FREQUENCY: u64 = 1_789_773;
 
 const NMI_VECTOR: u16 = 0xFFFA;
@@ -148,7 +147,7 @@ pub struct State {
     pub stall_cycles: u8,
     pub regs: Regs,
     pub flags: Flags,
-    pub interrupt: Option<Interrupt>,
+    // TODO: Fix save state for cycle accurate emulation.
 }
 
 impl Cpu {
@@ -161,7 +160,6 @@ impl Cpu {
             stall_cycles: self.stall_cycles,
             regs: self.regs,
             flags: self.flags,
-            interrupt: self.active_interrupt,
         }
     }
 
@@ -169,7 +167,6 @@ impl Cpu {
         self.stall_cycles = state.stall_cycles;
         self.regs = state.regs;
         self.flags = state.flags;
-        self.active_interrupt = state.interrupt;
     }
 
     pub fn stall(&mut self, cycles: u8) {
@@ -200,7 +197,7 @@ impl Cpu {
         self.active_interrupt = None;
     }
 
-    /// Runs a single CPU cycle.
+    // Run a single CPU cycle. Returns whether an instruction completed.
     pub fn tick(&mut self, bus: &mut SystemBus) -> bool {
         if self.stall_cycles > 0 {
             self.stall_cycles -= 1;
@@ -248,38 +245,11 @@ impl Cpu {
         self.cycle == 0
     }
 
-    fn handle_oam_dma(&mut self, bus: &mut SystemBus, addr_hi: u8) {
-        self.dummy_fetch(bus);
-
-        // An extra cycle should be added on an odd CPU cycle
-        // http://wiki.nesdev.com/w/index.php/PPU_registers#OAMDMA
-        if self.cycles % 2 == 1 {
-            self.cycles += 1;
-        }
-
-        let start = (addr_hi as u16) << 8;
-        for i in 0..256 {
-            let val = self.read_byte(bus, start + i);
-            self.write_byte(bus, OAMDATA_ADDRESS, val);
-        }
-    }
-
     #[inline(always)]
     fn next_pc_byte(&mut self, bus: &mut SystemBus) -> u8 {
         let b = bus.read_byte(self.regs.pc);
         self.regs.pc += 1;
         b
-    }
-
-    #[inline(always)]
-    fn write_byte(&mut self, bus: &mut SystemBus, address: u16, value: u8) {
-        if address == OAMDMA_ADDRESS {
-            self.cycles += 1;
-            self.handle_oam_dma(bus, value);
-        } else {
-            bus.write_byte(address, value);
-            self.cycles += 1;
-        }
     }
 
     ///////////////////////
@@ -377,7 +347,7 @@ impl Cpu {
     #[inline(always)]
     fn push_byte(&mut self, bus: &mut SystemBus, val: u8) {
         let s = self.regs.sp;
-        self.write_byte(bus, 0x0100 | (s as u16), val);
+        bus.write_byte(0x0100 | (s as u16), val);
         self.regs.sp = s.wrapping_sub(1);
     }
 
@@ -650,7 +620,7 @@ impl Cpu {
 
     fn dummy_fetch_and_inc_pc(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         bus.read_byte(self.regs.pc);
-        self.regs.pc.wrapping_add(1);
+        let _ = self.regs.pc.wrapping_add(1);
         false
     }
 
@@ -777,53 +747,53 @@ impl Cpu {
     }
 
     fn sta_write_byte_abs(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.write_byte(bus, self.addr_abs, self.regs.a);
+        bus.write_byte(self.addr_abs, self.regs.a);
         true
     }
 
     fn stx_write_byte_abs(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.write_byte(bus, self.addr_abs, self.regs.x);
+        bus.write_byte(self.addr_abs, self.regs.x);
         true
     }
 
     fn sty_write_byte_abs(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.write_byte(bus, self.addr_abs, self.regs.y);
+        bus.write_byte(self.addr_abs, self.regs.y);
         true
     }
 
     fn sta_write_byte_zp(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.write_byte(bus, self.addr_abs, self.regs.a);
+        bus.write_byte(self.addr_abs, self.regs.a);
         true
     }
 
     fn stx_write_byte_zp(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.write_byte(bus, self.addr_abs, self.regs.x);
+        bus.write_byte(self.addr_abs, self.regs.x);
         true
     }
 
     fn sty_write_byte_zp(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.write_byte(bus, self.addr_abs, self.regs.y);
+        bus.write_byte(self.addr_abs, self.regs.y);
         true
     }
 
     fn sta_write_byte_abs_indexed_x(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let index = self.regs.x;
         let addr = (self.base_addr as u16 + index as u16) % 0x0100;
-        self.write_byte(bus, addr, self.regs.a);
+        bus.write_byte(addr, self.regs.a);
         true
     }
 
     fn stx_write_byte_abs_indexed_y(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let index = self.regs.y;
         let addr = (self.base_addr as u16 + index as u16) % 0x0100;
-        self.write_byte(bus, addr, self.regs.x);
+        bus.write_byte(addr, self.regs.x);
         true
     }
 
     fn sty_write_byte_abs_indexed_x(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let index = self.regs.x;
         let addr = (self.base_addr as u16 + index as u16) % 0x0100;
-        self.write_byte(bus, addr, self.regs.y);
+        bus.write_byte(addr, self.regs.y);
         true
     }
 
@@ -1254,14 +1224,14 @@ impl Cpu {
     fn inc_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let value = self.fetched_data.wrapping_add(1);
         self.set_zero_negative(value);
-        self.write_byte(bus, self.addr_abs, value);
+        bus.write_byte(self.addr_abs, value);
         true
     }
 
     fn dec_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let value = self.fetched_data.wrapping_sub(1);
         self.set_zero_negative(value);
-        self.write_byte(bus, self.addr_abs, value);
+        bus.write_byte(self.addr_abs, value);
         true
     }
 
@@ -1338,7 +1308,7 @@ impl Cpu {
         true
     }
 
-    fn dummy_cycle(&mut self, bus: &mut SystemBus) -> bool {
+    fn dummy_cycle(&mut self, _bus: &mut SystemBus) -> bool {
         false
     }
 
@@ -1443,7 +1413,7 @@ impl Cpu {
         let value = (self.fetched_data >> 1) & 0x7F;
         self.set_zero_negative(value);
         self.flags.c = (value & 0x01) != 0;
-        self.write_byte(bus, self.addr_abs, value);
+        bus.write_byte(self.addr_abs, value);
         true
     }
 
@@ -1458,7 +1428,7 @@ impl Cpu {
         let value = (self.fetched_data << 1) & 0xFE;
         self.set_zero_negative(value);
         self.flags.c = (value & 0x80) != 0;
-        self.write_byte(bus, self.addr_abs, value);
+        bus.write_byte(self.addr_abs, value);
         true
     }
 
@@ -1475,7 +1445,7 @@ impl Cpu {
         let value = ((self.fetched_data >> 1) & 0x7F) | carry;
         self.set_zero_negative(value);
         self.flags.c = (value & 0x01) != 0;
-        self.write_byte(bus, self.addr_abs, value);
+        bus.write_byte(self.addr_abs, value);
         true
     }
 
@@ -1492,7 +1462,7 @@ impl Cpu {
         let value = ((self.fetched_data << 1) & 0xFE) | carry;
         self.set_zero_negative(value);
         self.flags.c = (value & 0x80) != 0;
-        self.write_byte(bus, self.addr_abs, value);
+        bus.write_byte(self.addr_abs, value);
         true
     }
 
@@ -1502,8 +1472,8 @@ impl Cpu {
     }
 
     fn brk_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        let hi = bus.read_byte(BRK_VECTOR + 1);
-        self.regs.pc = ((hi << 8) as u16) | (self.temp_addr_low as u16);
+        let hi = bus.read_byte(BRK_VECTOR + 1) as u16;
+        self.regs.pc = (hi << 8) | (self.temp_addr_low as u16);
         true
     }
 
@@ -1513,8 +1483,8 @@ impl Cpu {
     }
 
     fn nmi_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        let hi = bus.read_byte(NMI_VECTOR + 1);
-        self.regs.pc = ((hi << 8) as u16) | (self.temp_addr_low as u16);
+        let hi = bus.read_byte(NMI_VECTOR + 1) as u16;
+        self.regs.pc = (hi << 8) | (self.temp_addr_low as u16);
         true
     }
 
@@ -1524,8 +1494,8 @@ impl Cpu {
     }
 
     fn irq_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        let hi = bus.read_byte(IRQ_VECTOR + 1);
-        self.regs.pc = ((hi << 8) as u16) | (self.temp_addr_low as u16);
+        let hi = bus.read_byte(IRQ_VECTOR + 1) as u16;
+        self.regs.pc = (hi << 8) | (self.temp_addr_low as u16);
         true
     }
 

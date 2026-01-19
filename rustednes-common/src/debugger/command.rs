@@ -22,9 +22,6 @@ pub enum Command {
     Breakpoint,
     AddBreakpoint(u16),
     RemoveBreakpoint(u16),
-    Watchpoint,
-    AddWatchpoint(u16),
-    RemoveWatchpoint(u16),
     Exit,
     Repeat,
 }
@@ -105,18 +102,6 @@ fn command(input: &str) -> IResult<&str, Command> {
         preceded(space1, u16_hex),
     ));
 
-    let watchpoint = all_consuming(alt((tag("watchpoint"), tag("w"))));
-
-    let add_watchpoint = all_consuming(preceded(
-        alt((tag("addwatchpoint"), tag("aw"))),
-        preceded(space1, u16_hex),
-    ));
-
-    let remove_watchpoint = all_consuming(preceded(
-        alt((tag("removewatchpoint"), tag("rw"))),
-        preceded(space1, u16_hex),
-    ));
-
     let exit = all_consuming(alt((
         tag("exit"),
         tag("quit"),
@@ -146,9 +131,6 @@ fn command(input: &str) -> IResult<&str, Command> {
         map(breakpoint, |_| Command::Breakpoint),
         map(add_breakpoint, Command::AddBreakpoint),
         map(remove_breakpoint, Command::RemoveBreakpoint),
-        map(watchpoint, |_| Command::Watchpoint),
-        map(add_watchpoint, Command::AddWatchpoint),
-        map(remove_watchpoint, Command::RemoveWatchpoint),
         map(exit, |_| Command::Exit),
         map(repeat, |_| Command::Repeat),
     ));

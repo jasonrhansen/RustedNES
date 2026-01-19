@@ -268,19 +268,6 @@ impl Debugger {
                     println!("Breakpoint at 0x{:04x} doesn't exist", address);
                 }
             }
-            Command::Watchpoint => {
-                for address in emulator.nes().cpu.watchpoints.iter() {
-                    println!("* 0x{:04x}", address);
-                }
-            }
-            Command::AddWatchpoint(address) => {
-                emulator.nes().cpu.watchpoints.insert(address);
-            }
-            Command::RemoveWatchpoint(address) => {
-                if !emulator.nes().cpu.watchpoints.remove(&address) {
-                    println!("Watchpoint at 0x{:04x} doesn't exist", address);
-                }
-            }
             Command::Exit => {
                 return true;
             }
