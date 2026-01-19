@@ -1100,6 +1100,12 @@ impl Cpu {
         false
     }
 
+    fn dummy_fetch_and_inc_pc(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        bus.read_byte(self.regs.pc);
+        self.regs.pc.wrapping_add(1);
+        false
+    }
+
     fn indexed_x_dummy_read_and_add(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         self.indexed_dummy_read_and_add(bus, Register8::X)
     }
@@ -1798,6 +1804,15 @@ impl Cpu {
         false
     }
 
+    fn push_status(&mut self, bus: &mut SystemBus) -> bool {
+        let mut status = self.flags;
+        status.b = true;
+        status.e = true;
+        self.push_byte(bus, status.into());
+        self.flags.i = true;
+        false
+    }
+
     fn pull_low(&mut self, bus: &mut SystemBus) -> bool {
         self.addr_abs = self.pull_byte(bus) as u16;
         false
@@ -1807,6 +1822,11 @@ impl Cpu {
         let lo = self.addr_abs;
         let hi = self.pull_byte(bus) as u16;
         self.addr_abs = (hi << 8) | lo;
+        false
+    }
+
+    fn pull_status(&mut self, bus: &mut SystemBus) -> bool {
+        self.flags = self.pull_byte(bus).into();
         false
     }
 
@@ -1915,6 +1935,27 @@ impl Cpu {
         self.set_zero_negative(value);
         self.flags.c = (value & 0x80) != 0;
         self.write_byte(bus, self.addr_abs, value);
+        true
+    }
+
+    fn read_brk_vector_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.temp_addr_low = bus.read_byte(BRK_VECTOR);
+        false
+    }
+
+    fn brk_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let hi = bus.read_byte(BRK_VECTOR + 1);
+        self.regs.pc = ((hi << 8) as u16) | (self.temp_addr_low as u16);
+        true
+    }
+
+    fn rti_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.regs.pc = self.addr_abs;
+        true
+    }
+
+    fn nop_implied(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        bus.read_byte(self.regs.pc);
         true
     }
 
@@ -3082,6 +3123,34 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::rol_addr_abs_finish,
         ],
+    });
+
+    opcodes[0x00] = Some(Instruction {
+        name: "BRK",
+        cycles: &[
+            Cpu::dummy_fetch_and_inc_pc,
+            Cpu::push_pc_high,
+            Cpu::push_pc_low,
+            Cpu::push_status,
+            Cpu::read_brk_vector_low,
+            Cpu::brk_finish,
+        ],
+    });
+
+    opcodes[0x40] = Some(Instruction {
+        name: "RTI",
+        cycles: &[
+            Cpu::dummy_fetch,
+            Cpu::pull_status,
+            Cpu::pull_low,
+            Cpu::pull_high,
+            Cpu::rti_finish,
+        ],
+    });
+
+    opcodes[0xEA] = Some(Instruction {
+        name: "NOP Implied",
+        cycles: &[Cpu::nop_implied],
     });
 
     opcodes[0x4C] = Some(Instruction {

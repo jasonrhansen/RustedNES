@@ -175,10 +175,10 @@ macro_rules! handle_opcode {
             // 0x36 => $this.rol($mem, AddressMode::ZeroPageIndexed(Register8::X)),
             // 0x2E => $this.rol($mem, AddressMode::Absolute),
             // 0x3E => $this.rol($mem, AddressMode::AbsoluteIndexed(Register8::X)),
-            0x00 => $this.brk($mem),
-            0x40 => $this.rti($mem),
 
-            0xEA => $this.nop($mem, AddressMode::Immediate),
+            // 0x00 => $this.brk($mem),
+            // 0x40 => $this.rti($mem),
+            // 0xEA => $this.nop($mem, AddressMode::Immediate),
 
             // Unofficial opcodes
             0x4B => $this.alr($mem),
