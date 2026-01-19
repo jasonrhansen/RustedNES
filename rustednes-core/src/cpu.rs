@@ -1869,6 +1869,55 @@ impl Cpu {
         true
     }
 
+    fn asl_accumulator_finish(&mut self, _bus: &mut SystemBus) -> bool {
+        self.regs.a = (self.regs.a << 1) & 0xFE;
+        self.set_zero_negative(self.regs.a);
+        self.flags.c = (self.regs.a & 0x80) != 0;
+        true
+    }
+
+    fn asl_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = (self.fetched_data << 1) & 0xFE;
+        self.set_zero_negative(value);
+        self.flags.c = (value & 0x80) != 0;
+        self.write_byte(bus, self.addr_abs, value);
+        true
+    }
+
+    fn ror_accumulator_finish(&mut self, _bus: &mut SystemBus) -> bool {
+        let carry: u8 = if self.flags.c { 1 << 7 } else { 0 };
+        self.regs.a = ((self.regs.a >> 1) & 0x7F) | carry;
+        self.set_zero_negative(self.regs.a);
+        self.flags.c = (self.regs.a & 0x01) != 0;
+        true
+    }
+
+    fn ror_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let carry: u8 = if self.flags.c { 1 << 7 } else { 0 };
+        let value = ((self.fetched_data >> 1) & 0x7F) | carry;
+        self.set_zero_negative(value);
+        self.flags.c = (value & 0x01) != 0;
+        self.write_byte(bus, self.addr_abs, value);
+        true
+    }
+
+    fn rol_accumulator_finish(&mut self, _bus: &mut SystemBus) -> bool {
+        let carry: u8 = self.flags.c.into();
+        self.regs.a = ((self.regs.a << 1) & 0xFE) | carry;
+        self.set_zero_negative(self.regs.a);
+        self.flags.c = (self.regs.a & 0x80) != 0;
+        true
+    }
+
+    fn rol_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let carry: u8 = self.flags.c.into();
+        let value = ((self.fetched_data << 1) & 0xFE) | carry;
+        self.set_zero_negative(value);
+        self.flags.c = (value & 0x80) != 0;
+        self.write_byte(bus, self.addr_abs, value);
+        true
+    }
+
     fn jmp_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let high = (self.next_pc_byte(bus) as u16) << 8;
         self.regs.pc |= high;
@@ -2888,6 +2937,150 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::read_abs_indexed_x_data,
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::lsr_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x0A] = Some(Instruction {
+        name: "ASL Accumulator",
+        cycles: &[Cpu::dummy_fetch, Cpu::asl_accumulator_finish],
+    });
+
+    opcodes[0x06] = Some(Instruction {
+        name: "ASL Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::asl_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x16] = Some(Instruction {
+        name: "ASL Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::asl_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x0E] = Some(Instruction {
+        name: "ASL Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::asl_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x1E] = Some(Instruction {
+        name: "ASL Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::rmw_abs_indexed_x_dummy_read,
+            Cpu::read_abs_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::asl_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x6A] = Some(Instruction {
+        name: "ROR Accumulator",
+        cycles: &[Cpu::dummy_fetch, Cpu::ror_accumulator_finish],
+    });
+
+    opcodes[0x66] = Some(Instruction {
+        name: "ROR Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::ror_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x76] = Some(Instruction {
+        name: "ROR Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::ror_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x6E] = Some(Instruction {
+        name: "ROR Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::ror_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x7E] = Some(Instruction {
+        name: "ROR Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::rmw_abs_indexed_x_dummy_read,
+            Cpu::read_abs_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::ror_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x2A] = Some(Instruction {
+        name: "ROL Accumulator",
+        cycles: &[Cpu::dummy_fetch, Cpu::rol_accumulator_finish],
+    });
+
+    opcodes[0x26] = Some(Instruction {
+        name: "ROL Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::rol_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x36] = Some(Instruction {
+        name: "ROL Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::rol_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x2E] = Some(Instruction {
+        name: "ROL Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::rol_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x3E] = Some(Instruction {
+        name: "ROL Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::rmw_abs_indexed_x_dummy_read,
+            Cpu::read_abs_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::rol_addr_abs_finish,
         ],
     });
 
