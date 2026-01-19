@@ -1678,7 +1678,7 @@ impl Cpu {
         false
     }
 
-    fn incdec_abs_indexed_x_dummy_read(&mut self, bus: &mut SystemBus) -> bool {
+    fn rmw_abs_indexed_x_dummy_read(&mut self, bus: &mut SystemBus) -> bool {
         let (low_byte, _) = (self.addr_abs as u8).overflowing_add(self.regs.x);
         let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
         bus.read_byte(uncorrected_addr);
@@ -1851,6 +1851,21 @@ impl Cpu {
         let val = bus.read_byte(0x0100 | (self.regs.sp as u16));
         let flags: u8 = self.flags.into();
         self.flags = ((val & 0xCF) | (flags & 0x30)).into();
+        true
+    }
+
+    fn lsr_accumulator_finish(&mut self, _bus: &mut SystemBus) -> bool {
+        self.regs.a = (self.regs.a >> 1) & 0x7F;
+        self.set_zero_negative(self.regs.a);
+        self.flags.c = (self.regs.a & 0x01) != 0;
+        true
+    }
+
+    fn lsr_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = (self.fetched_data >> 1) & 0x7F;
+        self.set_zero_negative(value);
+        self.flags.c = (value & 0x01) != 0;
+        self.write_byte(bus, self.addr_abs, value);
         true
     }
 
@@ -2686,7 +2701,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
-            Cpu::incdec_abs_indexed_x_dummy_read,
+            Cpu::rmw_abs_indexed_x_dummy_read,
             Cpu::read_abs_indexed_x_data,
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::inc_addr_abs_finish,
@@ -2729,7 +2744,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
-            Cpu::incdec_abs_indexed_x_dummy_read,
+            Cpu::rmw_abs_indexed_x_dummy_read,
             Cpu::read_abs_indexed_x_data,
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::dec_addr_abs_finish,
@@ -2826,6 +2841,54 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0x28] = Some(Instruction {
         name: "PLP",
         cycles: &[Cpu::dummy_fetch, Cpu::inc_sp, Cpu::plp_finish],
+    });
+
+    opcodes[0x4A] = Some(Instruction {
+        name: "LSR Accumulator",
+        cycles: &[Cpu::dummy_fetch, Cpu::lsr_accumulator_finish],
+    });
+
+    opcodes[0x46] = Some(Instruction {
+        name: "LSR Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::lsr_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x56] = Some(Instruction {
+        name: "LSR Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::lsr_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x4E] = Some(Instruction {
+        name: "LSR Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::lsr_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x5E] = Some(Instruction {
+        name: "LSR Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::rmw_abs_indexed_x_dummy_read,
+            Cpu::read_abs_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::lsr_addr_abs_finish,
+        ],
     });
 
     opcodes[0x4C] = Some(Instruction {
