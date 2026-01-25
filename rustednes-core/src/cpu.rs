@@ -118,10 +118,6 @@ pub enum AddressMode {
     Register(Register8),
 }
 
-fn mem_pages_same(m1: u16, m2: u16) -> bool {
-    (m1 & 0xFF00) == (m2 & 0xFF00)
-}
-
 #[derive(Default)]
 pub struct Cpu {
     stall_cycles: u8,
@@ -129,8 +125,9 @@ pub struct Cpu {
     flags: Flags,
     instruction: Option<Instruction>,
     active_interrupt: Option<Instruction>,
-    pending_nmi: bool,
-    irq_line_low: bool,
+    nmi_line_low: bool,
+    nmi_pended: bool,
+    pub irq_line_low: bool,
 
     // Tempory mid-instruction data to be able to run one cycle at a time.
     opcode: u8,
@@ -205,8 +202,10 @@ impl Cpu {
         }
 
         if self.cycle == 0 {
-            if self.pending_nmi {
-                self.pending_nmi = false;
+            self.cycle = 1;
+
+            if self.nmi_pended {
+                self.nmi_pended = false;
                 self.active_interrupt = Some(NMI_INTERRUPT);
             } else if self.irq_line_low && !self.flags.i {
                 self.active_interrupt = Some(IRQ_INTERRUPT);
@@ -220,35 +219,37 @@ impl Cpu {
             } else {
                 // Fetch new instruction.
                 self.opcode = self.next_pc_byte(bus);
-                self.regs.pc += 1;
                 self.instruction = OPCODES[self.opcode as usize];
-            }
-
-            self.cycle = 1;
-        } else {
-            // Continue in-progress instruction.
-            let instr = match self.instruction {
-                Some(instr) => instr,
-                None => panic!("Unsupported opcode: {:X}", self.opcode),
-            };
-
-            let cycle_fn = instr.cycles[self.cycle as usize - 1];
-            let completed = cycle_fn(self, bus);
-
-            self.cycle += 1;
-
-            if completed || self.cycle as usize > instr.cycles.len() {
-                self.cycle = 0;
+                return false;
             }
         }
 
-        self.cycle == 0
+        // Continue in-progress instruction.
+        let instr = match self.instruction {
+            Some(instr) => instr,
+            None => panic!(
+                "Unsuppported opcode: {:#04x}, pc: {:#06X}",
+                self.opcode, self.regs.pc
+            ),
+        };
+
+        let cycle_fn = instr.cycles[self.cycle as usize - 1];
+        let completed = cycle_fn(self, bus);
+
+        self.cycle += 1;
+
+        if completed || self.cycle as usize > instr.cycles.len() {
+            self.cycle = 0;
+            true
+        } else {
+            false
+        }
     }
 
     #[inline(always)]
     fn next_pc_byte(&mut self, bus: &mut SystemBus) -> u8 {
         let b = bus.read_byte(self.regs.pc);
-        self.regs.pc += 1;
+        self.regs.pc = self.regs.pc.wrapping_add(1);
         b
     }
 
@@ -505,85 +506,89 @@ impl Cpu {
     ///////////////
 
     // Request NMI to be run on next instruction fetch attempt.
-    pub fn request_nmi(&mut self) {
-        self.pending_nmi = true;
+    pub fn set_nmi_line_low(&mut self, val: bool) {
+        if !self.nmi_line_low && val {
+            self.nmi_pended = true;
+        }
+        self.nmi_line_low = val;
     }
 
     // Request IRQ to be run on next instruction fetch attempt.
-    pub fn request_irq(&mut self) {
-        self.irq_line_low = true;
-    }
-
-    pub fn reset_irq(&mut self) {
-        self.irq_line_low = false;
+    pub fn set_irq_line_low(&mut self, val: bool) {
+        self.irq_line_low = val;
     }
 
     // Instruction Cycle Functions
 
-    fn fetch_rel_offset(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.rel_offset = self.next_pc_byte(bus) as i16;
-        false
+    fn fetch_rel_offset_and_check_branch_n(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        !self.flags.n
     }
 
-    fn check_branch_n(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.check_branch(bus, self.flags.n)
+    fn fetch_rel_offset_and_check_branch_not_n(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.flags.n
     }
 
-    fn check_branch_not_n(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.check_branch(bus, !self.flags.n)
+    fn fetch_rel_offset_and_check_branch_c(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        !self.flags.c
     }
 
-    fn check_branch_c(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.check_branch(bus, self.flags.c)
+    fn fetch_rel_offset_and_check_branch_not_c(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.flags.c
     }
 
-    fn check_branch_not_c(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.check_branch(bus, !self.flags.c)
+    fn fetch_rel_offset_and_check_branch_z(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        !self.flags.z
     }
 
-    fn check_branch_z(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.check_branch(bus, self.flags.z)
+    fn fetch_rel_offset_and_check_branch_not_z(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.flags.z
     }
 
-    fn check_branch_not_z(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.check_branch(bus, !self.flags.z)
+    fn fetch_rel_offset_and_check_branch_v(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        !self.flags.v
     }
 
-    fn check_branch_v(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.check_branch(bus, self.flags.v)
+    fn fetch_rel_offset_and_check_branch_not_v(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.flags.v
     }
 
-    fn check_branch_not_v(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.check_branch(bus, !self.flags.v)
-    }
+    fn take_branch(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let old_pc = self.regs.pc;
+        let new_pc = self.regs.pc.wrapping_add_signed(self.rel_offset);
 
-    fn check_branch(self: &mut Cpu, bus: &mut SystemBus, cond: bool) -> bool {
-        self.dummy_fetch(bus);
+        // println!(
+        //     "old_pc: {:#06X}, new_pc: {:#06X}, offset: {}",
+        //     old_pc, new_pc, self.rel_offset
+        // );
 
-        if !cond {
-            // Branch not taken.
+        // Dummy fetch using using old high byte and new low byte of the pc.
+        let dummy_addr = (old_pc & 0xFF00) | (new_pc & 0x00FF);
+        let _ = bus.read_byte(dummy_addr);
+
+        self.regs.pc = new_pc;
+
+        // If not crossing a page, this is the last cycle.
+        if (old_pc & 0xFF00) == (new_pc & 0xFF00) {
             return true;
         }
 
-        let addr = (self.regs.pc as i16 + self.rel_offset) as u16;
-
-        let new_page = !mem_pages_same(self.regs.pc, addr);
-
-        self.regs.pc = addr;
-
-        // If no page was crossed, the branch is complete.
-        // Otherwise another cycle is required to fix the pc high byte
-        // (`fix_pc_high`).
-        !new_page
+        // When there is a page cross, there is an extra cycle to fixup the page.
+        // We've already set the PC correctly, but we still need the extra cycle.
+        false
     }
 
     // Only called if there was a page cross.
-    fn branch_fix_pc_high(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
-        if self.rel_offset < 0x80 {
-            self.regs.pc += 0x0100;
-        } else {
-            self.regs.pc -= 0x0100;
-        }
+    fn branch_page_fixup(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        // Read from corrected PC.
+        let _ = bus.read_byte(self.regs.pc);
         true
     }
 
@@ -613,14 +618,14 @@ impl Cpu {
         false
     }
 
-    fn dummy_fetch(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn dummy_read(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         bus.read_byte(self.regs.pc);
         false
     }
 
     fn dummy_fetch_and_inc_pc(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         bus.read_byte(self.regs.pc);
-        let _ = self.regs.pc.wrapping_add(1);
+        self.regs.pc = self.regs.pc.wrapping_add(1);
         false
     }
 
@@ -1059,43 +1064,43 @@ impl Cpu {
     }
 
     fn sec(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.flags.c = true;
         true
     }
 
     fn clc(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.flags.c = false;
         true
     }
 
     fn sei(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.flags.i = true;
         true
     }
 
     fn cli(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.flags.i = false;
         true
     }
 
     fn sed(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.flags.d = true;
         true
     }
 
     fn cld(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.flags.d = false;
         true
     }
 
     fn clv(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.flags.v = false;
         true
     }
@@ -1236,7 +1241,7 @@ impl Cpu {
     }
 
     fn inx(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         let val = self.regs.x.wrapping_add(1);
         self.set_zero_negative(val);
         self.regs.x = val;
@@ -1244,7 +1249,7 @@ impl Cpu {
     }
 
     fn iny(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         let val = self.regs.y.wrapping_add(1);
         self.set_zero_negative(val);
         self.regs.y = val;
@@ -1252,7 +1257,7 @@ impl Cpu {
     }
 
     fn dex(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         let val = self.regs.x.wrapping_sub(1);
         self.set_zero_negative(val);
         self.regs.x = val;
@@ -1260,7 +1265,7 @@ impl Cpu {
     }
 
     fn dey(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         let val = self.regs.y.wrapping_sub(1);
         self.set_zero_negative(val);
         self.regs.y = val;
@@ -1268,47 +1273,48 @@ impl Cpu {
     }
 
     fn tax(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.set_zero_negative(self.regs.a);
         self.regs.x = self.regs.a;
         true
     }
 
     fn txa(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.set_zero_negative(self.regs.x);
         self.regs.a = self.regs.x;
         true
     }
 
     fn tay(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.set_zero_negative(self.regs.a);
         self.regs.y = self.regs.a;
         true
     }
 
     fn tya(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.set_zero_negative(self.regs.y);
         self.regs.a = self.regs.y;
         true
     }
 
     fn tsx(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.set_zero_negative(self.regs.sp);
         self.regs.x = self.regs.sp;
         true
     }
 
     fn txs(&mut self, bus: &mut SystemBus) -> bool {
-        self.dummy_fetch(bus);
+        self.dummy_read(bus);
         self.regs.sp = self.regs.x;
         true
     }
 
-    fn dummy_cycle(&mut self, _bus: &mut SystemBus) -> bool {
+    fn dummy_stack_read(&mut self, bus: &mut SystemBus) -> bool {
+        let _ = bus.read_byte(0x0100 | (self.regs.sp as u16));
         false
     }
 
@@ -1318,26 +1324,24 @@ impl Cpu {
     }
 
     fn push_pc_low(&mut self, bus: &mut SystemBus) -> bool {
-        self.push_byte(bus, self.regs.pc as u8);
+        self.push_byte(bus, (self.regs.pc & 0xFF) as u8);
         false
     }
 
-    #[inline(always)]
-    fn push_status(&mut self, bus: &mut SystemBus) {
+    fn brk_push_status(&mut self, bus: &mut SystemBus) -> bool {
         let mut status = self.flags;
         status.b = true;
         status.e = true;
         self.push_byte(bus, status.into());
-    }
-
-    fn brk_push_status(&mut self, bus: &mut SystemBus) -> bool {
-        self.push_status(bus);
         self.flags.i = true;
         false
     }
 
     fn interrupt_push_status(&mut self, bus: &mut SystemBus) -> bool {
-        self.push_status(bus);
+        let mut status = self.flags;
+        status.b = false;
+        status.e = true;
+        self.push_byte(bus, status.into());
         false
     }
 
@@ -1355,6 +1359,8 @@ impl Cpu {
 
     fn pull_status(&mut self, bus: &mut SystemBus) -> bool {
         self.flags = self.pull_byte(bus).into();
+        self.flags.e = true;
+        self.flags.b = false;
         false
     }
 
@@ -1403,77 +1409,93 @@ impl Cpu {
     }
 
     fn lsr_accumulator_finish(&mut self, _bus: &mut SystemBus) -> bool {
+        self.flags.c = (self.regs.a & 0x01) != 0;
         self.regs.a = (self.regs.a >> 1) & 0x7F;
         self.set_zero_negative(self.regs.a);
-        self.flags.c = (self.regs.a & 0x01) != 0;
         true
     }
 
     fn lsr_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let value = (self.fetched_data >> 1) & 0x7F;
         self.set_zero_negative(value);
-        self.flags.c = (value & 0x01) != 0;
+        self.flags.c = (self.fetched_data & 0x01) != 0;
         bus.write_byte(self.addr_abs, value);
         true
     }
 
     fn asl_accumulator_finish(&mut self, _bus: &mut SystemBus) -> bool {
+        self.flags.c = (self.regs.a & 0x80) != 0;
         self.regs.a = (self.regs.a << 1) & 0xFE;
         self.set_zero_negative(self.regs.a);
-        self.flags.c = (self.regs.a & 0x80) != 0;
         true
     }
 
     fn asl_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.flags.c = (self.fetched_data & 0x80) != 0;
         let value = (self.fetched_data << 1) & 0xFE;
         self.set_zero_negative(value);
-        self.flags.c = (value & 0x80) != 0;
         bus.write_byte(self.addr_abs, value);
         true
     }
 
     fn ror_accumulator_finish(&mut self, _bus: &mut SystemBus) -> bool {
         let carry: u8 = if self.flags.c { 1 << 7 } else { 0 };
+        self.flags.c = (self.regs.a & 0x01) != 0;
         self.regs.a = ((self.regs.a >> 1) & 0x7F) | carry;
         self.set_zero_negative(self.regs.a);
-        self.flags.c = (self.regs.a & 0x01) != 0;
         true
     }
 
     fn ror_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let carry: u8 = if self.flags.c { 1 << 7 } else { 0 };
+        self.flags.c = (self.fetched_data & 0x01) != 0;
         let value = ((self.fetched_data >> 1) & 0x7F) | carry;
         self.set_zero_negative(value);
-        self.flags.c = (value & 0x01) != 0;
         bus.write_byte(self.addr_abs, value);
         true
     }
 
     fn rol_accumulator_finish(&mut self, _bus: &mut SystemBus) -> bool {
         let carry: u8 = self.flags.c.into();
+        self.flags.c = (self.regs.a & 0x80) != 0;
         self.regs.a = ((self.regs.a << 1) & 0xFE) | carry;
         self.set_zero_negative(self.regs.a);
-        self.flags.c = (self.regs.a & 0x80) != 0;
         true
     }
 
     fn rol_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let carry: u8 = self.flags.c.into();
+        self.flags.c = (self.fetched_data & 0x80) != 0;
         let value = ((self.fetched_data << 1) & 0xFE) | carry;
         self.set_zero_negative(value);
-        self.flags.c = (value & 0x80) != 0;
         bus.write_byte(self.addr_abs, value);
         true
     }
 
     fn read_brk_vector_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.temp_addr_low = bus.read_byte(BRK_VECTOR);
+        let vector_addr = if self.nmi_pended {
+            NMI_VECTOR // Hijacked by NMI
+        } else {
+            BRK_VECTOR
+        };
+        self.temp_addr_low = bus.read_byte(vector_addr);
         false
     }
 
     fn brk_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        let hi = bus.read_byte(BRK_VECTOR + 1) as u16;
+        let vector_addr = if self.nmi_pended {
+            NMI_VECTOR // Hijacked by NMI
+        } else {
+            BRK_VECTOR
+        };
+        let hi = bus.read_byte(vector_addr + 1) as u16;
         self.regs.pc = (hi << 8) | (self.temp_addr_low as u16);
+
+        // If hijacked by NMI, we need to clear it.
+        if self.nmi_pended {
+            self.nmi_pended = false;
+        }
+
         true
     }
 
@@ -1510,8 +1532,8 @@ impl Cpu {
     }
 
     fn jmp_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        let high = (self.next_pc_byte(bus) as u16) << 8;
-        self.regs.pc |= high;
+        let hi = self.next_pc_byte(bus) as u16;
+        self.regs.pc = (hi << 8) | self.addr_abs;
         true
     }
 
@@ -2183,6 +2205,93 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[Cpu::clv],
     });
 
+    opcodes[0x4C] = Some(Instruction {
+        name: "JMP Absolute",
+        cycles: &[Cpu::fetch_abs_low, Cpu::jmp_abs_finish],
+    });
+
+    opcodes[0x6C] = Some(Instruction {
+        name: "JMP (Indirect)",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::jmp_indirect_read_pointer_low,
+            Cpu::jump_indirect_finish,
+        ],
+    });
+
+    opcodes[0x30] = Some(Instruction {
+        name: "BMI",
+        cycles: &[
+            Cpu::fetch_rel_offset_and_check_branch_n,
+            Cpu::take_branch,
+            Cpu::branch_page_fixup,
+        ],
+    });
+
+    opcodes[0x10] = Some(Instruction {
+        name: "BPL",
+        cycles: &[
+            Cpu::fetch_rel_offset_and_check_branch_not_n,
+            Cpu::take_branch,
+            Cpu::branch_page_fixup,
+        ],
+    });
+
+    opcodes[0x90] = Some(Instruction {
+        name: "BCC",
+        cycles: &[
+            Cpu::fetch_rel_offset_and_check_branch_not_c,
+            Cpu::take_branch,
+            Cpu::branch_page_fixup,
+        ],
+    });
+
+    opcodes[0xB0] = Some(Instruction {
+        name: "BCS",
+        cycles: &[
+            Cpu::fetch_rel_offset_and_check_branch_c,
+            Cpu::take_branch,
+            Cpu::branch_page_fixup,
+        ],
+    });
+
+    opcodes[0xF0] = Some(Instruction {
+        name: "BEQ",
+        cycles: &[
+            Cpu::fetch_rel_offset_and_check_branch_z,
+            Cpu::take_branch,
+            Cpu::branch_page_fixup,
+        ],
+    });
+
+    opcodes[0xD0] = Some(Instruction {
+        name: "BNE",
+        cycles: &[
+            Cpu::fetch_rel_offset_and_check_branch_not_z,
+            Cpu::take_branch,
+            Cpu::branch_page_fixup,
+        ],
+    });
+
+    opcodes[0x70] = Some(Instruction {
+        name: "BVS",
+        cycles: &[
+            Cpu::fetch_rel_offset_and_check_branch_v,
+            Cpu::take_branch,
+            Cpu::branch_page_fixup,
+        ],
+    });
+
+    opcodes[0x50] = Some(Instruction {
+        name: "BVC",
+        cycles: &[
+            Cpu::fetch_rel_offset_and_check_branch_not_v,
+            Cpu::take_branch,
+            Cpu::branch_page_fixup,
+        ],
+    });
+
     opcodes[0xC9] = Some(Instruction {
         name: "CMP #Immediate",
         cycles: &[Cpu::cmp_immediate],
@@ -2445,7 +2554,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         name: "JSR",
         cycles: &[
             Cpu::fetch_abs_low,
-            Cpu::dummy_cycle,
+            Cpu::dummy_stack_read,
             Cpu::push_pc_high,
             Cpu::push_pc_low,
             Cpu::jsr_finish,
@@ -2455,37 +2564,37 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0x60] = Some(Instruction {
         name: "RTS",
         cycles: &[
-            Cpu::dummy_fetch,
+            Cpu::dummy_read,
             Cpu::pull_low,
             Cpu::pull_high,
-            Cpu::dummy_fetch,
+            Cpu::dummy_read,
             Cpu::rts_finish,
         ],
     });
 
     opcodes[0x48] = Some(Instruction {
         name: "PHA",
-        cycles: &[Cpu::dummy_fetch, Cpu::pha_finish],
+        cycles: &[Cpu::dummy_read, Cpu::pha_finish],
     });
 
     opcodes[0x68] = Some(Instruction {
         name: "PLA",
-        cycles: &[Cpu::dummy_fetch, Cpu::inc_sp, Cpu::pla_finish],
+        cycles: &[Cpu::dummy_read, Cpu::inc_sp, Cpu::pla_finish],
     });
 
     opcodes[0x08] = Some(Instruction {
         name: "PHP",
-        cycles: &[Cpu::dummy_fetch, Cpu::php_finish],
+        cycles: &[Cpu::dummy_read, Cpu::php_finish],
     });
 
     opcodes[0x28] = Some(Instruction {
         name: "PLP",
-        cycles: &[Cpu::dummy_fetch, Cpu::inc_sp, Cpu::plp_finish],
+        cycles: &[Cpu::dummy_read, Cpu::inc_sp, Cpu::plp_finish],
     });
 
     opcodes[0x4A] = Some(Instruction {
         name: "LSR Accumulator",
-        cycles: &[Cpu::dummy_fetch, Cpu::lsr_accumulator_finish],
+        cycles: &[Cpu::dummy_read, Cpu::lsr_accumulator_finish],
     });
 
     opcodes[0x46] = Some(Instruction {
@@ -2533,7 +2642,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x0A] = Some(Instruction {
         name: "ASL Accumulator",
-        cycles: &[Cpu::dummy_fetch, Cpu::asl_accumulator_finish],
+        cycles: &[Cpu::dummy_read, Cpu::asl_accumulator_finish],
     });
 
     opcodes[0x06] = Some(Instruction {
@@ -2581,7 +2690,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x6A] = Some(Instruction {
         name: "ROR Accumulator",
-        cycles: &[Cpu::dummy_fetch, Cpu::ror_accumulator_finish],
+        cycles: &[Cpu::dummy_read, Cpu::ror_accumulator_finish],
     });
 
     opcodes[0x66] = Some(Instruction {
@@ -2629,7 +2738,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x2A] = Some(Instruction {
         name: "ROL Accumulator",
-        cycles: &[Cpu::dummy_fetch, Cpu::rol_accumulator_finish],
+        cycles: &[Cpu::dummy_read, Cpu::rol_accumulator_finish],
     });
 
     opcodes[0x26] = Some(Instruction {
@@ -2690,7 +2799,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0x40] = Some(Instruction {
         name: "RTI",
         cycles: &[
-            Cpu::dummy_fetch,
+            Cpu::dummy_read,
             Cpu::pull_status,
             Cpu::pull_low,
             Cpu::pull_high,
@@ -2703,92 +2812,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[Cpu::nop_implied],
     });
 
-    opcodes[0x4C] = Some(Instruction {
-        name: "JMP Absolute",
-        cycles: &[Cpu::fetch_abs_low, Cpu::jmp_abs_finish],
-    });
-
-    opcodes[0x6C] = Some(Instruction {
-        name: "JMP (Indirect)",
-        cycles: &[
-            Cpu::fetch_abs_low,
-            Cpu::fetch_abs_high,
-            Cpu::jmp_indirect_read_pointer_low,
-            Cpu::jump_indirect_finish,
-        ],
-    });
-
-    opcodes[0x30] = Some(Instruction {
-        name: "BMI",
-        cycles: &[
-            Cpu::fetch_rel_offset,
-            Cpu::check_branch_n,
-            Cpu::branch_fix_pc_high,
-        ],
-    });
-
-    opcodes[0x10] = Some(Instruction {
-        name: "BPL",
-        cycles: &[
-            Cpu::fetch_rel_offset,
-            Cpu::check_branch_not_n,
-            Cpu::branch_fix_pc_high,
-        ],
-    });
-
-    opcodes[0x90] = Some(Instruction {
-        name: "BCC",
-        cycles: &[
-            Cpu::fetch_rel_offset,
-            Cpu::check_branch_not_c,
-            Cpu::branch_fix_pc_high,
-        ],
-    });
-
-    opcodes[0xB0] = Some(Instruction {
-        name: "BCS",
-        cycles: &[
-            Cpu::fetch_rel_offset,
-            Cpu::check_branch_c,
-            Cpu::branch_fix_pc_high,
-        ],
-    });
-
-    opcodes[0xF0] = Some(Instruction {
-        name: "BEQ",
-        cycles: &[
-            Cpu::fetch_rel_offset,
-            Cpu::check_branch_z,
-            Cpu::branch_fix_pc_high,
-        ],
-    });
-
-    opcodes[0xD0] = Some(Instruction {
-        name: "BNE",
-        cycles: &[
-            Cpu::fetch_rel_offset,
-            Cpu::check_branch_not_z,
-            Cpu::branch_fix_pc_high,
-        ],
-    });
-
-    opcodes[0x70] = Some(Instruction {
-        name: "BVS",
-        cycles: &[
-            Cpu::fetch_rel_offset,
-            Cpu::check_branch_v,
-            Cpu::branch_fix_pc_high,
-        ],
-    });
-
-    opcodes[0x50] = Some(Instruction {
-        name: "BVC",
-        cycles: &[
-            Cpu::fetch_rel_offset,
-            Cpu::check_branch_not_v,
-            Cpu::branch_fix_pc_high,
-        ],
-    });
+    // TODO: Unofficial opcodes below.
 
     opcodes
 };
@@ -2796,7 +2820,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 pub const NMI_INTERRUPT: Instruction = Instruction {
     name: "NMI",
     cycles: &[
-        Cpu::dummy_fetch,
+        Cpu::dummy_read,
         Cpu::push_pc_high,
         Cpu::push_pc_low,
         Cpu::interrupt_push_status,
@@ -2808,7 +2832,7 @@ pub const NMI_INTERRUPT: Instruction = Instruction {
 pub const IRQ_INTERRUPT: Instruction = Instruction {
     name: "IRQ",
     cycles: &[
-        Cpu::dummy_fetch,
+        Cpu::dummy_read,
         Cpu::push_pc_high,
         Cpu::push_pc_low,
         Cpu::interrupt_push_status,

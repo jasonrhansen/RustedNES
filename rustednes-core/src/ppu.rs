@@ -85,8 +85,8 @@ pub struct Ppu {
     sprite_x_counters: [u8; 8],
     sprite_0_on_scanline: bool,
 
-    nmi_occurred: bool,
-    nmi_output: bool,
+    pub nmi_occurred: bool,
+    pub nmi_output: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -654,12 +654,7 @@ impl Ppu {
 
     /// Run one PPU cycle. There are 3 PPU cycles per CPU cycle.
     /// Returns whether an NMI should be requested.
-    pub fn tick<V: VideoSink>(
-        &mut self,
-        mapper: &mut MapperEnum,
-        video_frame_sink: &mut V,
-    ) -> bool {
-        let mut request_nmi = false;
+    pub fn tick<V: VideoSink>(&mut self, mapper: &mut MapperEnum, video_frame_sink: &mut V) {
         let scanline_cycle = self.scanline_cycle();
 
         let on_prerender_scanline = self.scanline == PRE_RENDER_SCANLINE;
@@ -766,9 +761,6 @@ impl Ppu {
             VBLANK_START_SCANLINE => {
                 if scanline_cycle == 1 {
                     self.set_vblank();
-                    if self.nmi_output && self.nmi_occurred {
-                        request_nmi = true;
-                    }
                 }
             }
             PRE_RENDER_SCANLINE => {
@@ -801,8 +793,6 @@ impl Ppu {
             self.scanline = VISIBLE_START_SCANLINE;
             self.frame += 1;
         }
-
-        request_nmi
     }
 
     pub fn read_byte(&mut self, mapper: &mut MapperEnum, address: u16) -> u8 {

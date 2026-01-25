@@ -279,7 +279,7 @@ impl Debugger {
         false
     }
 
-    fn disassemble_instruction(&mut self, nes: &mut Nes) -> u16 {
+    pub fn disassemble_instruction(&mut self, nes: &mut Nes) -> u16 {
         self.print_labels_at_cursor();
         let mut d = Disassembler::new(self.cursor);
         let mut bus = nes.system_bus();

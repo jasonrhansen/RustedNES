@@ -163,11 +163,12 @@ impl Mapper4 {
         } else {
             self.irq_counter -= 1;
 
-            if self.irq_counter == 0 && self.irq_enable {
-                cpu.request_irq();
-            } else {
-                cpu.reset_irq();
-            }
+            // TODO: Fix interrupt handling
+            // if self.irq_counter == 0 && self.irq_enable {
+            //     cpu.request_irq();
+            // } else {
+            //     cpu.reset_irq();
+            // }
         }
     }
 

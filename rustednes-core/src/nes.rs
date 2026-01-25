@@ -78,6 +78,21 @@ impl Nes {
         video_frame_sink: &mut V,
         audio_frame_sink: &mut A,
     ) -> bool {
+        // There is 1 APU cycle per CPU cycle.
+        let cpu_stall_cycles = self.apu.tick(&mut self.mapper, audio_frame_sink);
+        if cpu_stall_cycles > 0 {
+            self.cpu.stall(cpu_stall_cycles);
+        }
+
+        // There are 3 PPU cycles per CPU cycle.
+        for _ in 0..3 {
+            self.ppu.tick(&mut self.mapper, video_frame_sink);
+            self.cpu
+                .set_nmi_line_low(self.ppu.nmi_output && self.ppu.nmi_occurred);
+        }
+
+        self.update_irq_line();
+
         let completed_instruction = if self.oam_dma.active {
             self.handle_oam_dma();
             false
@@ -94,28 +109,16 @@ impl Nes {
             self.cpu.tick(&mut bus)
         };
 
-        // There are 3 PPU cycles per CPU cycle.
-        for _ in 0..3 {
-            let request_nmi = self.ppu.tick(&mut self.mapper, video_frame_sink);
-            if request_nmi {
-                self.cpu.request_nmi();
-            }
-        }
-
-        // There is 1 APU cycle per CPU cycle.
-        let (request_irq, cpu_stall_cycles) = self.apu.tick(&mut self.mapper, audio_frame_sink);
-        if request_irq {
-            self.cpu.request_irq();
-        } else {
-            self.cpu.reset_irq();
-        }
-        if cpu_stall_cycles > 0 {
-            self.cpu.stall(cpu_stall_cycles);
-        }
+        self.update_irq_line();
 
         self.cycles += 1;
 
         completed_instruction
+    }
+
+    fn update_irq_line(&mut self) {
+        // TODO: Check if mapper IRQ is active.
+        self.cpu.set_irq_line_low(self.apu.irq_pending());
     }
 
     fn handle_oam_dma(&mut self) {
