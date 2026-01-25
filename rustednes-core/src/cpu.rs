@@ -804,16 +804,18 @@ impl Cpu {
 
     fn st_abs_indexed_x_dummy_read(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let index = self.regs.x as u16;
-        self.addr_abs = self.base_addr as u16 + index;
-        bus.read_byte((self.base_addr as u16 & 0xFF00) | (self.addr_abs & 0x00FF));
+        let base_addr = self.addr_abs;
+        self.addr_abs = base_addr + index;
+        bus.read_byte((base_addr & 0xFF00) | (self.addr_abs & 0x00FF));
 
         false
     }
 
     fn st_abs_indexed_y_dummy_read(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let index = self.regs.y as u16;
-        self.addr_abs = self.base_addr as u16 + index;
-        bus.read_byte((self.base_addr as u16 & 0xFF00) | (self.addr_abs & 0x00FF));
+        let base_addr = self.addr_abs;
+        self.addr_abs = base_addr + index;
+        bus.read_byte((base_addr & 0xFF00) | (self.addr_abs & 0x00FF));
 
         false
     }
