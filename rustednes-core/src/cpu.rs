@@ -630,19 +630,13 @@ impl Cpu {
     }
 
     fn indexed_x_dummy_read_and_add(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.indexed_dummy_read_and_add(bus, Register8::X)
-    }
-
-    fn indexed_dummy_read_and_add(self: &mut Cpu, bus: &mut SystemBus, reg: Register8) -> bool {
         bus.read_byte(self.base_addr as u16);
-        self.addr_abs = (self.addr_abs as u8).wrapping_add(self.get_register(reg)) as u16;
-
+        self.base_addr = self.base_addr.wrapping_add(self.regs.x);
         false
     }
 
     fn indexed_fetch_ptr_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         self.temp_addr_low = bus.read_byte(self.base_addr as u16);
-
         false
     }
 
@@ -1210,15 +1204,15 @@ impl Cpu {
     }
 
     fn rmw_abs_indexed_x_dummy_read(&mut self, bus: &mut SystemBus) -> bool {
-        let (low_byte, _) = (self.addr_abs as u8).overflowing_add(self.regs.x);
-        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
+        let lo = self.addr_abs.wrapping_add(self.regs.x as u16) & 0x00FF;
+        let uncorrected_addr = (self.addr_abs & 0xFF00) | lo;
         bus.read_byte(uncorrected_addr);
         false
     }
 
     fn read_abs_indexed_x_data(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let index = self.regs.x;
-        self.addr_abs = (self.base_addr as u16 + index as u16) % 0x0100;
+        self.addr_abs = self.addr_abs.wrapping_add(index as u16);
         self.fetched_data = bus.read_byte(self.addr_abs);
         false
     }
@@ -1616,7 +1610,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0xA1] = Some(Instruction {
         name: "LDA (Indirect,X)",
         cycles: &[
-            Cpu::fetch_abs_low,
+            Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
@@ -1757,7 +1751,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0x81] = Some(Instruction {
         name: "STA (Indirect,X)",
         cycles: &[
-            Cpu::fetch_abs_low,
+            Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
@@ -1873,7 +1867,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0x61] = Some(Instruction {
         name: "ADC (Indirect,X)",
         cycles: &[
-            Cpu::fetch_abs_low,
+            Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
@@ -1943,7 +1937,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0xE1] = Some(Instruction {
         name: "SBC (Indirect,X)",
         cycles: &[
-            Cpu::fetch_abs_low,
+            Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
@@ -2013,7 +2007,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0x21] = Some(Instruction {
         name: "AND (Indirect,X)",
         cycles: &[
-            Cpu::fetch_abs_low,
+            Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
@@ -2083,7 +2077,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0x01] = Some(Instruction {
         name: "ORA (Indirect,X)",
         cycles: &[
-            Cpu::fetch_abs_low,
+            Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
@@ -2153,7 +2147,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0x41] = Some(Instruction {
         name: "EOR (Indirect,X)",
         cycles: &[
-            Cpu::fetch_abs_low,
+            Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
@@ -2345,7 +2339,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0xC1] = Some(Instruction {
         name: "CMP (Indirect,X)",
         cycles: &[
-            Cpu::fetch_abs_low,
+            Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
