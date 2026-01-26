@@ -360,147 +360,6 @@ impl Cpu {
         bus.read_byte(0x0100 | (self.regs.sp as u16))
     }
 
-    ///////////////////////////
-    // Unofficial Instructions
-    ///////////////////////////
-
-    // fn alr(&mut self, bus: &mut SystemBus) {
-    //     self.and(bus, AddressMode::Immediate);
-    //     self.lsr(bus, AddressMode::Register(Register8::A));
-    // }
-    //
-    // // Does AND #i, setting N and Z flags based on the result. Then it copies N (bit 7) to C
-    // fn anc(&mut self, bus: &mut SystemBus) {
-    //     self.and(bus, AddressMode::Immediate);
-    //     self.flags.c = self.flags.n;
-    // }
-    //
-    // fn arr(&mut self, bus: &mut SystemBus) {
-    //     let imm = self.next_pc_byte(bus);
-    //
-    //     self.regs.a = ((self.flags.c as u8) << 7) | ((self.regs.a & imm) >> 1);
-    //
-    //     let a = self.regs.a;
-    //     self.set_zero_negative(a);
-    //     self.flags.c = (a & 0x40) != 0;
-    //     self.flags.v = ((a ^ (a << 1)) & 0x40) != 0;
-    // }
-    //
-    // // Sets X to {(A AND X) - #value without borrow}, and updates NZC
-    // fn axs(&mut self, bus: &mut SystemBus) {
-    //     let imm = self.next_pc_byte(bus);
-    //     let a_and_x = self.regs.a & self.regs.x;
-    //     let result = (a_and_x).wrapping_sub(imm);
-    //     self.set_zero_negative(result);
-    //     self.flags.c = imm <= a_and_x;
-    //     self.regs.x = result;
-    // }
-    //
-    // // Stores the bitwise AND of A and X. As with STA and STX, no flags are affected.
-    // fn sax(&mut self, bus: &mut SystemBus, am: AddressMode) {
-    //     self.store(bus, am, self.regs.a & self.regs.x);
-    // }
-    //
-    // // Equivalent to DEC value then CMP value
-    // fn dcp(&mut self, bus: &mut SystemBus, am: AddressMode) {
-    //     let val = self.decrement(bus, am);
-    //     self.compare_value(val, Register8::A)
-    // }
-    //
-    // // Equivalent to INC value then SBC value
-    // fn isc(&mut self, bus: &mut SystemBus, am: AddressMode) {
-    //     let val = self.increment(bus, am);
-    //     self.sub_value(val);
-    // }
-    //
-    // // Equivalent to ROL value then AND value
-    // fn rla(&mut self, bus: &mut SystemBus, am: AddressMode) {
-    //     let val = self.rotate_left(bus, am);
-    //     self.and_value(val);
-    // }
-    //
-    // // Equivalent to ROR value then ADC value
-    // fn rra(&mut self, bus: &mut SystemBus, am: AddressMode) {
-    //     let val = self.rotate_right(bus, am);
-    //     self.add_value(val);
-    // }
-    //
-    // fn sre(&mut self, bus: &mut SystemBus, am: AddressMode) {
-    //     let val = self.logical_shift_right(bus, am);
-    //     self.eor_value(val);
-    // }
-    //
-    // // Read an immediate byte and skip it, like a different address mode of NOP
-    // fn skb(&mut self, bus: &mut SystemBus) {
-    //     self.next_pc_byte(bus);
-    // }
-    //
-    // // Reads from memory at the specified address and ignores the value. Affects no register nor flags.
-    // fn ign(&mut self, bus: &mut SystemBus, am: AddressMode) {
-    //     let _ = self.load(bus, am, false);
-    // }
-    //
-    // // Used by "Gaau Hok Gwong Cheung (Ch)"
-    // // This instruction can be unpredictable.
-    // // See http://visual6502.org/wiki/index.php?title=6502_Opcode_8B_%28XAA,_ANE%29
-    // fn xaa(&mut self, bus: &mut SystemBus) {
-    //     self.regs.a = self.regs.a & self.regs.x & self.next_pc_byte(bus);
-    // }
-    //
-    // // Used by "Super Cars (U)"
-    // fn lax(&mut self, bus: &mut SystemBus, am: AddressMode) {
-    //     self.lda(bus, am);
-    //     self.set_zero_negative(self.regs.a);
-    //     self.regs.x = self.regs.a;
-    // }
-    //
-    // // Equivalent to ASL value then ORA value
-    // // Used by "Disney's Aladdin (E)"
-    // fn slo(&mut self, bus: &mut SystemBus, am: AddressMode) {
-    //     let val = self.arithmetic_shift_left(bus, am);
-    //     self.ora_value(val);
-    // }
-    //
-    // // {adr}:=A&X&H
-    // // Unstable in certain matters on real CPU
-    // fn ahx(&mut self, bus: &mut SystemBus, am: AddressMode) {
-    //     if let (_, Some(addr)) = self.load(bus, am, true) {
-    //         let h = (addr >> 8) as u8;
-    //         self.write_byte(bus, addr, self.regs.a & h & self.regs.x);
-    //     }
-    // }
-    //
-    // // Some unofficial write instructions have an internal bus conflict that causes strange behaviors.
-    // fn unofficial_strange_write(&mut self, bus: &mut SystemBus, value: u8, index: u8) {
-    //     let base = self.next_pc_word(bus);
-    //     let addr = base + index as u16;
-    //
-    //     let result = value & ((base >> 8) + 1) as u8;
-    //
-    //     let addr = if ((base ^ addr) & 0x100) != 0 {
-    //         // Page crossed
-    //         (addr & ((value as u16) << 8)) | (addr & 0x00FF)
-    //     } else {
-    //         addr
-    //     };
-    //
-    //     self.write_byte(bus, addr, result);
-    // }
-    //
-    // fn sya(&mut self, bus: &mut SystemBus) {
-    //     let y = self.regs.y;
-    //     let index = self.regs.x;
-    //
-    //     self.unofficial_strange_write(bus, y, index);
-    // }
-    //
-    // fn sxa(&mut self, bus: &mut SystemBus) {
-    //     let x = self.regs.x;
-    //     let index = self.regs.y;
-    //
-    //     self.unofficial_strange_write(bus, x, index);
-    // }
-
     ///////////////
     // Interrupts
     ///////////////
@@ -518,7 +377,9 @@ impl Cpu {
         self.irq_line_low = val;
     }
 
-    // Instruction Cycle Functions
+    ///////////////////////////////////////
+    // Official Instruction Cycle Functions
+    ///////////////////////////////////////
 
     fn fetch_rel_offset_and_check_branch_n(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
@@ -756,21 +617,6 @@ impl Cpu {
     }
 
     fn sty_write_byte_abs(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        bus.write_byte(self.addr_abs, self.regs.y);
-        true
-    }
-
-    fn sta_write_byte_zp(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        bus.write_byte(self.addr_abs, self.regs.a);
-        true
-    }
-
-    fn stx_write_byte_zp(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        bus.write_byte(self.addr_abs, self.regs.x);
-        true
-    }
-
-    fn sty_write_byte_zp(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         bus.write_byte(self.addr_abs, self.regs.y);
         true
     }
@@ -1203,6 +1049,13 @@ impl Cpu {
         false
     }
 
+    fn read_zero_page_indexed_y_data(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let index = self.regs.y;
+        self.addr_abs = (self.base_addr as u16 + index as u16) % 0x0100;
+        self.fetched_data = bus.read_byte(self.addr_abs);
+        false
+    }
+
     fn rmw_abs_indexed_x_dummy_read(&mut self, bus: &mut SystemBus) -> bool {
         let lo = self.addr_abs.wrapping_add(self.regs.x as u16) & 0x00FF;
         let uncorrected_addr = (self.addr_abs & 0xFF00) | lo;
@@ -1554,6 +1407,123 @@ impl Cpu {
 
         true
     }
+
+    ///////////////////////////////////////
+    // Unofficial Instruction Cycle Functions
+    ///////////////////////////////////////
+
+    fn isc_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = self.fetched_data.wrapping_add(1);
+        bus.write_byte(self.addr_abs, value);
+        self.sub_value(value);
+        true
+    }
+
+    fn skb(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        bus.read_byte(self.regs.pc);
+        self.regs.pc = self.regs.pc.wrapping_add(1);
+        true
+    }
+
+    fn alr(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = self.next_pc_byte(bus);
+        self.and_value(value);
+        self.lsr_accumulator_finish(bus);
+        true
+    }
+
+    fn anc(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = self.next_pc_byte(bus);
+        self.and_value(value);
+        self.flags.c = self.flags.n;
+        true
+    }
+
+    fn arr(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let imm = self.next_pc_byte(bus);
+        self.regs.a = ((self.flags.c as u8) << 7) | ((self.regs.a & imm) >> 1);
+
+        let a = self.regs.a;
+        self.set_zero_negative(a);
+        self.flags.c = (a & 0x40) != 0;
+        self.flags.v = ((a ^ (a << 1)) & 0x40) != 0;
+        true
+    }
+
+    fn axs(&mut self, bus: &mut SystemBus) -> bool {
+        let imm = self.next_pc_byte(bus);
+        let a_and_x = self.regs.a & self.regs.x;
+        let result = (a_and_x).wrapping_sub(imm);
+        self.set_zero_negative(result);
+        self.flags.c = imm <= a_and_x;
+        self.regs.x = result;
+        true
+    }
+
+    fn lax_fetched_data_finish(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
+        self.regs.a = self.fetched_data;
+        self.set_zero_negative(self.regs.a);
+        self.regs.x = self.regs.a;
+        true
+    }
+
+    fn dcp_fetched_data_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = self.fetched_data.wrapping_sub(1);
+        bus.write_byte(self.addr_abs, value);
+        self.compare_value(value, self.regs.a);
+        true
+    }
+
+    fn ign_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        bus.read_byte(self.addr_abs);
+        true
+    }
+
+    fn rla_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let carry: u8 = self.flags.c.into();
+        self.flags.c = (self.fetched_data & 0x80) != 0;
+        let value = ((self.fetched_data << 1) & 0xFE) | carry;
+        bus.write_byte(self.addr_abs, value);
+        self.and_value(value);
+        true
+    }
+
+    fn rra_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let carry: u8 = if self.flags.c { 1 << 7 } else { 0 };
+        self.flags.c = (self.fetched_data & 0x01) != 0;
+        let value = ((self.fetched_data >> 1) & 0x7F) | carry;
+        bus.write_byte(self.addr_abs, value);
+        self.add_value(value);
+        true
+    }
+
+    fn slo_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.flags.c = (self.fetched_data & 0x80) != 0;
+        let value = (self.fetched_data << 1) & 0xFE;
+        bus.write_byte(self.addr_abs, value);
+        self.ora_value(value);
+        true
+    }
+
+    fn sre_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let value = (self.fetched_data >> 1) & 0x7F;
+        self.flags.c = (self.fetched_data & 0x01) != 0;
+        bus.write_byte(self.addr_abs, value);
+        self.eor_value(value);
+        true
+    }
+
+    fn sax_write_byte_abs(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        bus.write_byte(self.addr_abs, self.regs.a & self.regs.x);
+        true
+    }
+
+    fn sax_write_byte_abs_indexed_y(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        let index = self.regs.y;
+        let addr = (self.base_addr as u16 + index as u16) % 0x0100;
+        bus.write_byte(addr, self.regs.a & self.regs.x);
+        true
+    }
 }
 
 pub const OPCODES: [Option<Instruction>; 256] = {
@@ -1707,7 +1677,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x85] = Some(Instruction {
         name: "STA Zero Page",
-        cycles: &[Cpu::fetch_abs_low, Cpu::sta_write_byte_zp],
+        cycles: &[Cpu::fetch_abs_low, Cpu::sta_write_byte_abs],
     });
 
     opcodes[0x95] = Some(Instruction {
@@ -1772,7 +1742,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x86] = Some(Instruction {
         name: "STX Zero Page",
-        cycles: &[Cpu::fetch_abs_low, Cpu::stx_write_byte_zp],
+        cycles: &[Cpu::fetch_abs_low, Cpu::stx_write_byte_abs],
     });
 
     opcodes[0x96] = Some(Instruction {
@@ -1795,7 +1765,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x84] = Some(Instruction {
         name: "STY Zero Page",
-        cycles: &[Cpu::fetch_abs_low, Cpu::sty_write_byte_zp],
+        cycles: &[Cpu::fetch_abs_low, Cpu::sty_write_byte_abs],
     });
 
     opcodes[0x94] = Some(Instruction {
@@ -2809,6 +2779,440 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     // TODO: Unofficial opcodes below.
+
+    opcodes[0x4B] = Some(Instruction {
+        name: "ALR",
+        cycles: &[Cpu::alr],
+    });
+
+    opcodes[0x0B] = Some(Instruction {
+        name: "ANC",
+        cycles: &[Cpu::anc],
+    });
+
+    opcodes[0x2B] = Some(Instruction {
+        name: "ANC",
+        cycles: &[Cpu::anc],
+    });
+
+    opcodes[0x6B] = Some(Instruction {
+        name: "ARR",
+        cycles: &[Cpu::arr],
+    });
+
+    opcodes[0xCB] = Some(Instruction {
+        name: "AXS",
+        cycles: &[Cpu::axs],
+    });
+
+    opcodes[0xA7] = Some(Instruction {
+        name: "LAX Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::lax_fetched_data_finish,
+        ],
+    });
+
+    opcodes[0xB7] = Some(Instruction {
+        name: "LAX Zero Page,Y",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_y_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::lax_fetched_data_finish,
+        ],
+    });
+
+    opcodes[0xAB] = Some(Instruction {
+        name: "LAX #Immediate",
+        cycles: &[Cpu::fetch_immediate, Cpu::lax_fetched_data_finish],
+    });
+
+    opcodes[0xAF] = Some(Instruction {
+        name: "LAX Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::lax_fetched_data_finish,
+        ],
+    });
+
+    opcodes[0x87] = Some(Instruction {
+        name: "SAX Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::sax_write_byte_abs],
+    });
+
+    opcodes[0x8F] = Some(Instruction {
+        name: "SAX Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::sax_write_byte_abs,
+        ],
+    });
+
+    opcodes[0x97] = Some(Instruction {
+        name: "SAX Zero Page,Y",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::sax_write_byte_abs_indexed_y,
+        ],
+    });
+
+    opcodes[0xC7] = Some(Instruction {
+        name: "DCP Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::dcp_fetched_data_finish,
+        ],
+    });
+
+    opcodes[0xCF] = Some(Instruction {
+        name: "DCP Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::dcp_fetched_data_finish,
+        ],
+    });
+
+    opcodes[0xD7] = Some(Instruction {
+        name: "DCP Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::dcp_fetched_data_finish,
+        ],
+    });
+
+    opcodes[0xE7] = Some(Instruction {
+        name: "ISC Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::isc_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xF7] = Some(Instruction {
+        name: "ISC Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::isc_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xEF] = Some(Instruction {
+        name: "ISC Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::isc_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xFF] = Some(Instruction {
+        name: "ISC Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::rmw_abs_indexed_x_dummy_read,
+            Cpu::read_abs_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::isc_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0xEB] = Some(Instruction {
+        name: "SBC #Immediate",
+        cycles: &[Cpu::sbc_immediate],
+    });
+
+    opcodes[0x27] = Some(Instruction {
+        name: "RLA Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::rla_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x2F] = Some(Instruction {
+        name: "RLA Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::rla_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x37] = Some(Instruction {
+        name: "RLA Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::rla_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x67] = Some(Instruction {
+        name: "RRA Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::rra_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x6F] = Some(Instruction {
+        name: "RRA Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::rra_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x77] = Some(Instruction {
+        name: "SRE Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::rra_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x07] = Some(Instruction {
+        name: "SLO Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::slo_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x0F] = Some(Instruction {
+        name: "SLO Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::slo_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x17] = Some(Instruction {
+        name: "SLO Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::slo_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x47] = Some(Instruction {
+        name: "SRE Zero Page",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::sre_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x4F] = Some(Instruction {
+        name: "SRE Absolute",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::sre_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x57] = Some(Instruction {
+        name: "SRE Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::sre_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x1A] = Some(Instruction {
+        name: "NOP Implied",
+        cycles: &[Cpu::nop_implied],
+    });
+
+    opcodes[0x3A] = Some(Instruction {
+        name: "NOP Implied",
+        cycles: &[Cpu::nop_implied],
+    });
+
+    opcodes[0x5A] = Some(Instruction {
+        name: "NOP Implied",
+        cycles: &[Cpu::nop_implied],
+    });
+
+    opcodes[0x7A] = Some(Instruction {
+        name: "NOP Implied",
+        cycles: &[Cpu::nop_implied],
+    });
+
+    opcodes[0xDA] = Some(Instruction {
+        name: "NOP Implied",
+        cycles: &[Cpu::nop_implied],
+    });
+
+    opcodes[0xFA] = Some(Instruction {
+        name: "NOP Implied",
+        cycles: &[Cpu::nop_implied],
+    });
+
+    opcodes[0x80] = Some(Instruction {
+        name: "SKB",
+        cycles: &[Cpu::skb],
+    });
+
+    opcodes[0x82] = Some(Instruction {
+        name: "SKB",
+        cycles: &[Cpu::skb],
+    });
+
+    opcodes[0x89] = Some(Instruction {
+        name: "SKB",
+        cycles: &[Cpu::skb],
+    });
+
+    opcodes[0xC2] = Some(Instruction {
+        name: "SKB",
+        cycles: &[Cpu::skb],
+    });
+
+    opcodes[0xE2] = Some(Instruction {
+        name: "SKB",
+        cycles: &[Cpu::skb],
+    });
+
+    opcodes[0x0C] = Some(Instruction {
+        name: "IGN Absolute",
+        cycles: &[Cpu::fetch_abs_low, Cpu::fetch_abs_high, Cpu::ign_finish],
+    });
+
+    opcodes[0x04] = Some(Instruction {
+        name: "IGN Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::ign_finish],
+    });
+
+    opcodes[0x44] = Some(Instruction {
+        name: "IGN Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::ign_finish],
+    });
+
+    opcodes[0x64] = Some(Instruction {
+        name: "IGN Zero Page",
+        cycles: &[Cpu::fetch_abs_low, Cpu::ign_finish],
+    });
+
+    opcodes[0x14] = Some(Instruction {
+        name: "IGN Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::ign_finish,
+        ],
+    });
+
+    opcodes[0x34] = Some(Instruction {
+        name: "IGN Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::ign_finish,
+        ],
+    });
+
+    opcodes[0x54] = Some(Instruction {
+        name: "IGN Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::ign_finish,
+        ],
+    });
+
+    opcodes[0x74] = Some(Instruction {
+        name: "IGN Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::ign_finish,
+        ],
+    });
+
+    opcodes[0xD4] = Some(Instruction {
+        name: "IGN Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::ign_finish,
+        ],
+    });
+
+    opcodes[0xF4] = Some(Instruction {
+        name: "IGN Zero Page,X",
+        cycles: &[
+            Cpu::fetch_base_addr,
+            Cpu::dummy_read_base,
+            Cpu::read_zero_page_indexed_x_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::ign_finish,
+        ],
+    });
 
     opcodes
 };
