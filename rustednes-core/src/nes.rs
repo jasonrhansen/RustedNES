@@ -25,7 +25,7 @@ pub struct Nes {
     pub oam_dma: OamDma,
     pub input: Input,
     cheats: HashMap<u16, Cheat>,
-    cycles: usize,
+    pub cycles: usize,
 }
 
 #[derive(Deserialize, Serialize)]

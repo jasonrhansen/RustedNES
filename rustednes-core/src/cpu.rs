@@ -124,12 +124,12 @@ pub struct Cpu {
     regs: Regs,
     flags: Flags,
     instruction: Option<Instruction>,
-    active_interrupt: Option<Instruction>,
     nmi_line_low: bool,
     nmi_pended: bool,
+    just_branched: bool,
     pub irq_line_low: bool,
 
-    // Tempory mid-instruction data to be able to run one cycle at a time.
+    // Temporary mid-instruction data to be able to run one cycle at a time.
     opcode: u8,
     cycle: u8,
     addr_abs: u16,
@@ -191,7 +191,6 @@ impl Cpu {
             v: false,
             n: false,
         };
-        self.active_interrupt = None;
     }
 
     // Run a single CPU cycle. Returns whether an instruction completed.
@@ -203,23 +202,16 @@ impl Cpu {
 
         if self.cycle == 0 {
             self.cycle = 1;
-
-            if self.nmi_pended {
+            if !self.just_branched && self.nmi_pended {
+                self.instruction = Some(NMI_INTERRUPT);
                 self.nmi_pended = false;
-                self.active_interrupt = Some(NMI_INTERRUPT);
-            } else if self.irq_line_low && !self.flags.i {
-                self.active_interrupt = Some(IRQ_INTERRUPT);
-            } else {
-                self.active_interrupt = None;
-            }
-
-            if let Some(interrupt) = self.active_interrupt {
-                // Hijack fetching instruction and run interrupt sequence.
-                self.instruction = Some(interrupt);
+            } else if !self.just_branched && self.irq_line_low && !self.flags.i {
+                self.instruction = Some(IRQ_INTERRUPT);
             } else {
                 // Fetch new instruction.
                 self.opcode = self.next_pc_byte(bus);
                 self.instruction = OPCODES[self.opcode as usize];
+                self.just_branched = false;
                 return false;
             }
         }
@@ -425,11 +417,6 @@ impl Cpu {
         let old_pc = self.regs.pc;
         let new_pc = self.regs.pc.wrapping_add_signed(self.rel_offset);
 
-        // println!(
-        //     "old_pc: {:#06X}, new_pc: {:#06X}, offset: {}",
-        //     old_pc, new_pc, self.rel_offset
-        // );
-
         // Dummy fetch using using old high byte and new low byte of the pc.
         let dummy_addr = (old_pc & 0xFF00) | (new_pc & 0x00FF);
         let _ = bus.read_byte(dummy_addr);
@@ -438,6 +425,7 @@ impl Cpu {
 
         // If not crossing a page, this is the last cycle.
         if (old_pc & 0xFF00) == (new_pc & 0xFF00) {
+            self.just_branched = true;
             return true;
         }
 
@@ -450,6 +438,7 @@ impl Cpu {
     fn branch_page_fixup(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         // Read from corrected PC.
         let _ = bus.read_byte(self.regs.pc);
+        self.just_branched = true;
         true
     }
 
@@ -541,27 +530,34 @@ impl Cpu {
         self.ld_abs_indexed_optimistic(bus, Register8::Y, Register8::X)
     }
 
+    #[inline(always)]
+    // Returns true if page crossed.
+    fn indexed_optimistic_fetch(&mut self, bus: &mut SystemBus, index: u8) -> bool {
+        let speculative_addr =
+            (self.addr_abs & 0xFF00) | ((self.addr_abs as u8).wrapping_add(index) as u16);
+        self.addr_abs = self.addr_abs.wrapping_add(index as u16);
+        self.fetched_data = bus.read_byte(speculative_addr);
+
+        (speculative_addr & 0xFF00) != (self.addr_abs & 0xFF00)
+    }
+
+    #[inline(always)]
     fn ld_abs_indexed_optimistic(
         &mut self,
         bus: &mut SystemBus,
         ld_reg: Register8,
         index_reg: Register8,
     ) -> bool {
-        let (low_byte, carry) = (self.addr_abs as u8).overflowing_add(self.get_register(index_reg));
-        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
-        self.fetched_data = bus.read_byte(uncorrected_addr);
-
-        if !carry {
-            // No page cross, so the instruction can finish without a fixup cycle.
+        let index = self.get_register(index_reg);
+        if !self.indexed_optimistic_fetch(bus, index) {
+            // No page cross, so the instruction can finish without an extra cycle.
             self.set_register(ld_reg, self.fetched_data);
             self.set_zero_negative(self.get_register(ld_reg));
-            return true;
+            true
+        } else {
+            // Page cross. We need  an extra cycle
+            false
         }
-
-        // PAGE CROSS: We need to fix the address high byte next cycle
-        // Update addr_abs to the correct high byte for the fixup cycle
-        self.addr_abs = uncorrected_addr.wrapping_add(0x0100);
-        false
     }
 
     fn lda_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
@@ -673,20 +669,15 @@ impl Cpu {
         bus: &mut SystemBus,
         index_reg: Register8,
     ) -> bool {
-        let (low_byte, carry) = (self.addr_abs as u8).overflowing_add(self.get_register(index_reg));
-        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
-        self.fetched_data = bus.read_byte(uncorrected_addr);
-
-        if !carry {
-            // No page cross, so the instruction can finish without a fixup cycle.
+        let index = self.get_register(index_reg);
+        if !self.indexed_optimistic_fetch(bus, index) {
+            // No page cross, so the instruction can finish without an extra cycle.
             self.add_value(self.fetched_data);
-            return true;
+            true
+        } else {
+            // Page cross. We need  an extra cycle
+            false
         }
-
-        // PAGE CROSS: We need to fix the address high byte next cycle
-        // Update addr_abs to the correct high byte for the fixup cycle
-        self.addr_abs = uncorrected_addr.wrapping_add(0x0100);
-        false // Proceed to Cycle 5
     }
 
     fn adc_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
@@ -722,20 +713,15 @@ impl Cpu {
         bus: &mut SystemBus,
         index_reg: Register8,
     ) -> bool {
-        let (low_byte, carry) = (self.addr_abs as u8).overflowing_add(self.get_register(index_reg));
-        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
-        self.fetched_data = bus.read_byte(uncorrected_addr);
-
-        if !carry {
-            // No page cross, so the instruction can finish without a fixup cycle.
+        let index = self.get_register(index_reg);
+        if !self.indexed_optimistic_fetch(bus, index) {
+            // No page cross, so the instruction can finish without an extra cycle.
             self.sub_value(self.fetched_data);
-            return true;
+            true
+        } else {
+            // Page cross. We need  an extra cycle
+            false
         }
-
-        // PAGE CROSS: We need to fix the address high byte next cycle
-        // Update addr_abs to the correct high byte for the fixup cycle
-        self.addr_abs = uncorrected_addr.wrapping_add(0x0100);
-        false // Proceed to Cycle 5
     }
 
     fn sbc_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
@@ -766,25 +752,21 @@ impl Cpu {
         self.and_addr_abs_indexed_optimistic(bus, Register8::Y)
     }
 
+    #[inline(always)]
     fn and_addr_abs_indexed_optimistic(
         &mut self,
         bus: &mut SystemBus,
         index_reg: Register8,
     ) -> bool {
-        let (low_byte, carry) = (self.addr_abs as u8).overflowing_add(self.get_register(index_reg));
-        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
-        self.fetched_data = bus.read_byte(uncorrected_addr);
-
-        if !carry {
-            // No page cross, so the instruction can finish without a fixup cycle.
+        let index = self.get_register(index_reg);
+        if !self.indexed_optimistic_fetch(bus, index) {
+            // No page cross, so the instruction can finish without an extra cycle.
             self.and_value(self.fetched_data);
-            return true;
+            true
+        } else {
+            // Page cross. We need  an extra cycle
+            false
         }
-
-        // PAGE CROSS: We need to fix the address high byte next cycle
-        // Update addr_abs to the correct high byte for the fixup cycle
-        self.addr_abs = uncorrected_addr.wrapping_add(0x0100);
-        false // Proceed to Cycle 5
     }
 
     fn and_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
@@ -815,25 +797,21 @@ impl Cpu {
         self.ora_addr_abs_indexed_optimistic(bus, Register8::Y)
     }
 
+    #[inline(always)]
     fn ora_addr_abs_indexed_optimistic(
         &mut self,
         bus: &mut SystemBus,
         index_reg: Register8,
     ) -> bool {
-        let (low_byte, carry) = (self.addr_abs as u8).overflowing_add(self.get_register(index_reg));
-        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
-        self.fetched_data = bus.read_byte(uncorrected_addr);
-
-        if !carry {
-            // No page cross, so the instruction can finish without a fixup cycle.
+        let index = self.get_register(index_reg);
+        if !self.indexed_optimistic_fetch(bus, index) {
+            // No page cross, so the instruction can finish without an extra cycle.
             self.ora_value(self.fetched_data);
-            return true;
+            true
+        } else {
+            // Page cross. We need  an extra cycle
+            false
         }
-
-        // PAGE CROSS: We need to fix the address high byte next cycle
-        // Update addr_abs to the correct high byte for the fixup cycle
-        self.addr_abs = uncorrected_addr.wrapping_add(0x0100);
-        false // Proceed to Cycle 5
     }
 
     fn ora_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
@@ -869,20 +847,15 @@ impl Cpu {
         bus: &mut SystemBus,
         index_reg: Register8,
     ) -> bool {
-        let (low_byte, carry) = (self.addr_abs as u8).overflowing_add(self.get_register(index_reg));
-        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
-        self.fetched_data = bus.read_byte(uncorrected_addr);
-
-        if !carry {
-            // No page cross, so the instruction can finish without a fixup cycle.
+        let index = self.get_register(index_reg);
+        if !self.indexed_optimistic_fetch(bus, index) {
+            // No page cross, so the instruction can finish without an extra cycle.
             self.eor_value(self.fetched_data);
-            return true;
+            true
+        } else {
+            // Page cross. We need  an extra cycle
+            false
         }
-
-        // PAGE CROSS: We need to fix the address high byte next cycle
-        // Update addr_abs to the correct high byte for the fixup cycle
-        self.addr_abs = uncorrected_addr.wrapping_add(0x0100);
-        false // Proceed to Cycle 5
     }
 
     fn eor_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
@@ -960,20 +933,15 @@ impl Cpu {
         bus: &mut SystemBus,
         index_reg: Register8,
     ) -> bool {
-        let (low_byte, carry) = (self.addr_abs as u8).overflowing_add(self.get_register(index_reg));
-        let uncorrected_addr = (self.addr_abs & 0xFF00) | (low_byte as u16);
-        self.fetched_data = bus.read_byte(uncorrected_addr);
-
-        if !carry {
-            // No page cross, so the instruction can finish without a fixup cycle.
+        let index = self.get_register(index_reg);
+        if !self.indexed_optimistic_fetch(bus, index) {
+            // No page cross, so the instruction can finish without an extra cycle.
             self.compare_value(self.fetched_data, self.regs.a);
-            return true;
+            true
+        } else {
+            // Page cross. We need  an extra cycle
+            false
         }
-
-        // PAGE CROSS: We need to fix the address high byte next cycle
-        // Update addr_abs to the correct high byte for the fixup cycle
-        self.addr_abs = uncorrected_addr.wrapping_add(0x0100);
-        false // Proceed to Cycle 5
     }
 
     fn compare_value(&mut self, value: u8, reg_value: u8) {
@@ -1472,6 +1440,10 @@ impl Cpu {
         bus.write_byte(self.addr_abs, value);
         self.compare_value(value, self.regs.a);
         true
+    }
+
+    fn ign_abs_indexed_x_optimistic(&mut self, bus: &mut SystemBus) -> bool {
+        !self.indexed_optimistic_fetch(bus, self.regs.x)
     }
 
     fn ign_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
@@ -2977,6 +2949,16 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         ],
     });
 
+    opcodes[0x3F] = Some(Instruction {
+        name: "RLA Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::sbc_addr_abs_indexed_x_optimistic,
+            Cpu::rla_addr_abs_finish,
+        ],
+    });
+
     opcodes[0x67] = Some(Instruction {
         name: "RRA Zero Page",
         cycles: &[
@@ -3037,6 +3019,16 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::dummy_read_base,
             Cpu::read_zero_page_indexed_x_data,
             Cpu::addr_abs_fetched_data_dummy_write,
+            Cpu::slo_addr_abs_finish,
+        ],
+    });
+
+    opcodes[0x1F] = Some(Instruction {
+        name: "SLO Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::sbc_addr_abs_indexed_x_optimistic,
             Cpu::slo_addr_abs_finish,
         ],
     });
@@ -3131,6 +3123,66 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0x0C] = Some(Instruction {
         name: "IGN Absolute",
         cycles: &[Cpu::fetch_abs_low, Cpu::fetch_abs_high, Cpu::ign_finish],
+    });
+
+    opcodes[0x1C] = Some(Instruction {
+        name: "IGN Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::ign_abs_indexed_x_optimistic,
+            Cpu::ign_finish,
+        ],
+    });
+
+    opcodes[0x3C] = Some(Instruction {
+        name: "IGN Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::ign_abs_indexed_x_optimistic,
+            Cpu::ign_finish,
+        ],
+    });
+
+    opcodes[0x5C] = Some(Instruction {
+        name: "IGN Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::ign_abs_indexed_x_optimistic,
+            Cpu::ign_finish,
+        ],
+    });
+
+    opcodes[0x7C] = Some(Instruction {
+        name: "IGN Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::ign_abs_indexed_x_optimistic,
+            Cpu::ign_finish,
+        ],
+    });
+
+    opcodes[0xDC] = Some(Instruction {
+        name: "IGN Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::ign_abs_indexed_x_optimistic,
+            Cpu::ign_finish,
+        ],
+    });
+
+    opcodes[0xFC] = Some(Instruction {
+        name: "IGN Absolute,X",
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::ign_abs_indexed_x_optimistic,
+            Cpu::ign_finish,
+        ],
     });
 
     opcodes[0x04] = Some(Instruction {
