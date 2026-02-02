@@ -24,10 +24,14 @@ use std::ptr;
 
 #[enum_dispatch(MapperEnum)]
 pub trait Mapper {
-    fn prg_read_byte(&mut self, address: u16) -> u8;
+    fn prg_read_byte(&mut self, address: u16) -> u8 {
+        self.prg_peek_byte(address)
+    }
     fn prg_write_byte(&mut self, address: u16, value: u8);
     fn chr_read_byte(&mut self, address: u16) -> u8;
     fn chr_write_byte(&mut self, address: u16, value: u8);
+
+    fn prg_peek_byte(&self, address: u16) -> u8;
 
     fn mirroring(&self) -> Mirroring;
 

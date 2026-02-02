@@ -216,6 +216,11 @@ impl Ppu {
         self.ppu_data_read_buffer = 0;
     }
 
+    pub fn initialize_nestest(&mut self) {
+        self.scanline = 0;
+        self.cycles = 21;
+    }
+
     fn read_ppu_status(&mut self) -> u8 {
         // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242002_read
         self.regs.w = WriteToggle::FirstWrite;
@@ -796,7 +801,7 @@ impl Ppu {
     }
 
     pub fn read_byte(&mut self, mapper: &mut MapperEnum, address: u16) -> u8 {
-        if !((0x2000..0x4000).contains(&address)) {
+        if !((0x2000..=0x3FFF).contains(&address)) {
             panic!(
                 "Invalid read from PPU memory-mapped registers: {:X}",
                 address
@@ -813,6 +818,26 @@ impl Ppu {
         };
 
         self.ppu_gen_latch = val;
+
+        val
+    }
+
+    pub fn peek_byte(&self, address: u16) -> u8 {
+        if !((0x2000..=0x3FFF).contains(&address)) {
+            panic!(
+                "Invalid read from PPU memory-mapped registers: {:X}",
+                address
+            )
+        }
+
+        let address = address & 0x2007;
+
+        let val = match address {
+            PPUSTATUS_ADDRESS => self.regs.ppu_status.bits(),
+            OAMDATA_ADDRESS => self.read_oam_byte(),
+            PPUDATA_ADDRESS => self.mem.vram.read_byte(address),
+            _ => self.ppu_gen_latch,
+        };
 
         val
     }
@@ -1070,7 +1095,7 @@ impl Vram {
         }
     }
 
-    fn read_byte(&mut self, address: u16) -> u8 {
+    fn read_byte(&self, address: u16) -> u8 {
         self.bytes[address as usize]
     }
 

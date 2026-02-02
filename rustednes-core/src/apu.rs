@@ -110,6 +110,14 @@ impl Apu {
         }
     }
 
+    pub fn peek_byte(&self, address: u16) -> u8 {
+        if address == 0x4015 {
+            self.read_status()
+        } else {
+            0
+        }
+    }
+
     pub fn reset(&mut self) {
         self.cycles = 0;
         self.pulse_1 = Pulse::new(SweepNegationType::OnesComplement);
@@ -287,7 +295,7 @@ impl Apu {
         cpu_stall_cycles
     }
 
-    fn read_status(&mut self) -> u8 {
+    fn read_status(&self) -> u8 {
         let mut status = 0x00;
 
         if self.pulse_1.length_counter.count > 0 {
@@ -317,8 +325,6 @@ impl Apu {
         if self.dmc.irq_flag {
             status |= 0x80;
         }
-
-        self.frame_counter.irq_pending = false;
 
         status
     }
@@ -388,6 +394,7 @@ impl Default for Apu {
 impl Memory for Apu {
     fn read_byte(&mut self, address: u16) -> u8 {
         if address == 0x4015 {
+            self.frame_counter.irq_pending = false;
             self.read_status()
         } else {
             0

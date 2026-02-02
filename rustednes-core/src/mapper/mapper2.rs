@@ -26,7 +26,7 @@ impl Mapper2 {
             | (address as usize & (PRG_ROM_BANK_SIZE as usize - 1))
     }
 
-    fn read_prg_rom(&mut self, address: u16) -> u8 {
+    fn read_prg_rom(&self, address: u16) -> u8 {
         let bank = if address < 0xC000 {
             self.switchable_bank
         } else {
@@ -39,7 +39,7 @@ impl Mapper2 {
 }
 
 impl Mapper for Mapper2 {
-    fn prg_read_byte(&mut self, address: u16) -> u8 {
+    fn prg_peek_byte(&self, address: u16) -> u8 {
         if address < 0x6000 {
             0
         } else {

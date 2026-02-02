@@ -155,25 +155,25 @@ macro_rules! handle_opcode {
             0x08 => $this.php($mem),
             0x28 => $this.plp($mem),
 
-            0x4A => $this.lsr($mem, AddressMode::Register(Register8::A)),
+            0x4A => $this.lsr($mem, AddressMode::Accumulator),
             0x46 => $this.lsr($mem, AddressMode::ZeroPage),
             0x56 => $this.lsr($mem, AddressMode::ZeroPageIndexed(Register8::X)),
             0x4E => $this.lsr($mem, AddressMode::Absolute),
             0x5E => $this.lsr($mem, AddressMode::AbsoluteIndexed(Register8::X)),
 
-            0x0A => $this.asl($mem, AddressMode::Register(Register8::A)),
+            0x0A => $this.asl($mem, AddressMode::Accumulator),
             0x06 => $this.asl($mem, AddressMode::ZeroPage),
             0x16 => $this.asl($mem, AddressMode::ZeroPageIndexed(Register8::X)),
             0x0E => $this.asl($mem, AddressMode::Absolute),
             0x1E => $this.asl($mem, AddressMode::AbsoluteIndexed(Register8::X)),
 
-            0x6A => $this.ror($mem, AddressMode::Register(Register8::A)),
+            0x6A => $this.ror($mem, AddressMode::Accumulator),
             0x66 => $this.ror($mem, AddressMode::ZeroPage),
             0x76 => $this.ror($mem, AddressMode::ZeroPageIndexed(Register8::X)),
             0x6E => $this.ror($mem, AddressMode::Absolute),
             0x7E => $this.ror($mem, AddressMode::AbsoluteIndexed(Register8::X)),
 
-            0x2A => $this.rol($mem, AddressMode::Register(Register8::A)),
+            0x2A => $this.rol($mem, AddressMode::Accumulator),
             0x26 => $this.rol($mem, AddressMode::ZeroPage),
             0x36 => $this.rol($mem, AddressMode::ZeroPageIndexed(Register8::X)),
             0x2E => $this.rol($mem, AddressMode::Absolute),
@@ -310,7 +310,8 @@ impl Disassembler {
             ZeroPageIndexed(reg) => format!("{},{}", self.dis_pc_byte(bus), self.dis_reg(reg)),
             IndexedIndirect(reg) => format!("({},{})", self.dis_pc_byte(bus), self.dis_reg(reg)),
             IndirectIndexed(reg) => format!("({}),{}", self.dis_pc_byte(bus), self.dis_reg(reg)),
-            Register(reg) => self.dis_reg(reg),
+            Accumulator => self.dis_reg(Register8::A),
+            _ => panic!("Unsupported address mode in assembler: {:?}", am),
         }
     }
 

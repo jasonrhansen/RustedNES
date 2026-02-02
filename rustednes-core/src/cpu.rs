@@ -2,6 +2,7 @@ use crate::system_bus::SystemBus;
 
 use serde_derive::{Deserialize, Serialize};
 
+use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
@@ -11,7 +12,113 @@ pub type CycleFn = fn(&mut Cpu, bus: &mut SystemBus) -> bool;
 #[allow(dead_code)]
 pub struct Instruction {
     name: &'static str,
+    length: u8,
+    mode: AddressMode,
+    official: bool,
     cycles: &'static [CycleFn],
+}
+
+impl Instruction {
+    pub fn nestest_name(&'_ self) -> Cow<'_, str> {
+        if self.official {
+            Cow::Borrowed(self.name)
+        } else {
+            Cow::Owned(format!("*{}", self.name))
+        }
+    }
+
+    pub fn nestest_asm_op(&self, cpu: &Cpu, bus: &SystemBus) -> String {
+        let ops = [
+            bus.peek_byte(cpu.regs.pc + 1),
+            bus.peek_byte(cpu.regs.pc + 2),
+        ];
+
+        match self.mode {
+            AddressMode::Immediate => format!("#${:02X}", ops[0]),
+
+            AddressMode::ZeroPage => {
+                let addr = ops[0];
+                let val = bus.peek_byte(addr as u16);
+                format!("${:02X} = {:02X}", addr, val)
+            }
+
+            AddressMode::ZeroPageIndexed(reg) => {
+                let addr = ops[0];
+                let reg_val = cpu.get_register(reg);
+                let target = addr.wrapping_add(reg_val);
+                let val = bus.peek_byte(target as u16);
+                format!("${:02X},{:?} @ {:02X} = {:02X}", addr, reg, target, val)
+            }
+
+            AddressMode::Absolute => {
+                let addr = u16::from_le_bytes([ops[0], ops[1]]);
+                if self.name == "JMP" || self.name == "JSR" {
+                    format!("${:04X}", addr)
+                } else {
+                    let val = bus.peek_byte(addr);
+                    format!("${:04X} = {:02X}", addr, val)
+                }
+            }
+
+            AddressMode::AbsoluteIndexed(reg) => {
+                let base_addr = u16::from_le_bytes([ops[0], ops[1]]);
+                let reg_val = cpu.get_register(reg) as u16;
+                let target = base_addr.wrapping_add(reg_val);
+                let val = bus.peek_byte(target);
+                format!(
+                    "${:04X},{:?} @ {:04X} = {:02X}",
+                    base_addr, reg, target, val
+                )
+            }
+
+            AddressMode::Indirect => {
+                let ptr = u16::from_le_bytes([ops[0], ops[1]]);
+                // 6502 JMP Indirect bug: if ptr is $xxFF, it wraps to $xx00 for the high byte.
+                let hi_ptr = if (ptr & 0x00FF) == 0x00FF {
+                    ptr & 0xFF00
+                } else {
+                    ptr + 1
+                };
+                let target = u16::from_le_bytes([bus.peek_byte(ptr), bus.peek_byte(hi_ptr)]);
+                format!("(${:04X}) = {:04X}", ptr, target)
+            }
+
+            AddressMode::IndexedIndirect(reg) => {
+                let base = ops[0];
+                let ptr = base.wrapping_add(cpu.get_register(reg));
+                let lo = bus.peek_byte(ptr as u16);
+                let hi = bus.peek_byte(ptr.wrapping_add(1) as u16);
+                let target = u16::from_le_bytes([lo, hi]);
+                let val = bus.peek_byte(target);
+                format!(
+                    "(${:02X},X) @ {:02X} = {:04X} = {:02X}",
+                    base, ptr, target, val
+                )
+            }
+
+            AddressMode::IndirectIndexed(reg) => {
+                let ptr = ops[0];
+                let lo = bus.peek_byte(ptr as u16);
+                let hi = bus.peek_byte(ptr.wrapping_add(1) as u16);
+                let base_target = u16::from_le_bytes([lo, hi]);
+                let target = base_target.wrapping_add(cpu.get_register(reg) as u16);
+                let val = bus.peek_byte(target);
+                format!(
+                    "(${:02X}),Y = {:04X} @ {:04X} = {:02X}",
+                    ptr, base_target, target, val
+                )
+            }
+
+            AddressMode::Relative => {
+                let offset = ops[0] as i8;
+                let target = cpu.regs.pc.wrapping_add(2).wrapping_add(offset as u16);
+                format!("${:04X}", target)
+            }
+
+            AddressMode::Accumulator => "A".to_string(),
+            AddressMode::Implied => "".to_string(),
+        }
+    }
 }
 
 pub const CPU_FREQUENCY: u64 = 1_789_773;
@@ -115,7 +222,10 @@ pub enum AddressMode {
     ZeroPageIndexed(Register8),
     IndexedIndirect(Register8),
     IndirectIndexed(Register8),
-    Register(Register8),
+    Accumulator,
+    Implied,
+    Relative,
+    Indirect,
 }
 
 #[derive(Default)]
@@ -126,8 +236,8 @@ pub struct Cpu {
     instruction: Option<Instruction>,
     nmi_line_low: bool,
     nmi_pended: bool,
-    just_branched: bool,
     pub irq_line_low: bool,
+    cycles_total: u64,
 
     // Temporary mid-instruction data to be able to run one cycle at a time.
     opcode: u8,
@@ -135,7 +245,7 @@ pub struct Cpu {
     addr_abs: u16,
     temp_addr_low: u8,
     base_addr: u8,
-    rel_offset: i16,
+    rel_offset: i8,
     fetched_data: u8,
 }
 
@@ -193,6 +303,16 @@ impl Cpu {
         };
     }
 
+    pub fn initialize_nestest(&mut self) {
+        self.regs.pc = 0xC000;
+        self.regs.sp = 0xFD;
+        self.regs.a = 0x00;
+        self.regs.x = 0x00;
+        self.regs.y = 0x00;
+        self.flags = 0x24.into();
+        self.cycles_total = 7;
+    }
+
     // Run a single CPU cycle. Returns whether an instruction completed.
     pub fn tick(&mut self, bus: &mut SystemBus) -> bool {
         if self.stall_cycles > 0 {
@@ -202,18 +322,14 @@ impl Cpu {
 
         if self.cycle == 0 {
             self.cycle = 1;
-            if !self.just_branched && self.nmi_pended {
-                self.instruction = Some(NMI_INTERRUPT);
-                self.nmi_pended = false;
-            } else if !self.just_branched && self.irq_line_low && !self.flags.i {
-                self.instruction = Some(IRQ_INTERRUPT);
-            } else {
+
+            if self.instruction.is_none() {
                 // Fetch new instruction.
                 self.opcode = self.next_pc_byte(bus);
                 self.instruction = OPCODES[self.opcode as usize];
-                self.just_branched = false;
-                return false;
             }
+
+            return false;
         }
 
         // Continue in-progress instruction.
@@ -229,12 +345,63 @@ impl Cpu {
         let completed = cycle_fn(self, bus);
 
         self.cycle += 1;
+        self.cycles_total += 1;
 
         if completed || self.cycle as usize > instr.cycles.len() {
             self.cycle = 0;
+            self.poll_interrupts();
             true
         } else {
             false
+        }
+    }
+
+    pub fn trace(&self, bus: &SystemBus) -> String {
+        let opcode = bus.peek_byte(self.regs.pc);
+        let instruction = &OPCODES[opcode as usize].as_ref().unwrap();
+
+        let mut hex_extra = Vec::new();
+        for i in 1..instruction.length {
+            hex_extra.push(bus.peek_byte(self.regs.pc + i as u16));
+        }
+
+        let hex_extra = hex_extra
+            .iter()
+            .map(|z| format!("{:02X}", z))
+            .collect::<Vec<String>>()
+            .join(" ");
+
+        let name = instruction.nestest_name();
+        let asm_op = instruction.nestest_asm_op(self, bus);
+
+        format!(
+            "{:04X}  {:02X} {:<5} {:>4} {:<27} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} PPU:{:>3},{:>3} CYC:{}",
+            self.regs.pc,
+            opcode,
+            hex_extra,
+            name,
+            asm_op,
+            self.regs.a,
+            self.regs.x,
+            self.regs.y,
+            u8::from(self.flags),
+            self.regs.sp,
+            bus.ppu_scanline(),
+            bus.ppu_scanline_cycle(),
+            self.cycles_total,
+        )
+    }
+
+    fn poll_interrupts(&mut self) {
+        if self.nmi_pended {
+            self.instruction = Some(NMI_INTERRUPT);
+        } else if self.irq_line_low && !self.flags.i {
+            self.instruction = Some(IRQ_INTERRUPT);
+        } else {
+            // No interrupt? Then we proceed to fetch a normal opcode.
+            // We set instruction to None (or a Fetch state) so Cycle 0
+            // knows to read from PC.
+            self.instruction = None;
         }
     }
 
@@ -357,11 +524,11 @@ impl Cpu {
     ///////////////
 
     // Request NMI to be run on next instruction fetch attempt.
-    pub fn set_nmi_line_low(&mut self, val: bool) {
-        if !self.nmi_line_low && val {
+    pub fn set_nmi_line(&mut self, is_low: bool) {
+        if !self.nmi_line_low && is_low {
             self.nmi_pended = true;
         }
-        self.nmi_line_low = val;
+        self.nmi_line_low = is_low;
     }
 
     // Request IRQ to be run on next instruction fetch attempt.
@@ -374,48 +541,48 @@ impl Cpu {
     ///////////////////////////////////////
 
     fn fetch_rel_offset_and_check_branch_n(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.rel_offset = self.next_pc_byte(bus) as i8;
         !self.flags.n
     }
 
     fn fetch_rel_offset_and_check_branch_not_n(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.rel_offset = self.next_pc_byte(bus) as i8;
         self.flags.n
     }
 
     fn fetch_rel_offset_and_check_branch_c(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.rel_offset = self.next_pc_byte(bus) as i8;
         !self.flags.c
     }
 
     fn fetch_rel_offset_and_check_branch_not_c(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.rel_offset = self.next_pc_byte(bus) as i8;
         self.flags.c
     }
 
     fn fetch_rel_offset_and_check_branch_z(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.rel_offset = self.next_pc_byte(bus) as i8;
         !self.flags.z
     }
 
     fn fetch_rel_offset_and_check_branch_not_z(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.rel_offset = self.next_pc_byte(bus) as i8;
         self.flags.z
     }
 
     fn fetch_rel_offset_and_check_branch_v(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.rel_offset = self.next_pc_byte(bus) as i8;
         !self.flags.v
     }
 
     fn fetch_rel_offset_and_check_branch_not_v(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        self.rel_offset = self.next_pc_byte(bus) as i8 as i16;
+        self.rel_offset = self.next_pc_byte(bus) as i8;
         self.flags.v
     }
 
     fn take_branch(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let old_pc = self.regs.pc;
-        let new_pc = self.regs.pc.wrapping_add_signed(self.rel_offset);
+        let new_pc = self.regs.pc.wrapping_add_signed(self.rel_offset as i16);
 
         // Dummy fetch using using old high byte and new low byte of the pc.
         let dummy_addr = (old_pc & 0xFF00) | (new_pc & 0x00FF);
@@ -425,11 +592,10 @@ impl Cpu {
 
         // If not crossing a page, this is the last cycle.
         if (old_pc & 0xFF00) == (new_pc & 0xFF00) {
-            self.just_branched = true;
             return true;
         }
 
-        // When there is a page cross, there is an extra cycle to fixup the page.
+        // When there is a page cross, there is an extra cycle to fix up the page.
         // We've already set the PC correctly, but we still need the extra cycle.
         false
     }
@@ -438,7 +604,6 @@ impl Cpu {
     fn branch_page_fixup(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         // Read from corrected PC.
         let _ = bus.read_byte(self.regs.pc);
-        self.just_branched = true;
         true
     }
 
@@ -1317,6 +1482,7 @@ impl Cpu {
     }
 
     fn read_nmi_vector_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.nmi_pended = false;
         self.temp_addr_low = bus.read_byte(NMI_VECTOR);
         false
     }
@@ -1502,17 +1668,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     let mut opcodes = [None; 256];
 
     opcodes[0xA9] = Some(Instruction {
-        name: "LDA #Immediate",
+        name: "LDA",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: true,
         cycles: &[Cpu::fetch_immediate, Cpu::lda_fetched_data_finish],
     });
 
     opcodes[0xA5] = Some(Instruction {
-        name: "LDA Zero Page",
+        name: "LDA",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::lda_addr_abs_finish],
     });
 
     opcodes[0xB5] = Some(Instruction {
-        name: "LDA Zero Page,X",
+        name: "LDA",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -1521,7 +1696,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xAD] = Some(Instruction {
-        name: "LDA Absolute",
+        name: "LDA",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1530,7 +1708,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xBD] = Some(Instruction {
-        name: "LDA Absolute,X",
+        name: "LDA",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1540,7 +1721,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xB9] = Some(Instruction {
-        name: "LDA Absolute,Y",
+        name: "LDA",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1550,7 +1734,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xA1] = Some(Instruction {
-        name: "LDA (Indirect,X)",
+        name: "LDA",
+        length: 2,
+        mode: AddressMode::IndexedIndirect(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
@@ -1561,7 +1748,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xB1] = Some(Instruction {
-        name: "LDA (Indirect),Y",
+        name: "LDA",
+        length: 2,
+        mode: AddressMode::IndirectIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_fetch_ptr_low,
@@ -1572,17 +1762,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xA2] = Some(Instruction {
-        name: "LDX #Immediate",
+        name: "LDX",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: true,
         cycles: &[Cpu::fetch_immediate, Cpu::ldx_fetched_data_finish],
     });
 
     opcodes[0xA6] = Some(Instruction {
-        name: "LDX Zero Page",
+        name: "LDX",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::ldx_addr_abs_finish],
     });
 
     opcodes[0xB6] = Some(Instruction {
-        name: "LDX Zero Page,Y",
+        name: "LDX",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -1591,7 +1790,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xAE] = Some(Instruction {
-        name: "LDX Absolute",
+        name: "LDX",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1600,7 +1802,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xBE] = Some(Instruction {
-        name: "LDX Absolute,Y",
+        name: "LDX",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1610,17 +1815,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xA0] = Some(Instruction {
-        name: "LDY #Immediate",
+        name: "LDY",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: true,
         cycles: &[Cpu::fetch_immediate, Cpu::ldy_fetched_data_finish],
     });
 
     opcodes[0xA4] = Some(Instruction {
-        name: "LDY Zero Page",
+        name: "LDY",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::ldy_addr_abs_finish],
     });
 
     opcodes[0xB4] = Some(Instruction {
-        name: "LDY Zero Page,X",
+        name: "LDY",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -1629,7 +1843,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xAC] = Some(Instruction {
-        name: "LDY Absolute",
+        name: "LDY",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1638,7 +1855,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xBC] = Some(Instruction {
-        name: "LDY Absolute,X",
+        name: "LDY",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1648,12 +1868,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x85] = Some(Instruction {
-        name: "STA Zero Page",
+        name: "STA",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::sta_write_byte_abs],
     });
 
     opcodes[0x95] = Some(Instruction {
-        name: "STA Zero Page,X",
+        name: "STA",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -1662,7 +1888,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x8D] = Some(Instruction {
-        name: "STA Absolute",
+        name: "STA",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1671,7 +1900,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x9D] = Some(Instruction {
-        name: "STA Absolute,X",
+        name: "STA",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1681,7 +1913,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x99] = Some(Instruction {
-        name: "STA Absolute,Y",
+        name: "STA",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1691,7 +1926,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x81] = Some(Instruction {
-        name: "STA (Indirect,X)",
+        name: "STA",
+        length: 2,
+        mode: AddressMode::IndexedIndirect(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
@@ -1702,7 +1940,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x91] = Some(Instruction {
-        name: "STA (Indirect),Y",
+        name: "STA",
+        length: 2,
+        mode: AddressMode::IndirectIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_fetch_ptr_low,
@@ -1713,12 +1954,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x86] = Some(Instruction {
-        name: "STX Zero Page",
+        name: "STX",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::stx_write_byte_abs],
     });
 
     opcodes[0x96] = Some(Instruction {
-        name: "STX Zero Page,Y",
+        name: "STX",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -1727,7 +1974,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x8E] = Some(Instruction {
-        name: "STX Absolute",
+        name: "STX",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1736,12 +1986,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x84] = Some(Instruction {
-        name: "STY Zero Page",
+        name: "STY",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::sty_write_byte_abs],
     });
 
     opcodes[0x94] = Some(Instruction {
-        name: "STY Zero Page,X",
+        name: "STY",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -1750,7 +2006,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x8C] = Some(Instruction {
-        name: "STY Absolute",
+        name: "STY",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1759,17 +2018,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x69] = Some(Instruction {
-        name: "ADC #Immediate",
+        name: "ADC",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: true,
         cycles: &[Cpu::adc_immediate],
     });
 
     opcodes[0x65] = Some(Instruction {
-        name: "ADC Zero Page",
+        name: "ADC",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::adc_addr_abs_finish],
     });
 
     opcodes[0x75] = Some(Instruction {
-        name: "ADC Zero Page,X",
+        name: "ADC",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -1778,7 +2046,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x6D] = Some(Instruction {
-        name: "ADC Absolute",
+        name: "ADC",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1787,7 +2058,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x7D] = Some(Instruction {
-        name: "ADC Absolute,X",
+        name: "ADC",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1797,7 +2071,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x79] = Some(Instruction {
-        name: "ADC Absolute,Y",
+        name: "ADC",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1807,7 +2084,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x61] = Some(Instruction {
-        name: "ADC (Indirect,X)",
+        name: "ADC",
+        length: 2,
+        mode: AddressMode::IndexedIndirect(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
@@ -1818,7 +2098,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x71] = Some(Instruction {
-        name: "ADC (Indirect),Y",
+        name: "ADC",
+        length: 2,
+        mode: AddressMode::IndirectIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_fetch_ptr_low,
@@ -1829,17 +2112,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xE9] = Some(Instruction {
-        name: "SBC #Immediate",
+        name: "SBC",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: true,
         cycles: &[Cpu::sbc_immediate],
     });
 
     opcodes[0xE5] = Some(Instruction {
-        name: "SBC Zero Page",
+        name: "SBC",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::sbc_addr_abs_finish],
     });
 
     opcodes[0xF5] = Some(Instruction {
-        name: "SBC Zero Page,X",
+        name: "SBC",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -1848,7 +2140,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xED] = Some(Instruction {
-        name: "SBC Absolute",
+        name: "SBC",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1857,7 +2152,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xFD] = Some(Instruction {
-        name: "SBC Absolute,X",
+        name: "SBC",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1867,7 +2165,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xF9] = Some(Instruction {
-        name: "SBC Absolute,Y",
+        name: "SBC",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1877,7 +2178,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xE1] = Some(Instruction {
-        name: "SBC (Indirect,X)",
+        name: "SBC",
+        length: 2,
+        mode: AddressMode::IndexedIndirect(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
@@ -1888,7 +2192,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xF1] = Some(Instruction {
-        name: "SBC (Indirect),Y",
+        name: "SBC",
+        length: 2,
+        mode: AddressMode::IndirectIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_fetch_ptr_low,
@@ -1899,17 +2206,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x29] = Some(Instruction {
-        name: "AND #Immediate",
+        name: "AND",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: true,
         cycles: &[Cpu::and_immediate],
     });
 
     opcodes[0x25] = Some(Instruction {
-        name: "AND Zero Page",
+        name: "AND",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::and_addr_abs_finish],
     });
 
     opcodes[0x35] = Some(Instruction {
-        name: "AND Zero Page,X",
+        name: "AND",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -1918,7 +2234,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x2D] = Some(Instruction {
-        name: "AND Absolute",
+        name: "AND",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1927,7 +2246,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x3D] = Some(Instruction {
-        name: "AND Absolute,X",
+        name: "AND",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1937,7 +2259,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x39] = Some(Instruction {
-        name: "AND Absolute,Y",
+        name: "AND",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1947,7 +2272,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x21] = Some(Instruction {
-        name: "AND (Indirect,X)",
+        name: "AND",
+        length: 2,
+        mode: AddressMode::IndexedIndirect(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
@@ -1958,7 +2286,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x31] = Some(Instruction {
-        name: "AND (Indirect),Y",
+        name: "AND",
+        length: 2,
+        mode: AddressMode::IndirectIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_fetch_ptr_low,
@@ -1969,17 +2300,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x09] = Some(Instruction {
-        name: "ORA #Immediate",
+        name: "ORA",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: true,
         cycles: &[Cpu::ora_immediate],
     });
 
     opcodes[0x05] = Some(Instruction {
-        name: "ORA Zero Page",
+        name: "ORA",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::ora_addr_abs_finish],
     });
 
     opcodes[0x15] = Some(Instruction {
-        name: "ORA Zero Page,X",
+        name: "ORA",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -1988,7 +2328,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x0D] = Some(Instruction {
-        name: "ORA Absolute",
+        name: "ORA",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -1997,7 +2340,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x1D] = Some(Instruction {
-        name: "ORA Absolute,X",
+        name: "ORA",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2007,7 +2353,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x19] = Some(Instruction {
-        name: "ORA Absolute,Y",
+        name: "ORA",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2017,7 +2366,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x01] = Some(Instruction {
-        name: "ORA (Indirect,X)",
+        name: "ORA",
+        length: 2,
+        mode: AddressMode::IndexedIndirect(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
@@ -2028,7 +2380,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x11] = Some(Instruction {
-        name: "ORA (Indirect),Y",
+        name: "ORA",
+        length: 2,
+        mode: AddressMode::IndirectIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_fetch_ptr_low,
@@ -2039,17 +2394,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x49] = Some(Instruction {
-        name: "EOR #Immediate",
+        name: "EOR",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: true,
         cycles: &[Cpu::eor_immediate],
     });
 
     opcodes[0x45] = Some(Instruction {
-        name: "EOR Zero Page",
+        name: "EOR",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::eor_addr_abs_finish],
     });
 
     opcodes[0x55] = Some(Instruction {
-        name: "EOR Zero Page,X",
+        name: "EOR",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2058,7 +2422,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x4D] = Some(Instruction {
-        name: "EOR Absolute",
+        name: "EOR",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2067,7 +2434,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x5D] = Some(Instruction {
-        name: "EOR Absolute,X",
+        name: "EOR",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2077,7 +2447,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x59] = Some(Instruction {
-        name: "EOR Absolute,Y",
+        name: "EOR",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2087,7 +2460,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x41] = Some(Instruction {
-        name: "EOR (Indirect,X)",
+        name: "EOR",
+        length: 2,
+        mode: AddressMode::IndexedIndirect(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
@@ -2098,7 +2474,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x51] = Some(Instruction {
-        name: "EOR (Indirect),Y",
+        name: "EOR",
+        length: 2,
+        mode: AddressMode::IndirectIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_fetch_ptr_low,
@@ -2110,46 +2489,73 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x38] = Some(Instruction {
         name: "SEC",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::sec],
     });
 
     opcodes[0x18] = Some(Instruction {
         name: "CLC",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::clc],
     });
 
     opcodes[0x78] = Some(Instruction {
         name: "SEI",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::sei],
     });
 
     opcodes[0x58] = Some(Instruction {
         name: "CLI",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::cli],
     });
 
     opcodes[0xF8] = Some(Instruction {
         name: "SED",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::sed],
     });
 
     opcodes[0xD8] = Some(Instruction {
         name: "CLD",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::cld],
     });
 
     opcodes[0xB8] = Some(Instruction {
         name: "CLV",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::clv],
     });
 
     opcodes[0x4C] = Some(Instruction {
-        name: "JMP Absolute",
+        name: "JMP",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::jmp_abs_finish],
     });
 
     opcodes[0x6C] = Some(Instruction {
-        name: "JMP (Indirect)",
+        name: "JMP",
+        length: 3,
+        mode: AddressMode::Indirect, // Pure Indirect (non-indexed)
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2160,6 +2566,9 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x30] = Some(Instruction {
         name: "BMI",
+        length: 2,
+        mode: AddressMode::Relative,
+        official: true,
         cycles: &[
             Cpu::fetch_rel_offset_and_check_branch_n,
             Cpu::take_branch,
@@ -2169,6 +2578,9 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x10] = Some(Instruction {
         name: "BPL",
+        length: 2,
+        mode: AddressMode::Relative,
+        official: true,
         cycles: &[
             Cpu::fetch_rel_offset_and_check_branch_not_n,
             Cpu::take_branch,
@@ -2178,6 +2590,9 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x90] = Some(Instruction {
         name: "BCC",
+        length: 2,
+        mode: AddressMode::Relative,
+        official: true,
         cycles: &[
             Cpu::fetch_rel_offset_and_check_branch_not_c,
             Cpu::take_branch,
@@ -2187,6 +2602,9 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0xB0] = Some(Instruction {
         name: "BCS",
+        length: 2,
+        mode: AddressMode::Relative,
+        official: true,
         cycles: &[
             Cpu::fetch_rel_offset_and_check_branch_c,
             Cpu::take_branch,
@@ -2196,6 +2614,9 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0xF0] = Some(Instruction {
         name: "BEQ",
+        length: 2,
+        mode: AddressMode::Relative,
+        official: true,
         cycles: &[
             Cpu::fetch_rel_offset_and_check_branch_z,
             Cpu::take_branch,
@@ -2205,6 +2626,9 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0xD0] = Some(Instruction {
         name: "BNE",
+        length: 2,
+        mode: AddressMode::Relative,
+        official: true,
         cycles: &[
             Cpu::fetch_rel_offset_and_check_branch_not_z,
             Cpu::take_branch,
@@ -2214,6 +2638,9 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x70] = Some(Instruction {
         name: "BVS",
+        length: 2,
+        mode: AddressMode::Relative,
+        official: true,
         cycles: &[
             Cpu::fetch_rel_offset_and_check_branch_v,
             Cpu::take_branch,
@@ -2223,6 +2650,9 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x50] = Some(Instruction {
         name: "BVC",
+        length: 2,
+        mode: AddressMode::Relative,
+        official: true,
         cycles: &[
             Cpu::fetch_rel_offset_and_check_branch_not_v,
             Cpu::take_branch,
@@ -2231,17 +2661,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xC9] = Some(Instruction {
-        name: "CMP #Immediate",
+        name: "CMP",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: true,
         cycles: &[Cpu::cmp_immediate],
     });
 
     opcodes[0xC5] = Some(Instruction {
-        name: "CMP Zero Page",
+        name: "CMP",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::cmp_addr_abs_finish],
     });
 
     opcodes[0xD5] = Some(Instruction {
-        name: "CMP Zero Page,X",
+        name: "CMP",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2250,7 +2689,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xCD] = Some(Instruction {
-        name: "CMP Absolute",
+        name: "CMP",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2259,7 +2701,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xDD] = Some(Instruction {
-        name: "CMP Absolute,X",
+        name: "CMP",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2269,7 +2714,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xD9] = Some(Instruction {
-        name: "CMP Absolute,Y",
+        name: "CMP",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2279,7 +2727,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xC1] = Some(Instruction {
-        name: "CMP (Indirect,X)",
+        name: "CMP",
+        length: 2,
+        mode: AddressMode::IndexedIndirect(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
@@ -2290,7 +2741,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xD1] = Some(Instruction {
-        name: "CMP (Indirect),Y",
+        name: "CMP",
+        length: 2,
+        mode: AddressMode::IndirectIndexed(Register8::Y),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_fetch_ptr_low,
@@ -2301,17 +2755,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xE0] = Some(Instruction {
-        name: "CPX #Immediate",
+        name: "CPX",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: true,
         cycles: &[Cpu::cpx_immediate],
     });
 
     opcodes[0xE4] = Some(Instruction {
-        name: "CPX Zero Page",
+        name: "CPX",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::cpx_addr_abs_finish],
     });
 
     opcodes[0xEC] = Some(Instruction {
-        name: "CPX Absolute",
+        name: "CPX",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2320,17 +2783,26 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xC0] = Some(Instruction {
-        name: "CPY #Immediate",
+        name: "CPY",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: true,
         cycles: &[Cpu::cpy_immediate],
     });
 
     opcodes[0xC4] = Some(Instruction {
-        name: "CPY Zero Page",
+        name: "CPY",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::cpy_addr_abs_finish],
     });
 
     opcodes[0xCC] = Some(Instruction {
-        name: "CPY Absolute",
+        name: "CPY",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2339,12 +2811,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x24] = Some(Instruction {
-        name: "BIT Zero Page",
+        name: "BIT",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[Cpu::fetch_abs_low, Cpu::bit_addr_abs_finish],
     });
 
     opcodes[0x2C] = Some(Instruction {
-        name: "BIT Absolute",
+        name: "BIT",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2353,7 +2831,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xE6] = Some(Instruction {
-        name: "INC Zero Page",
+        name: "INC",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -2363,7 +2844,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xF6] = Some(Instruction {
-        name: "INC Zero Page,X",
+        name: "INC",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2374,7 +2858,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xEE] = Some(Instruction {
-        name: "INC Absolute",
+        name: "INC",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2384,7 +2871,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xFE] = Some(Instruction {
-        name: "INC Absolute,X",
+        name: "INC",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2396,7 +2886,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xC6] = Some(Instruction {
-        name: "DEC Zero Page",
+        name: "DEC",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -2406,7 +2899,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xD6] = Some(Instruction {
-        name: "DEC Zero Page,X",
+        name: "DEC",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2417,7 +2913,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xCE] = Some(Instruction {
-        name: "DEC Absolute",
+        name: "DEC",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2427,7 +2926,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xDE] = Some(Instruction {
-        name: "DEC Absolute,X",
+        name: "DEC",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2440,56 +2942,89 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0xE8] = Some(Instruction {
         name: "INX",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::inx],
     });
 
     opcodes[0xC8] = Some(Instruction {
         name: "INY",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::iny],
     });
 
     opcodes[0xCA] = Some(Instruction {
         name: "DEX",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::dex],
     });
 
     opcodes[0x88] = Some(Instruction {
         name: "DEY",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::dey],
     });
 
     opcodes[0xAA] = Some(Instruction {
         name: "TAX",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::tax],
     });
 
     opcodes[0x8A] = Some(Instruction {
         name: "TXA",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::txa],
     });
 
     opcodes[0xA8] = Some(Instruction {
         name: "TAY",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::tay],
     });
 
     opcodes[0x98] = Some(Instruction {
         name: "TYA",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::tya],
     });
 
     opcodes[0xBA] = Some(Instruction {
         name: "TSX",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::tsx],
     });
 
     opcodes[0x9A] = Some(Instruction {
         name: "TXS",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::txs],
     });
 
     opcodes[0x20] = Some(Instruction {
         name: "JSR",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::dummy_stack_read,
@@ -2501,6 +3036,9 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x60] = Some(Instruction {
         name: "RTS",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[
             Cpu::dummy_read,
             Cpu::pull_low,
@@ -2512,31 +3050,49 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x48] = Some(Instruction {
         name: "PHA",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::dummy_read, Cpu::pha_finish],
     });
 
     opcodes[0x68] = Some(Instruction {
         name: "PLA",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::dummy_read, Cpu::inc_sp, Cpu::pla_finish],
     });
 
     opcodes[0x08] = Some(Instruction {
         name: "PHP",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::dummy_read, Cpu::php_finish],
     });
 
     opcodes[0x28] = Some(Instruction {
         name: "PLP",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::dummy_read, Cpu::inc_sp, Cpu::plp_finish],
     });
 
     opcodes[0x4A] = Some(Instruction {
-        name: "LSR Accumulator",
+        name: "LSR",
+        length: 1,
+        mode: AddressMode::Accumulator,
+        official: true,
         cycles: &[Cpu::dummy_read, Cpu::lsr_accumulator_finish],
     });
 
     opcodes[0x46] = Some(Instruction {
-        name: "LSR Zero Page",
+        name: "LSR",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -2546,7 +3102,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x56] = Some(Instruction {
-        name: "LSR Zero Page,X",
+        name: "LSR",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2557,7 +3116,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x4E] = Some(Instruction {
-        name: "LSR Absolute",
+        name: "LSR",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2567,7 +3129,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x5E] = Some(Instruction {
-        name: "LSR Absolute,X",
+        name: "LSR",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2579,12 +3144,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x0A] = Some(Instruction {
-        name: "ASL Accumulator",
+        name: "ASL",
+        length: 1,
+        mode: AddressMode::Accumulator,
+        official: true,
         cycles: &[Cpu::dummy_read, Cpu::asl_accumulator_finish],
     });
 
     opcodes[0x06] = Some(Instruction {
-        name: "ASL Zero Page",
+        name: "ASL",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -2594,7 +3165,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x16] = Some(Instruction {
-        name: "ASL Zero Page,X",
+        name: "ASL",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2605,7 +3179,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x0E] = Some(Instruction {
-        name: "ASL Absolute",
+        name: "ASL",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2615,7 +3192,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x1E] = Some(Instruction {
-        name: "ASL Absolute,X",
+        name: "ASL",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2627,12 +3207,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x6A] = Some(Instruction {
-        name: "ROR Accumulator",
+        name: "ROR",
+        length: 1,
+        mode: AddressMode::Accumulator,
+        official: true,
         cycles: &[Cpu::dummy_read, Cpu::ror_accumulator_finish],
     });
 
     opcodes[0x66] = Some(Instruction {
-        name: "ROR Zero Page",
+        name: "ROR",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -2642,7 +3228,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x76] = Some(Instruction {
-        name: "ROR Zero Page,X",
+        name: "ROR",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2653,7 +3242,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x6E] = Some(Instruction {
-        name: "ROR Absolute",
+        name: "ROR",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2663,7 +3255,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x7E] = Some(Instruction {
-        name: "ROR Absolute,X",
+        name: "ROR",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2675,12 +3270,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x2A] = Some(Instruction {
-        name: "ROL Accumulator",
+        name: "ROL",
+        length: 1,
+        mode: AddressMode::Accumulator,
+        official: true,
         cycles: &[Cpu::dummy_read, Cpu::rol_accumulator_finish],
     });
 
     opcodes[0x26] = Some(Instruction {
-        name: "ROL Zero Page",
+        name: "ROL",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -2690,7 +3291,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x36] = Some(Instruction {
-        name: "ROL Zero Page,X",
+        name: "ROL",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2701,7 +3305,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x2E] = Some(Instruction {
-        name: "ROL Absolute",
+        name: "ROL",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2711,7 +3318,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x3E] = Some(Instruction {
-        name: "ROL Absolute,X",
+        name: "ROL",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: true,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2724,6 +3334,9 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x00] = Some(Instruction {
         name: "BRK",
+        length: 2,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[
             Cpu::dummy_fetch_and_inc_pc,
             Cpu::push_pc_high,
@@ -2736,6 +3349,9 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x40] = Some(Instruction {
         name: "RTI",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[
             Cpu::dummy_read,
             Cpu::pull_status,
@@ -2746,7 +3362,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xEA] = Some(Instruction {
-        name: "NOP Implied",
+        name: "NOP",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: true,
         cycles: &[Cpu::nop_implied],
     });
 
@@ -2754,31 +3373,49 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x4B] = Some(Instruction {
         name: "ALR",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: false,
         cycles: &[Cpu::alr],
     });
 
     opcodes[0x0B] = Some(Instruction {
         name: "ANC",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: false,
         cycles: &[Cpu::anc],
     });
 
     opcodes[0x2B] = Some(Instruction {
         name: "ANC",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: false,
         cycles: &[Cpu::anc],
     });
 
     opcodes[0x6B] = Some(Instruction {
         name: "ARR",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: false,
         cycles: &[Cpu::arr],
     });
 
     opcodes[0xCB] = Some(Instruction {
         name: "AXS",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: false,
         cycles: &[Cpu::axs],
     });
 
     opcodes[0xA7] = Some(Instruction {
-        name: "LAX Zero Page",
+        name: "LAX",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -2788,7 +3425,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xB7] = Some(Instruction {
-        name: "LAX Zero Page,Y",
+        name: "LAX",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::Y),
+        official: false,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2799,12 +3439,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xAB] = Some(Instruction {
-        name: "LAX #Immediate",
+        name: "LAX",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: false,
         cycles: &[Cpu::fetch_immediate, Cpu::lax_fetched_data_finish],
     });
 
     opcodes[0xAF] = Some(Instruction {
-        name: "LAX Absolute",
+        name: "LAX",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2815,12 +3461,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x87] = Some(Instruction {
-        name: "SAX Zero Page",
+        name: "SAX",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: false,
         cycles: &[Cpu::fetch_abs_low, Cpu::sax_write_byte_abs],
     });
 
     opcodes[0x8F] = Some(Instruction {
-        name: "SAX Absolute",
+        name: "SAX",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2829,7 +3481,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x97] = Some(Instruction {
-        name: "SAX Zero Page,Y",
+        name: "SAX",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::Y),
+        official: false,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2838,7 +3493,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xC7] = Some(Instruction {
-        name: "DCP Zero Page",
+        name: "DCP",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -2848,7 +3506,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xCF] = Some(Instruction {
-        name: "DCP Absolute",
+        name: "DCP",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2859,7 +3520,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xD7] = Some(Instruction {
-        name: "DCP Zero Page,X",
+        name: "DCP",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: false,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2870,7 +3534,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xE7] = Some(Instruction {
-        name: "ISC Zero Page",
+        name: "ISC",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -2880,7 +3547,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xF7] = Some(Instruction {
-        name: "ISC Zero Page,X",
+        name: "ISC",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: false,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2891,7 +3561,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xEF] = Some(Instruction {
-        name: "ISC Absolute",
+        name: "ISC",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2901,7 +3574,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xFF] = Some(Instruction {
-        name: "ISC Absolute,X",
+        name: "ISC",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2913,12 +3589,18 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xEB] = Some(Instruction {
-        name: "SBC #Immediate",
+        name: "SBC",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: false,
         cycles: &[Cpu::sbc_immediate],
     });
 
     opcodes[0x27] = Some(Instruction {
-        name: "RLA Zero Page",
+        name: "RLA",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -2928,7 +3610,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x2F] = Some(Instruction {
-        name: "RLA Absolute",
+        name: "RLA",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2939,7 +3624,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x37] = Some(Instruction {
-        name: "RLA Zero Page,X",
+        name: "RLA",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: false,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2950,7 +3638,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x3F] = Some(Instruction {
-        name: "RLA Absolute,X",
+        name: "RLA",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2960,7 +3651,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x67] = Some(Instruction {
-        name: "RRA Zero Page",
+        name: "RRA",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -2970,7 +3664,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x6F] = Some(Instruction {
-        name: "RRA Absolute",
+        name: "RRA",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -2981,7 +3678,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x77] = Some(Instruction {
-        name: "SRE Zero Page,X",
+        name: "RRA",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: false,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -2992,7 +3692,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x07] = Some(Instruction {
-        name: "SLO Zero Page",
+        name: "SLO",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -3002,7 +3705,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x0F] = Some(Instruction {
-        name: "SLO Absolute",
+        name: "SLO",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -3013,7 +3719,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x17] = Some(Instruction {
-        name: "SLO Zero Page,X",
+        name: "SLO",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: false,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -3024,7 +3733,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x1F] = Some(Instruction {
-        name: "SLO Absolute,X",
+        name: "SLO",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -3034,7 +3746,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x47] = Some(Instruction {
-        name: "SRE Zero Page",
+        name: "SRE",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
@@ -3044,7 +3759,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x4F] = Some(Instruction {
-        name: "SRE Absolute",
+        name: "SRE",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
@@ -3055,7 +3773,10 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0x57] = Some(Instruction {
-        name: "SRE Zero Page,X",
+        name: "SRE",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: false,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -3065,143 +3786,76 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         ],
     });
 
-    opcodes[0x1A] = Some(Instruction {
-        name: "NOP Implied",
+    let nop_implied = Instruction {
+        name: "NOP",
+        length: 1,
+        mode: AddressMode::Implied,
+        official: false,
         cycles: &[Cpu::nop_implied],
-    });
+    };
+    opcodes[0x1A] = Some(nop_implied);
+    opcodes[0x3A] = Some(nop_implied);
+    opcodes[0x5A] = Some(nop_implied);
+    opcodes[0x7A] = Some(nop_implied);
+    opcodes[0xDA] = Some(nop_implied);
+    opcodes[0xFA] = Some(nop_implied);
 
-    opcodes[0x3A] = Some(Instruction {
-        name: "NOP Implied",
-        cycles: &[Cpu::nop_implied],
-    });
-
-    opcodes[0x5A] = Some(Instruction {
-        name: "NOP Implied",
-        cycles: &[Cpu::nop_implied],
-    });
-
-    opcodes[0x7A] = Some(Instruction {
-        name: "NOP Implied",
-        cycles: &[Cpu::nop_implied],
-    });
-
-    opcodes[0xDA] = Some(Instruction {
-        name: "NOP Implied",
-        cycles: &[Cpu::nop_implied],
-    });
-
-    opcodes[0xFA] = Some(Instruction {
-        name: "NOP Implied",
-        cycles: &[Cpu::nop_implied],
-    });
-
-    opcodes[0x80] = Some(Instruction {
-        name: "SKB",
+    let skb = Instruction {
+        name: "NOP",
+        length: 2,
+        mode: AddressMode::Immediate,
+        official: false,
         cycles: &[Cpu::skb],
-    });
-
-    opcodes[0x82] = Some(Instruction {
-        name: "SKB",
-        cycles: &[Cpu::skb],
-    });
-
-    opcodes[0x89] = Some(Instruction {
-        name: "SKB",
-        cycles: &[Cpu::skb],
-    });
-
-    opcodes[0xC2] = Some(Instruction {
-        name: "SKB",
-        cycles: &[Cpu::skb],
-    });
-
-    opcodes[0xE2] = Some(Instruction {
-        name: "SKB",
-        cycles: &[Cpu::skb],
-    });
+    };
+    opcodes[0x80] = Some(skb);
+    opcodes[0x82] = Some(skb);
+    opcodes[0x89] = Some(skb);
+    opcodes[0xC2] = Some(skb);
+    opcodes[0xE2] = Some(skb);
 
     opcodes[0x0C] = Some(Instruction {
-        name: "IGN Absolute",
+        name: "NOP",
+        length: 3,
+        mode: AddressMode::Absolute,
+        official: false,
         cycles: &[Cpu::fetch_abs_low, Cpu::fetch_abs_high, Cpu::ign_finish],
     });
 
-    opcodes[0x1C] = Some(Instruction {
-        name: "IGN Absolute,X",
+    let ign_abs_x = Instruction {
+        name: "NOP",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: false,
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
             Cpu::ign_abs_indexed_x_optimistic,
             Cpu::ign_finish,
         ],
-    });
+    };
+    opcodes[0x1C] = Some(ign_abs_x);
+    opcodes[0x3C] = Some(ign_abs_x);
+    opcodes[0x5C] = Some(ign_abs_x);
+    opcodes[0x7C] = Some(ign_abs_x);
+    opcodes[0xDC] = Some(ign_abs_x);
+    opcodes[0xFC] = Some(ign_abs_x);
 
-    opcodes[0x3C] = Some(Instruction {
-        name: "IGN Absolute,X",
-        cycles: &[
-            Cpu::fetch_abs_low,
-            Cpu::fetch_abs_high,
-            Cpu::ign_abs_indexed_x_optimistic,
-            Cpu::ign_finish,
-        ],
-    });
-
-    opcodes[0x5C] = Some(Instruction {
-        name: "IGN Absolute,X",
-        cycles: &[
-            Cpu::fetch_abs_low,
-            Cpu::fetch_abs_high,
-            Cpu::ign_abs_indexed_x_optimistic,
-            Cpu::ign_finish,
-        ],
-    });
-
-    opcodes[0x7C] = Some(Instruction {
-        name: "IGN Absolute,X",
-        cycles: &[
-            Cpu::fetch_abs_low,
-            Cpu::fetch_abs_high,
-            Cpu::ign_abs_indexed_x_optimistic,
-            Cpu::ign_finish,
-        ],
-    });
-
-    opcodes[0xDC] = Some(Instruction {
-        name: "IGN Absolute,X",
-        cycles: &[
-            Cpu::fetch_abs_low,
-            Cpu::fetch_abs_high,
-            Cpu::ign_abs_indexed_x_optimistic,
-            Cpu::ign_finish,
-        ],
-    });
-
-    opcodes[0xFC] = Some(Instruction {
-        name: "IGN Absolute,X",
-        cycles: &[
-            Cpu::fetch_abs_low,
-            Cpu::fetch_abs_high,
-            Cpu::ign_abs_indexed_x_optimistic,
-            Cpu::ign_finish,
-        ],
-    });
-
-    opcodes[0x04] = Some(Instruction {
-        name: "IGN Zero Page",
+    let ign_zp = Instruction {
+        name: "NOP",
+        length: 2,
+        mode: AddressMode::ZeroPage,
+        official: false,
         cycles: &[Cpu::fetch_abs_low, Cpu::ign_finish],
-    });
+    };
+    opcodes[0x04] = Some(ign_zp);
+    opcodes[0x44] = Some(ign_zp);
+    opcodes[0x64] = Some(ign_zp);
 
-    opcodes[0x44] = Some(Instruction {
-        name: "IGN Zero Page",
-        cycles: &[Cpu::fetch_abs_low, Cpu::ign_finish],
-    });
-
-    opcodes[0x64] = Some(Instruction {
-        name: "IGN Zero Page",
-        cycles: &[Cpu::fetch_abs_low, Cpu::ign_finish],
-    });
-
-    opcodes[0x14] = Some(Instruction {
-        name: "IGN Zero Page,X",
+    let ign_zp_x = Instruction {
+        name: "NOP",
+        length: 2,
+        mode: AddressMode::ZeroPageIndexed(Register8::X),
+        official: false,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::dummy_read_base,
@@ -3209,68 +3863,22 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::ign_finish,
         ],
-    });
-
-    opcodes[0x34] = Some(Instruction {
-        name: "IGN Zero Page,X",
-        cycles: &[
-            Cpu::fetch_base_addr,
-            Cpu::dummy_read_base,
-            Cpu::read_zero_page_indexed_x_data,
-            Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::ign_finish,
-        ],
-    });
-
-    opcodes[0x54] = Some(Instruction {
-        name: "IGN Zero Page,X",
-        cycles: &[
-            Cpu::fetch_base_addr,
-            Cpu::dummy_read_base,
-            Cpu::read_zero_page_indexed_x_data,
-            Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::ign_finish,
-        ],
-    });
-
-    opcodes[0x74] = Some(Instruction {
-        name: "IGN Zero Page,X",
-        cycles: &[
-            Cpu::fetch_base_addr,
-            Cpu::dummy_read_base,
-            Cpu::read_zero_page_indexed_x_data,
-            Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::ign_finish,
-        ],
-    });
-
-    opcodes[0xD4] = Some(Instruction {
-        name: "IGN Zero Page,X",
-        cycles: &[
-            Cpu::fetch_base_addr,
-            Cpu::dummy_read_base,
-            Cpu::read_zero_page_indexed_x_data,
-            Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::ign_finish,
-        ],
-    });
-
-    opcodes[0xF4] = Some(Instruction {
-        name: "IGN Zero Page,X",
-        cycles: &[
-            Cpu::fetch_base_addr,
-            Cpu::dummy_read_base,
-            Cpu::read_zero_page_indexed_x_data,
-            Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::ign_finish,
-        ],
-    });
+    };
+    opcodes[0x14] = Some(ign_zp_x);
+    opcodes[0x34] = Some(ign_zp_x);
+    opcodes[0x54] = Some(ign_zp_x);
+    opcodes[0x74] = Some(ign_zp_x);
+    opcodes[0xD4] = Some(ign_zp_x);
+    opcodes[0xF4] = Some(ign_zp_x);
 
     opcodes
 };
 
 pub const NMI_INTERRUPT: Instruction = Instruction {
     name: "NMI",
+    length: 0,
+    mode: AddressMode::Implied,
+    official: true,
     cycles: &[
         Cpu::dummy_read,
         Cpu::push_pc_high,
@@ -3283,6 +3891,9 @@ pub const NMI_INTERRUPT: Instruction = Instruction {
 
 pub const IRQ_INTERRUPT: Instruction = Instruction {
     name: "IRQ",
+    length: 0,
+    mode: AddressMode::Implied,
+    official: true,
     cycles: &[
         Cpu::dummy_read,
         Cpu::push_pc_high,

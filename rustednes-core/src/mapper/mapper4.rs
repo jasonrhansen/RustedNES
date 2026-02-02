@@ -157,7 +157,7 @@ impl Mapper4 {
         }
     }
 
-    fn handle_scanline(&mut self, cpu: &mut Cpu) {
+    fn handle_scanline(&mut self, _cpu: &mut Cpu) {
         if self.irq_counter == 0 {
             self.irq_counter = self.irq_counter_reload_value;
         } else {
@@ -193,7 +193,7 @@ impl Mapper4 {
 }
 
 impl Mapper for Mapper4 {
-    fn prg_read_byte(&mut self, address: u16) -> u8 {
+    fn prg_peek_byte(&self, address: u16) -> u8 {
         if address < 0x6000 {
             0
         } else if address < 0x8000 {

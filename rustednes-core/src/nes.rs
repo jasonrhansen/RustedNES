@@ -26,6 +26,9 @@ pub struct Nes {
     pub input: Input,
     cheats: HashMap<u16, Cheat>,
     pub cycles: usize,
+
+    // Debugging
+    pub trace: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -52,6 +55,7 @@ impl Nes {
             input: Input::new(),
             cheats: HashMap::new(),
             cycles: 0,
+            trace: false,
         };
 
         nes.reset();
@@ -67,6 +71,20 @@ impl Nes {
         audio_frame_sink: &mut A,
     ) -> usize {
         let prev_cycles = self.cycles;
+
+        if self.trace {
+            let bus = SystemBus::new(
+                &mut self.ram,
+                &mut self.mapper,
+                &mut self.ppu,
+                &mut self.apu,
+                &mut self.oam_dma,
+                &mut self.input,
+                &self.cheats,
+            );
+            println!("{}", self.cpu.trace(&bus));
+        }
+
         // Run cycles until a CPU instruction completes.
         while !self.tick(video_frame_sink, audio_frame_sink) {}
         self.cycles - prev_cycles
@@ -88,7 +106,7 @@ impl Nes {
         for _ in 0..3 {
             self.ppu.tick(&mut self.mapper, video_frame_sink);
             self.cpu
-                .set_nmi_line_low(self.ppu.nmi_output && self.ppu.nmi_occurred);
+                .set_nmi_line(self.ppu.nmi_output && self.ppu.nmi_occurred);
         }
 
         self.update_irq_line();
@@ -194,6 +212,11 @@ impl Nes {
         self.cpu.reset(&mut bus);
         self.ppu.reset();
         self.apu.reset();
+    }
+
+    pub fn initialize_nestest(&mut self) {
+        self.cpu.initialize_nestest();
+        self.ppu.initialize_nestest();
     }
 
     pub fn add_cheat(&mut self, cheat: Cheat) {
