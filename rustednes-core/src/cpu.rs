@@ -2,7 +2,6 @@ use crate::system_bus::SystemBus;
 
 use serde_derive::{Deserialize, Serialize};
 
-use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
@@ -19,14 +18,6 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    pub fn nestest_name(&'_ self) -> Cow<'_, str> {
-        if self.official {
-            Cow::Borrowed(self.name)
-        } else {
-            Cow::Owned(format!("*{}", self.name))
-        }
-    }
-
     pub fn nestest_asm_op(&self, cpu: &Cpu, bus: &SystemBus) -> String {
         let ops = [
             bus.peek_byte(cpu.regs.pc + 1),
@@ -375,15 +366,15 @@ impl Cpu {
             .collect::<Vec<String>>()
             .join(" ");
 
-        let name = instruction.nestest_name();
         let asm_op = instruction.nestest_asm_op(self, bus);
 
         format!(
-            "{:04X}  {:02X} {:<5} {:>4} {:<27} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} PPU:{:>3},{:>3} CYC:{}",
+            "{:04X}  {:02X} {:<5} {}{:<3} {:<27} A:{:02X} X:{:02X} Y:{:02X} P:{:02X} SP:{:02X} PPU:{:>3},{:>3} CYC:{}",
             self.regs.pc,
             opcode,
             hex_extra,
-            name,
+            if instruction.official { ' ' } else { '*' },
+            instruction.name,
             asm_op,
             self.regs.a,
             self.regs.x,
@@ -3463,7 +3454,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         name: "LAX",
         length: 2,
         mode: AddressMode::IndexedIndirect(Register8::X),
-        official: true,
+        official: false,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_x_dummy_read_and_add,
