@@ -645,6 +645,12 @@ impl Cpu {
         false
     }
 
+    fn indexed_y_dummy_read_and_add(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        bus.read_byte(self.base_addr as u16);
+        self.base_addr = self.base_addr.wrapping_add(self.regs.y);
+        false
+    }
+
     fn indexed_fetch_ptr_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         self.temp_addr_low = bus.read_byte(self.base_addr as u16);
         false
@@ -1551,7 +1557,7 @@ impl Cpu {
     // Unofficial Instruction Cycle Functions
     ///////////////////////////////////////
 
-    fn isc_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+    fn isb_addr_abs_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         let value = self.fetched_data.wrapping_add(1);
         bus.write_byte(self.addr_abs, value);
         self.sub_value(value);
@@ -3655,7 +3661,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         official: false,
         cycles: &[
             Cpu::fetch_base_addr,
-            Cpu::dummy_read_base,
+            Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
             Cpu::read_abs_addr_data,
@@ -3681,7 +3687,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     });
 
     opcodes[0xE3] = Some(Instruction {
-        name: "ISC", // Often logged as *ISB or *ISC
+        name: "ISB",
         length: 2,
         mode: AddressMode::IndexedIndirect(Register8::X),
         official: false,
@@ -3692,12 +3698,12 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::indexed_fetch_ptr_high,
             Cpu::read_abs_addr_data,
             Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::isc_addr_abs_finish,
+            Cpu::isb_addr_abs_finish,
         ],
     });
 
     opcodes[0xE7] = Some(Instruction {
-        name: "ISC",
+        name: "ISB",
         length: 2,
         mode: AddressMode::ZeroPage,
         official: false,
@@ -3705,28 +3711,28 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
             Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::isc_addr_abs_finish,
+            Cpu::isb_addr_abs_finish,
         ],
     });
 
     opcodes[0xF3] = Some(Instruction {
-        name: "ISC",
+        name: "ISB",
         length: 2,
-        mode: AddressMode::IndirectIndexed(Register8::X),
+        mode: AddressMode::IndirectIndexed(Register8::Y),
         official: false,
         cycles: &[
             Cpu::fetch_base_addr,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
-            Cpu::rmw_abs_indexed_x_dummy_read,
-            Cpu::read_abs_indexed_x_data,
+            Cpu::rmw_abs_indexed_y_dummy_read,
+            Cpu::read_abs_indexed_y_data,
             Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::isc_addr_abs_finish,
+            Cpu::isb_addr_abs_finish,
         ],
     });
 
     opcodes[0xF7] = Some(Instruction {
-        name: "ISC",
+        name: "ISB",
         length: 2,
         mode: AddressMode::ZeroPageIndexed(Register8::X),
         official: false,
@@ -3735,12 +3741,12 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::dummy_read_base,
             Cpu::read_zero_page_indexed_x_data,
             Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::isc_addr_abs_finish,
+            Cpu::isb_addr_abs_finish,
         ],
     });
 
     opcodes[0xFB] = Some(Instruction {
-        name: "ISC",
+        name: "ISB",
         length: 3,
         mode: AddressMode::AbsoluteIndexed(Register8::Y),
         official: false,
@@ -3750,12 +3756,12 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::rmw_abs_indexed_y_dummy_read,
             Cpu::read_abs_indexed_y_data,
             Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::isc_addr_abs_finish,
+            Cpu::isb_addr_abs_finish,
         ],
     });
 
     opcodes[0xEF] = Some(Instruction {
-        name: "ISC",
+        name: "ISB",
         length: 3,
         mode: AddressMode::Absolute,
         official: false,
@@ -3764,12 +3770,12 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::fetch_abs_high,
             Cpu::read_abs_addr_data,
             Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::isc_addr_abs_finish,
+            Cpu::isb_addr_abs_finish,
         ],
     });
 
     opcodes[0xFF] = Some(Instruction {
-        name: "ISC",
+        name: "ISB",
         length: 3,
         mode: AddressMode::AbsoluteIndexed(Register8::X),
         official: false,
@@ -3779,7 +3785,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::rmw_abs_indexed_x_dummy_read,
             Cpu::read_abs_indexed_x_data,
             Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::isc_addr_abs_finish,
+            Cpu::isb_addr_abs_finish,
         ],
     });
 
@@ -3837,14 +3843,14 @@ pub const OPCODES: [Option<Instruction>; 256] = {
     opcodes[0x33] = Some(Instruction {
         name: "RLA",
         length: 2,
-        mode: AddressMode::IndexedIndirect(Register8::Y),
+        mode: AddressMode::IndirectIndexed(Register8::Y),
         official: false,
         cycles: &[
             Cpu::fetch_base_addr,
-            Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
-            Cpu::read_abs_addr_data,
+            Cpu::rmw_abs_indexed_y_dummy_read,
+            Cpu::read_abs_indexed_y_data,
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::rla_addr_abs_finish,
         ],
@@ -3866,7 +3872,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x3B] = Some(Instruction {
         name: "RLA",
-        length: 2,
+        length: 3,
         mode: AddressMode::AbsoluteIndexed(Register8::Y),
         official: false,
         cycles: &[
@@ -4007,6 +4013,8 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::indexed_x_dummy_read_and_add,
             Cpu::indexed_fetch_ptr_low,
             Cpu::indexed_fetch_ptr_high,
+            Cpu::read_abs_addr_data,
+            Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::slo_addr_abs_finish,
         ],
     });
@@ -4188,7 +4196,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
 
     opcodes[0x5F] = Some(Instruction {
         name: "SRE",
-        length: 2,
+        length: 3,
         mode: AddressMode::AbsoluteIndexed(Register8::X),
         official: false,
         cycles: &[
