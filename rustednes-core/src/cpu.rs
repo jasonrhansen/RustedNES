@@ -2907,6 +2907,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::inc_addr_abs_finish,
         ],
@@ -2962,6 +2963,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::dec_addr_abs_finish,
         ],
@@ -3127,7 +3129,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         length: 1,
         mode: AddressMode::Accumulator,
         official: true,
-        cycles: &[Cpu::dummy_read, Cpu::lsr_accumulator_finish],
+        cycles: &[Cpu::lsr_accumulator_finish],
     });
 
     opcodes[0x46] = Some(Instruction {
@@ -3165,6 +3167,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::lsr_addr_abs_finish,
         ],
@@ -3190,7 +3193,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         length: 1,
         mode: AddressMode::Accumulator,
         official: true,
-        cycles: &[Cpu::dummy_read, Cpu::asl_accumulator_finish],
+        cycles: &[Cpu::asl_accumulator_finish],
     });
 
     opcodes[0x06] = Some(Instruction {
@@ -3228,6 +3231,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::asl_addr_abs_finish,
         ],
@@ -3253,7 +3257,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         length: 1,
         mode: AddressMode::Accumulator,
         official: true,
-        cycles: &[Cpu::dummy_read, Cpu::ror_accumulator_finish],
+        cycles: &[Cpu::ror_accumulator_finish],
     });
 
     opcodes[0x66] = Some(Instruction {
@@ -3291,6 +3295,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::ror_addr_abs_finish,
         ],
@@ -3316,7 +3321,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         length: 1,
         mode: AddressMode::Accumulator,
         official: true,
-        cycles: &[Cpu::dummy_read, Cpu::rol_accumulator_finish],
+        cycles: &[Cpu::rol_accumulator_finish],
     });
 
     opcodes[0x26] = Some(Instruction {
@@ -3354,6 +3359,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::rol_addr_abs_finish,
         ],
@@ -3765,6 +3771,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[
             Cpu::fetch_abs_low,
             Cpu::fetch_abs_high,
+            Cpu::read_abs_addr_data,
             Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::isc_addr_abs_finish,
         ],
@@ -4275,9 +4282,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         official: false,
         cycles: &[
             Cpu::fetch_base_addr,
-            Cpu::dummy_read_base,
             Cpu::read_zero_page_indexed_x_data,
-            Cpu::addr_abs_fetched_data_dummy_write,
             Cpu::ign_finish,
         ],
     };
