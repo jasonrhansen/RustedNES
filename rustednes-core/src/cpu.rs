@@ -322,6 +322,7 @@ impl Cpu {
 
         if self.cycle == 0 {
             self.cycle = 1;
+            self.cycles_total += 1;
 
             if self.instruction.is_none() {
                 // Fetch new instruction.
@@ -661,19 +662,22 @@ impl Cpu {
         false
     }
 
-    fn lda_fetched_data_finish(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
+    fn lda_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetch_immediate(bus);
         self.regs.a = self.fetched_data;
         self.set_zero_negative(self.regs.a);
         true
     }
 
-    fn ldx_fetched_data_finish(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
+    fn ldx_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetch_immediate(bus);
         self.regs.x = self.fetched_data;
         self.set_zero_negative(self.regs.x);
         true
     }
 
-    fn ldy_fetched_data_finish(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
+    fn ldy_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetch_immediate(bus);
         self.regs.y = self.fetched_data;
         self.set_zero_negative(self.regs.y);
         true
@@ -1594,6 +1598,14 @@ impl Cpu {
         true
     }
 
+    fn lax_immediate(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        self.fetch_immediate(bus);
+        self.regs.a = self.fetched_data;
+        self.set_zero_negative(self.regs.a);
+        self.regs.x = self.regs.a;
+        true
+    }
+
     fn lax_fetched_data_finish(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
         self.regs.a = self.fetched_data;
         self.set_zero_negative(self.regs.a);
@@ -1672,7 +1684,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         length: 2,
         mode: AddressMode::Immediate,
         official: true,
-        cycles: &[Cpu::fetch_immediate, Cpu::lda_fetched_data_finish],
+        cycles: &[Cpu::lda_immediate],
     });
 
     opcodes[0xA5] = Some(Instruction {
@@ -1766,7 +1778,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         length: 2,
         mode: AddressMode::Immediate,
         official: true,
-        cycles: &[Cpu::fetch_immediate, Cpu::ldx_fetched_data_finish],
+        cycles: &[Cpu::ldx_immediate],
     });
 
     opcodes[0xA6] = Some(Instruction {
@@ -1819,7 +1831,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         length: 2,
         mode: AddressMode::Immediate,
         official: true,
-        cycles: &[Cpu::fetch_immediate, Cpu::ldy_fetched_data_finish],
+        cycles: &[Cpu::ldy_immediate],
     });
 
     opcodes[0xA4] = Some(Instruction {
@@ -3420,7 +3432,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::fetch_abs_low,
             Cpu::read_abs_addr_data,
             Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::lax_fetched_data_finish,
+            Cpu::lax_immediate,
         ],
     });
 
@@ -3434,7 +3446,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
             Cpu::dummy_read_base,
             Cpu::read_zero_page_indexed_y_data,
             Cpu::addr_abs_fetched_data_dummy_write,
-            Cpu::lax_fetched_data_finish,
+            Cpu::lax_immediate,
         ],
     });
 
@@ -3443,7 +3455,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         length: 2,
         mode: AddressMode::Immediate,
         official: false,
-        cycles: &[Cpu::fetch_immediate, Cpu::lax_fetched_data_finish],
+        cycles: &[Cpu::lax_immediate],
     });
 
     opcodes[0xAF] = Some(Instruction {
