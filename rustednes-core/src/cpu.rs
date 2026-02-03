@@ -245,7 +245,24 @@ pub struct State {
     pub stall_cycles: u8,
     pub regs: Regs,
     pub flags: Flags,
-    // TODO: Fix save state for cycle accurate emulation.
+    pub nmi_line_low: bool,
+    pub nmi_pended: bool,
+    pub irq_line_low: bool,
+    pub cycles_total: u64,
+    pub opcode: u8,
+    pub cycle: u8,
+    pub addr_abs: u16,
+    pub temp_addr_low: u8,
+    pub base_addr: u8,
+    pub rel_offset: i8,
+    pub fetched_data: u8,
+    pub active_interrupt: Option<Interrupt>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum Interrupt {
+    Nmi,
+    Irq,
 }
 
 impl Cpu {
@@ -254,10 +271,31 @@ impl Cpu {
     }
 
     pub fn get_state(&self) -> State {
+        let active_interrupt = self
+            .instruction
+            .map(|inst| match inst.name {
+                "NMI" => Some(Interrupt::Nmi),
+                "IRQ" => Some(Interrupt::Irq),
+                _ => None,
+            })
+            .flatten();
+
         State {
             stall_cycles: self.stall_cycles,
             regs: self.regs,
             flags: self.flags,
+            nmi_line_low: self.nmi_line_low,
+            nmi_pended: self.nmi_pended,
+            irq_line_low: self.irq_line_low,
+            cycles_total: self.cycles_total,
+            opcode: self.opcode,
+            cycle: self.cycle,
+            addr_abs: self.addr_abs,
+            temp_addr_low: self.temp_addr_low,
+            base_addr: self.base_addr,
+            rel_offset: self.rel_offset,
+            fetched_data: self.fetched_data,
+            active_interrupt,
         }
     }
 
@@ -265,6 +303,26 @@ impl Cpu {
         self.stall_cycles = state.stall_cycles;
         self.regs = state.regs;
         self.flags = state.flags;
+        self.nmi_line_low = state.nmi_line_low;
+        self.nmi_pended = state.nmi_pended;
+        self.irq_line_low = state.irq_line_low;
+        self.cycles_total = state.cycles_total;
+        self.opcode = state.opcode;
+        self.cycle = state.cycle;
+        self.addr_abs = state.addr_abs;
+        self.temp_addr_low = state.temp_addr_low;
+        self.base_addr = state.base_addr;
+        self.rel_offset = state.rel_offset;
+        self.fetched_data = state.fetched_data;
+
+        if let Some(interrupt) = &state.active_interrupt {
+            match interrupt {
+                Interrupt::Nmi => self.instruction = Some(NMI_INTERRUPT),
+                Interrupt::Irq => self.instruction = Some(IRQ_INTERRUPT),
+            }
+        } else {
+            self.instruction = OPCODES[self.opcode as usize];
+        }
     }
 
     pub fn stall(&mut self, cycles: u8) {
@@ -3456,7 +3514,7 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         cycles: &[Cpu::nop_implied],
     });
 
-    // TODO: Unofficial opcodes below.
+    // Unofficial opcodes.
 
     opcodes[0x4B] = Some(Instruction {
         name: "ALR",
