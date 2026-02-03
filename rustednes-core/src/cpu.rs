@@ -645,12 +645,6 @@ impl Cpu {
         false
     }
 
-    fn indexed_y_dummy_read_and_add(self: &mut Cpu, bus: &mut SystemBus) -> bool {
-        bus.read_byte(self.base_addr as u16);
-        self.base_addr = self.base_addr.wrapping_add(self.regs.y);
-        false
-    }
-
     fn indexed_fetch_ptr_low(self: &mut Cpu, bus: &mut SystemBus) -> bool {
         self.temp_addr_low = bus.read_byte(self.base_addr as u16);
         false
@@ -1699,6 +1693,54 @@ impl Cpu {
         let index = self.regs.y;
         let addr = (self.base_addr as u16 + index as u16) % 0x0100;
         bus.write_byte(addr, self.regs.a & self.regs.x);
+        true
+    }
+
+    fn shy_logic(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
+        let base = self.addr_abs;
+        let value = self.regs.y;
+        let index = self.regs.x;
+
+        let addr = base + index as u16;
+
+        self.fetched_data = value & ((base >> 8) + 1) as u8;
+
+        self.addr_abs = if ((base ^ addr) & 0x100) != 0 {
+            // Page crossed
+            (addr & ((value as u16) << 8)) | (addr & 0x00FF)
+        } else {
+            addr
+        };
+
+        false
+    }
+
+    fn shy_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        bus.write_byte(self.addr_abs, self.fetched_data);
+        true
+    }
+
+    fn shx_logic(self: &mut Cpu, _bus: &mut SystemBus) -> bool {
+        let base = self.addr_abs;
+        let value = self.regs.x;
+        let index = self.regs.y;
+
+        let addr = base + index as u16;
+
+        self.fetched_data = value & ((base >> 8) + 1) as u8;
+
+        self.addr_abs = if ((base ^ addr) & 0x100) != 0 {
+            // Page crossed
+            (addr & ((value as u16) << 8)) | (addr & 0x00FF)
+        } else {
+            addr
+        };
+
+        false
+    }
+
+    fn shx_finish(self: &mut Cpu, bus: &mut SystemBus) -> bool {
+        bus.write_byte(self.addr_abs, self.fetched_data);
         true
     }
 }
@@ -4298,6 +4340,32 @@ pub const OPCODES: [Option<Instruction>; 256] = {
         mode: AddressMode::Immediate,
         official: false,
         cycles: &[Cpu::xaa],
+    });
+
+    opcodes[0x9C] = Some(Instruction {
+        name: "SHY",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::X),
+        official: false,
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::shy_logic,
+            Cpu::shy_finish,
+        ],
+    });
+
+    opcodes[0x9E] = Some(Instruction {
+        name: "SHX",
+        length: 3,
+        mode: AddressMode::AbsoluteIndexed(Register8::Y),
+        official: false,
+        cycles: &[
+            Cpu::fetch_abs_low,
+            Cpu::fetch_abs_high,
+            Cpu::shx_logic,
+            Cpu::shx_finish,
+        ],
     });
 
     opcodes

@@ -98,7 +98,9 @@ where
     pub fn run(&mut self, start_debugger: bool, trace: bool) {
         if trace {
             self.nes.trace = true;
-            self.nes.initialize_nestest();
+
+            // Uncomment this to compare output of nestest.nes
+            // self.nes.initialize_nestest();
         }
 
         let video_subsystem = self.sdl_context.video().unwrap();
