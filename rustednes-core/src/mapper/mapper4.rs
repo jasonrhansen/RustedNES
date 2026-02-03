@@ -14,9 +14,11 @@ pub struct Mapper4 {
     prg_rom_mode: PrgRomMode,
     chr_a12_inversion: ChrA12Inversion,
 
-    irq_enable: bool,
+    irq_enabled: bool,
     irq_counter: u8,
-    irq_counter_reload_value: u8,
+    irq_reload_flag: bool,
+    irq_latch: u8,
+    irq_active: bool,
 
     prg_rom_bank_offsets: [usize; 4],
     chr_bank_offsets: [usize; 8],
@@ -41,9 +43,11 @@ pub struct State {
     pub bank_registers: [u8; 8],
     pub prg_rom_mode: PrgRomMode,
     pub chr_a12_inversion: ChrA12Inversion,
-    pub irq_enable: bool,
+    pub irq_enabled: bool,
     pub irq_counter: u8,
-    pub irq_counter_reload_value: u8,
+    pub irq_reload_flag: bool,
+    pub irq_latch: u8,
+    pub irq_active: bool,
     pub prg_rom_bank_offsets: [usize; 4],
     pub chr_bank_offsets: [usize; 8],
 }
@@ -56,9 +60,11 @@ impl Mapper4 {
             bank_registers: [0, 0, 0, 0, 0, 0, 0, 1],
             prg_rom_mode: PrgRomMode::Zero,
             chr_a12_inversion: ChrA12Inversion::Zero,
-            irq_enable: false,
+            irq_enabled: false,
             irq_counter: 0,
-            irq_counter_reload_value: 0,
+            irq_reload_flag: false,
+            irq_latch: 0,
+            irq_active: false,
             prg_rom_bank_offsets: [0; 4],
             chr_bank_offsets: [0; 8],
         };
@@ -99,10 +105,6 @@ impl Mapper4 {
 
     fn write_prg_ram_protect(&mut self, _value: u8) {
         // Probably don't need to implement this
-    }
-
-    fn write_irq_latch(&mut self, value: u8) {
-        self.irq_counter_reload_value = value;
     }
 
     fn prg_bank_address(&self, bank: u8) -> usize {
@@ -158,17 +160,15 @@ impl Mapper4 {
     }
 
     fn handle_scanline(&mut self, _cpu: &mut Cpu) {
-        if self.irq_counter == 0 {
-            self.irq_counter = self.irq_counter_reload_value;
+        if self.irq_counter == 0 || self.irq_reload_flag {
+            self.irq_counter = self.irq_latch;
+            self.irq_reload_flag = false;
         } else {
             self.irq_counter -= 1;
+        }
 
-            // TODO: Fix interrupt handling
-            // if self.irq_counter == 0 && self.irq_enable {
-            //     cpu.request_irq();
-            // } else {
-            //     cpu.reset_irq();
-            // }
+        if self.irq_counter == 0 && self.irq_enabled {
+            self.irq_active = true;
         }
     }
 
@@ -221,12 +221,18 @@ impl Mapper for Mapper4 {
             }
         } else if address < 0xE000 {
             if address & 0x01 == 0 {
-                self.write_irq_latch(value);
+                self.irq_latch = value;
             } else {
                 self.irq_counter = 0;
+                self.irq_reload_flag = true;
             }
         } else {
-            self.irq_enable = address & 0x01 != 0;
+            if address & 0x01 == 0 {
+                self.irq_enabled = false;
+                self.irq_active = false;
+            } else {
+                self.irq_enabled = true;
+            }
         }
     }
 
@@ -265,9 +271,11 @@ impl Mapper for Mapper4 {
         self.bank_registers = [0, 0, 0, 0, 0, 0, 0, 1];
         self.prg_rom_mode = PrgRomMode::Zero;
         self.chr_a12_inversion = ChrA12Inversion::Zero;
-        self.irq_enable = false;
+        self.irq_enabled = false;
         self.irq_counter = 0;
-        self.irq_counter_reload_value = 0;
+        self.irq_reload_flag = false;
+        self.irq_latch = 0;
+        self.irq_active = false;
         self.prg_rom_bank_offsets = [0; 4];
         self.chr_bank_offsets = [0; 8];
         self.update_banks();
@@ -280,9 +288,11 @@ impl Mapper for Mapper4 {
             bank_registers: self.bank_registers,
             prg_rom_mode: self.prg_rom_mode,
             chr_a12_inversion: self.chr_a12_inversion,
-            irq_enable: self.irq_enable,
+            irq_enabled: self.irq_enabled,
             irq_counter: self.irq_counter,
-            irq_counter_reload_value: self.irq_counter_reload_value,
+            irq_reload_flag: self.irq_reload_flag,
+            irq_latch: self.irq_latch,
+            irq_active: self.irq_active,
             prg_rom_bank_offsets: self.prg_rom_bank_offsets,
             chr_bank_offsets: self.chr_bank_offsets,
         })
@@ -296,13 +306,19 @@ impl Mapper for Mapper4 {
                 self.bank_registers = state.bank_registers;
                 self.prg_rom_mode = state.prg_rom_mode;
                 self.chr_a12_inversion = state.chr_a12_inversion;
-                self.irq_enable = state.irq_enable;
+                self.irq_enabled = state.irq_enabled;
                 self.irq_counter = state.irq_counter;
-                self.irq_counter_reload_value = state.irq_counter_reload_value;
+                self.irq_reload_flag = state.irq_reload_flag;
+                self.irq_latch = state.irq_latch;
+                self.irq_active = state.irq_active;
                 self.prg_rom_bank_offsets = state.prg_rom_bank_offsets;
                 self.chr_bank_offsets = state.chr_bank_offsets;
             }
             _ => panic!("Invalid mapper state enum variant in apply_state"),
         }
+    }
+
+    fn irq_pending(&self) -> bool {
+        self.irq_active
     }
 }

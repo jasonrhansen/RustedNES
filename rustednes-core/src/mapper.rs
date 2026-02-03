@@ -49,6 +49,10 @@ pub trait Mapper {
     fn reset(&mut self);
     fn get_state(&self) -> State;
     fn apply_state(&mut self, state: &State);
+
+    fn irq_pending(&self) -> bool {
+        false
+    }
 }
 
 #[enum_dispatch]

@@ -136,7 +136,8 @@ impl Nes {
 
     fn update_irq_line(&mut self) {
         // TODO: Check if mapper IRQ is active.
-        self.cpu.set_irq_line_low(self.apu.irq_pending());
+        self.cpu
+            .set_irq_line_low(self.apu.irq_pending() || self.mapper.irq_pending());
     }
 
     fn handle_oam_dma(&mut self) {
