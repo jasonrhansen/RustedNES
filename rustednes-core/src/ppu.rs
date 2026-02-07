@@ -85,8 +85,9 @@ pub struct Ppu {
     sprite_x_counters: [u8; 8],
     sprite_0_on_scanline: bool,
 
-    pub nmi_occurred: bool,
-    pub nmi_output: bool,
+    nmi_occurred: bool,
+    nmi_output: bool,
+    pub nmi_line: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -146,6 +147,7 @@ impl Ppu {
             sprite_0_on_scanline: false,
             nmi_occurred: false,
             nmi_output: false,
+            nmi_line: false,
         }
     }
 
@@ -225,10 +227,17 @@ impl Ppu {
         // http://wiki.nesdev.com/w/index.php/PPU_scrolling#.242002_read
         self.regs.w = WriteToggle::FirstWrite;
 
-        let vblank = if self.nmi_occurred { 0x80 } else { 0x00 };
+        let vblank = if self.scanline == VBLANK_START_SCANLINE && self.scanline_cycle() <= 2 {
+            0x00
+        } else if self.nmi_occurred {
+            0x80
+        } else {
+            0x00
+        };
         let status = vblank | (self.regs.ppu_status.bits() & 0x60) | (self.ppu_gen_latch & 0x1F);
 
         self.nmi_occurred = false;
+        self.nmi_line = false;
 
         status
     }
@@ -767,10 +776,17 @@ impl Ppu {
                 if scanline_cycle == 1 {
                     self.set_vblank();
                 }
+
+                // The NMI signal doesn't reach the CPU until 2 PPU cycles after
+                // it's vblank is set.
+                if scanline_cycle == 3 {
+                    self.nmi_line = self.nmi_output && self.nmi_occurred;
+                }
             }
             PRE_RENDER_SCANLINE => {
-                if scanline_cycle == 1 {
+                if scanline_cycle == 2 {
                     self.clear_vblank();
+                    self.nmi_line = false;
                     self.regs.ppu_status.set(PpuStatus::SPRITE_OVERFLOW, false);
                     self.regs.ppu_status.set(PpuStatus::SPRITE_ZERO_HIT, false);
                 }

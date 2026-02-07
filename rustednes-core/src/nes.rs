@@ -102,12 +102,14 @@ impl Nes {
             self.cpu.stall(cpu_stall_cycles);
         }
 
-        // There are 3 PPU cycles per CPU cycle.
-        for _ in 0..3 {
-            self.ppu.tick(&mut self.mapper, video_frame_sink);
-            self.cpu
-                .set_nmi_line(self.ppu.nmi_output && self.ppu.nmi_occurred);
-        }
+        // There are 3 PPU cycles per CPU cycle, but to get the
+        // most accurate timing we run 2 PPU cycles, then 1 CPU cycle,
+        // then one final PPU cycle. This way the PPU can observe
+        // side effects caused by reads/writes during the CPU cycle.
+        self.ppu.tick(&mut self.mapper, video_frame_sink);
+        self.cpu.set_nmi_line(self.ppu.nmi_line);
+        self.ppu.tick(&mut self.mapper, video_frame_sink);
+        self.cpu.set_nmi_line(self.ppu.nmi_line);
 
         self.update_irq_line();
 
@@ -126,6 +128,9 @@ impl Nes {
             );
             self.cpu.tick(&mut bus)
         };
+
+        self.ppu.tick(&mut self.mapper, video_frame_sink);
+        self.cpu.set_nmi_line(self.ppu.nmi_line);
 
         self.update_irq_line();
 

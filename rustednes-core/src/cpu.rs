@@ -580,6 +580,8 @@ impl Cpu {
     pub fn set_nmi_line(&mut self, is_low: bool) {
         if !self.nmi_line_low && is_low {
             self.nmi_pended = true;
+        } else if !is_low {
+            self.nmi_pended = false;
         }
         self.nmi_line_low = is_low;
     }
