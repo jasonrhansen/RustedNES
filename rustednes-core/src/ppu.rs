@@ -710,8 +710,13 @@ impl Ppu {
                         }
                     }
 
-                    // Unused NT fetches
-                    if scanline_cycle == 337 || scanline_cycle == 339 {
+                    // Unused NT fetch
+                    if scanline_cycle == 337 {
+                        self.fetch_name_table_byte(mapper);
+                    }
+
+                    // Ignored NT fetch
+                    if scanline_cycle == 339 {
                         self.mem.read_byte(mapper, self.current_name_address());
                     }
 
