@@ -694,7 +694,7 @@ impl Ppu {
             // Handle backgrounds
             {
                 if on_visible_scanline || on_prerender_scanline {
-                    if (2..=257).contains(&scanline_cycle) || (322..=337).contains(&scanline_cycle)
+                    if (2..=257).contains(&scanline_cycle) || (322..=336).contains(&scanline_cycle)
                     {
                         self.shift_background_registers();
                     }
