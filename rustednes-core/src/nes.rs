@@ -107,8 +107,10 @@ impl Nes {
         // then one final PPU cycle. This way the PPU can observe
         // side effects caused by reads/writes during the CPU cycle.
         self.ppu.tick(&mut self.mapper, video_frame_sink);
+        self.mapper.step(&mut self.cpu, &self.ppu);
         self.cpu.set_nmi_line(self.ppu.nmi_line);
         self.ppu.tick(&mut self.mapper, video_frame_sink);
+        self.mapper.step(&mut self.cpu, &self.ppu);
         self.cpu.set_nmi_line(self.ppu.nmi_line);
 
         self.update_irq_line();
@@ -130,6 +132,7 @@ impl Nes {
         };
 
         self.ppu.tick(&mut self.mapper, video_frame_sink);
+        self.mapper.step(&mut self.cpu, &self.ppu);
         self.cpu.set_nmi_line(self.ppu.nmi_line);
 
         self.update_irq_line();

@@ -1389,6 +1389,7 @@ impl Cpu {
         status.b = false;
         status.e = true;
         self.push_byte(bus, status.into());
+        self.flags.i = true;
         false
     }
 
